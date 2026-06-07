@@ -112,10 +112,21 @@ export default function Home() {
       <CustomMarkupCss />
       {/* Hero Header */}
       <header className="bg-gradient-to-r from-[#1e3a5f] via-[#6b46c1] to-[#0891b2] shadow-xl no-print">
-        <div className="max-w-6xl mx-auto px-4 py-6">
+        <div className="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
           <h1 className="text-2xl sm:text-3xl font-800 text-white tracking-tight leading-tight">
             {siteTitle}
           </h1>
+          <button
+            onClick={() => {
+              try { localStorage.clear(); } catch { /* ignore */ }
+              window.location.reload();
+            }}
+            title="キャッシュをクリアして再読み込み"
+            className="flex items-center gap-1.5 text-white/60 hover:text-white text-xs font-500 transition px-2 py-1 rounded hover:bg-white/10"
+          >
+            <i className="fa-solid fa-rotate-right text-[11px]" />
+            <span className="hidden sm:inline">キャッシュクリア</span>
+          </button>
         </div>
       </header>
 
