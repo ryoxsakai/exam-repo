@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
-  createExam, getUniversities, deleteUniversity,
+  createExam, getUniversities, deleteUniversity, deleteExam,
   getConfig, updateConfig,
   getExam, updateExam, searchExams,
   type SearchResult,
@@ -345,6 +345,7 @@ export default function AdminPage() {
   // Manage
   const [universities, setUniversities] = useState<Array<{ id: number; name: string }>>([]);
   const [uniDeleting, setUniDeleting] = useState<Set<number>>(new Set());
+  const [examDeleting, setExamDeleting] = useState<Set<number>>(new Set());
   const [scheduleOptions, setScheduleOptions] = useState<string[]>(DEFAULT_SCHEDULES);
   const [yearPresets, setYearPresets] = useState<string[]>(DEFAULT_YEAR_PRESETS);
   const [newSchedule, setNewSchedule] = useState("");
@@ -495,6 +496,20 @@ export default function AdminPage() {
       alert(String(err));
     } finally {
       setUniDeleting((prev) => { const s = new Set(prev); s.delete(u.id); return s; });
+    }
+  };
+
+  const handleDeleteExam = async (exam: SearchResult) => {
+    if (!window.confirm(`「${exam.university_name} ${exam.year}年 ${exam.schedule}」を削除しますか？\nこの操作は元に戻せません。`)) return;
+    setExamDeleting((prev) => new Set(prev).add(exam.exam_id));
+    try {
+      await deleteExam(exam.exam_id);
+      if (editingExamId === exam.exam_id) exitEditMode();
+      await loadExamList();
+    } catch (err) {
+      alert(String(err));
+    } finally {
+      setExamDeleting((prev) => { const s = new Set(prev); s.delete(exam.exam_id); return s; });
     }
   };
 
@@ -679,6 +694,28 @@ export default function AdminPage() {
               </div>
             </div>
 
+            {/* Custom domain */}
+            <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6 space-y-4">
+              <h2 className="text-base font-700 text-[#1e3a5f] flex items-center gap-2">
+                <i className="fa-solid fa-globe text-[#0891b2]" />
+                独自ドメイン
+              </h2>
+              <div className="rounded-xl bg-sky-50 border border-sky-200 p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <i className="fa-solid fa-circle-check text-emerald-500" />
+                  <span className="text-sm font-600 text-slate-700">現在の公開URL</span>
+                </div>
+                <p className="text-sm font-mono text-[#0891b2] font-600 pl-6">
+                  https://exam.lrnr.jp/
+                </p>
+                <p className="text-xs text-slate-500 pl-6 leading-relaxed">
+                  独自ドメインの変更はリポジトリの <code className="bg-slate-100 px-1 rounded">public/CNAME</code> と
+                  GitHub Actions の <code className="bg-slate-100 px-1 rounded">cname:</code> 設定を更新し、
+                  GitHub Pages の設定でドメインを変更してください。
+                </p>
+              </div>
+            </div>
+
             {/* Worker URL */}
             <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6 space-y-6">
             <div>
@@ -728,6 +765,61 @@ export default function AdminPage() {
         {/* ── Manage tab ── */}
         {activeTab === "manage" && (
           <div className="space-y-6">
+            {/* Exam list */}
+            <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-700 text-[#1e3a5f] flex items-center gap-2">
+                  <i className="fa-solid fa-list text-[#6b46c1]" />
+                  問題一覧
+                  {examListLoading && <i className="fa-solid fa-spinner fa-spin text-slate-400 text-sm" />}
+                </h2>
+                <button type="button" onClick={loadExamList}
+                  className="text-xs text-slate-400 hover:text-[#6b46c1] transition flex items-center gap-1">
+                  <i className="fa-solid fa-rotate-right" />再読み込み
+                </button>
+              </div>
+              {examList.length === 0 ? (
+                <p className="text-sm text-slate-400 italic text-center py-4">
+                  {workerUrl ? "登録されている問題はありません" : "設定タブで Worker URL を設定してください"}
+                </p>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {examList.map((exam) => (
+                    <div key={exam.exam_id} className="flex items-center gap-3 py-3 group">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-600 text-slate-700">{exam.university_name}</span>
+                        <span className="text-xs text-slate-400 ml-2">{exam.year}年</span>
+                        <span className="text-xs text-slate-400 ml-1">{exam.schedule}</span>
+                        {exam.question_count > 0 && (
+                          <span className="text-[10px] text-slate-300 ml-1.5">{exam.question_count}問</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={async () => { await loadExamForEdit(exam.exam_id); setActiveTab("form"); }}
+                          className="flex items-center gap-1 text-xs text-slate-400 hover:text-[#6b46c1] px-2.5 py-1 rounded-lg hover:bg-purple-50 transition"
+                        >
+                          <i className="fa-solid fa-pen-to-square text-[10px]" />編集
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteExam(exam)}
+                          disabled={examDeleting.has(exam.exam_id)}
+                          className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50 transition disabled:opacity-40"
+                        >
+                          {examDeleting.has(exam.exam_id)
+                            ? <i className="fa-solid fa-spinner fa-spin" />
+                            : <i className="fa-solid fa-trash-can" />}
+                          削除
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Universities */}
             <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6">
               <h2 className="text-base font-700 text-[#1e3a5f] flex items-center gap-2 mb-1">

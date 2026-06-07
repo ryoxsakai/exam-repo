@@ -158,8 +158,17 @@ export default {
         return json({ exam: { ...exam, university_name: universityName }, questions: createdQuestions }, 201, origin);
       }
 
+      // ── DELETE /api/exams/:id ─────────────────────────────────────
+      const examIdMatch = path.match(/^\/api\/exams\/(\d+)$/);
+      if (examIdMatch && request.method === "DELETE") {
+        const examId = Number(examIdMatch[1]);
+        await env.DB.prepare("DELETE FROM questions WHERE exam_id = ?").bind(examId).run();
+        await env.DB.prepare("DELETE FROM exams WHERE id = ?").bind(examId).run();
+        return json({ success: true }, 200, origin);
+      }
+
       // ── PUT /api/exams/:id ────────────────────────────────────────
-      const putExamMatch = path.match(/^\/api\/exams\/(\d+)$/);
+      const putExamMatch = examIdMatch;
       if (putExamMatch && request.method === "PUT") {
         const examId = Number(putExamMatch[1]);
         type QBody = { questionNumber: number; problemText: string; answerText: string; commentaryText: string };
@@ -200,9 +209,8 @@ export default {
       }
 
       // ── GET /api/exams/:id ─────────────────────────────────────────
-      const examById = path.match(/^\/api\/exams\/(\d+)$/);
-      if (examById && request.method === "GET") {
-        const examId = Number(examById[1]);
+      if (examIdMatch && request.method === "GET") {
+        const examId = Number(examIdMatch[1]);
 
         const examRow = await env.DB.prepare(`
           SELECT e.id, e.year, e.schedule, e.created_at,

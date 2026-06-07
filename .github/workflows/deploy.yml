@@ -25,7 +25,9 @@ jobs:
       - name: Build Next.js static export
         run: npm run build
         env:
-          NEXT_PUBLIC_BASE_PATH: /exam-repo
+          # Empty basePath for custom domain (exam.lrnr.jp serves from /).
+          # Set to /exam-repo here if switching back to github.io/<repo>.
+          NEXT_PUBLIC_BASE_PATH: ""
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
@@ -33,3 +35,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./out
           force_orphan: true
+          cname: exam.lrnr.jp

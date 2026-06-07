@@ -98,6 +98,10 @@ export function deleteUniversity(id: number): Promise<{ success: boolean }> {
   return call<{ success: boolean }>(`/api/universities/${id}`, { method: "DELETE" });
 }
 
+export function deleteExam(id: number): Promise<{ success: boolean }> {
+  return call<{ success: boolean }>(`/api/exams/${id}`, { method: "DELETE" });
+}
+
 export interface AppConfig {
   schedules: string[];
   year_presets: string[];
