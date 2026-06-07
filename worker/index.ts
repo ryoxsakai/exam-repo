@@ -48,12 +48,16 @@ export default {
         const yearRow = await env.DB.prepare(
           "SELECT value FROM config WHERE key = 'year_presets'"
         ).first<{ value: string }>();
+        const titleRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'site_title'"
+        ).first<{ value: string }>();
         const curYear = new Date().getFullYear();
         const defaultSchedules = ["前期","後期","一般前期","一般後期","推薦","AO","その他"];
         const defaultYears = Array.from({ length: 8 }, (_, i) => String(curYear - i));
         return json({
           schedules:    schedRow ? JSON.parse(schedRow.value)  : defaultSchedules,
           year_presets: yearRow  ? JSON.parse(yearRow.value)   : defaultYears,
+          site_title:   titleRow ? JSON.parse(titleRow.value)  : undefined,
         }, 200, origin);
       }
 
@@ -62,7 +66,7 @@ export default {
         await env.DB.exec(
           "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         );
-        type ConfigBody = { schedules?: string[]; year_presets?: string[] };
+        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string };
         const body = await request.json<ConfigBody>();
         const upsert = async (key: string, val: unknown) => {
           await env.DB.prepare(
@@ -71,6 +75,7 @@ export default {
         };
         if (body.schedules    !== undefined) await upsert("schedules",    body.schedules);
         if (body.year_presets !== undefined) await upsert("year_presets", body.year_presets);
+        if (body.site_title   !== undefined) await upsert("site_title",   body.site_title);
         return json({ success: true }, 200, origin);
       }
 
@@ -151,6 +156,47 @@ export default {
         }
 
         return json({ exam: { ...exam, university_name: universityName }, questions: createdQuestions }, 201, origin);
+      }
+
+      // ── PUT /api/exams/:id ────────────────────────────────────────
+      const putExamMatch = path.match(/^\/api\/exams\/(\d+)$/);
+      if (putExamMatch && request.method === "PUT") {
+        const examId = Number(putExamMatch[1]);
+        type QBody = { questionNumber: number; problemText: string; answerText: string; commentaryText: string };
+        type PutBody = { universityName?: string; year?: number; schedule?: string; questions?: QBody[] };
+        const body = await request.json<PutBody>();
+
+        const existing = await env.DB.prepare("SELECT university_id FROM exams WHERE id = ?")
+          .bind(examId).first<{ university_id: number }>();
+        if (!existing) return json({ error: "Exam not found" }, 404, origin);
+
+        if (body.universityName) {
+          let uni = await env.DB.prepare("SELECT id FROM universities WHERE name = ?")
+            .bind(body.universityName).first<{ id: number }>();
+          if (!uni) uni = await env.DB.prepare(
+            "INSERT INTO universities (name) VALUES (?) RETURNING id"
+          ).bind(body.universityName).first<{ id: number }>();
+          if (uni) await env.DB.prepare("UPDATE exams SET university_id = ? WHERE id = ?")
+            .bind(uni.id, examId).run();
+        }
+        if (body.year !== undefined)
+          await env.DB.prepare("UPDATE exams SET year = ? WHERE id = ?").bind(body.year, examId).run();
+        if (body.schedule !== undefined)
+          await env.DB.prepare("UPDATE exams SET schedule = ? WHERE id = ?").bind(body.schedule, examId).run();
+
+        if (body.questions !== undefined) {
+          await env.DB.prepare("DELETE FROM questions WHERE exam_id = ?").bind(examId).run();
+          for (const q of body.questions) {
+            await env.DB.prepare(
+              "INSERT INTO questions (exam_id, question_number, problem_text, answer_text, commentary_text) VALUES (?, ?, ?, ?, ?)"
+            ).bind(examId, q.questionNumber, q.problemText || "", q.answerText || "", q.commentaryText || "").run();
+          }
+        }
+
+        const updated = await env.DB.prepare(
+          "SELECT e.id, e.year, e.schedule, u.name AS university_name FROM exams e JOIN universities u ON e.university_id = u.id WHERE e.id = ?"
+        ).bind(examId).first();
+        return json({ exam: updated }, 200, origin);
       }
 
       // ── GET /api/exams/:id ─────────────────────────────────────────

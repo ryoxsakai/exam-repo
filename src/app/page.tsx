@@ -5,7 +5,7 @@ import Link from "next/link";
 import SearchBar, { SearchParams } from "@/components/SearchBar";
 import ExamCard, { ExamCardData } from "@/components/ExamCard";
 import ExamViewer, { ExamViewerData } from "@/components/ExamViewer";
-import { searchExams, getExam, type SearchResult } from "@/lib/api";
+import { searchExams, getExam, getConfig, type SearchResult } from "@/lib/api";
 
 type SortMode = "frequency" | "year";
 
@@ -32,6 +32,10 @@ export default function Home() {
   const [searchWord, setSearchWord] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("frequency");
   const [hasSearched, setHasSearched] = useState(false);
+  const [siteTitle, setSiteTitle] = useState(() => {
+    if (typeof window === "undefined") return "医学部入試問題データベース";
+    return localStorage.getItem("cf_site_title") || "医学部入試問題データベース";
+  });
 
   const handleSearch = useCallback(async (params: SearchParams) => {
     setLoading(true);
@@ -60,6 +64,12 @@ export default function Home() {
   // Initial load
   useEffect(() => {
     handleSearch({ universityName: "", year: "", schedule: "", word: "" });
+    getConfig().then((cfg) => {
+      if (cfg.site_title) {
+        setSiteTitle(cfg.site_title);
+        try { localStorage.setItem("cf_site_title", cfg.site_title); } catch { /* ignore */ }
+      }
+    }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -101,25 +111,9 @@ export default function Home() {
       {/* Hero Header */}
       <header className="bg-gradient-to-r from-[#1e3a5f] via-[#6b46c1] to-[#0891b2] shadow-xl no-print">
         <div className="max-w-6xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-4">
-              <div className="bg-white/15 rounded-xl p-3">
-                <i className="fa-solid fa-graduation-cap text-white text-2xl" />
-              </div>
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-800 text-white tracking-tight leading-tight">
-                  医学部入試問題データベース
-                </h1>
-                <p className="text-blue-200 text-sm mt-0.5 font-400">
-                  Medical School Entrance Exam Database
-                </p>
-              </div>
-            </div>
-            <Link href="/admin" className="flex items-center gap-1.5 text-white/70 hover:text-white text-xs transition">
-              <i className="fa-solid fa-gear" />
-              管理
-            </Link>
-          </div>
+          <h1 className="text-2xl sm:text-3xl font-800 text-white tracking-tight leading-tight">
+            {siteTitle}
+          </h1>
         </div>
       </header>
 

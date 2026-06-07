@@ -101,6 +101,7 @@ export function deleteUniversity(id: number): Promise<{ success: boolean }> {
 export interface AppConfig {
   schedules: string[];
   year_presets: string[];
+  site_title?: string;
 }
 
 export function getConfig(): Promise<AppConfig> {
@@ -109,6 +110,23 @@ export function getConfig(): Promise<AppConfig> {
 
 export function updateConfig(data: Partial<AppConfig>): Promise<{ success: boolean }> {
   return call<{ success: boolean }>("/api/config", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateExam(examId: number, data: {
+  universityName?: string;
+  year?: number;
+  schedule?: string;
+  questions?: Array<{
+    questionNumber: number;
+    problemText: string;
+    answerText: string;
+    commentaryText: string;
+  }>;
+}): Promise<{ exam: ExamDetail }> {
+  return call<{ exam: ExamDetail }>(`/api/exams/${examId}`, {
     method: "PUT",
     body: JSON.stringify(data),
   });
