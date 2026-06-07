@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { getConfig } from "@/lib/api";
 
 interface SearchBarProps {
   onSearch: (params: SearchParams) => void;
@@ -14,7 +15,8 @@ export interface SearchParams {
   word: string;
 }
 
-const SCHEDULE_OPTIONS = ["", "前期", "後期", "推薦", "AO", "その他"];
+export const DEFAULT_SCHEDULES = ["前期", "後期", "一般前期", "一般後期", "推薦", "AO", "その他"];
+
 const CURRENT_YEAR = new Date().getFullYear();
 const YEAR_OPTIONS = ["", ...Array.from({ length: 30 }, (_, i) => String(CURRENT_YEAR - i))];
 
@@ -25,6 +27,13 @@ export default function SearchBar({ onSearch, loading }: SearchBarProps) {
     schedule: "",
     word: "",
   });
+  const [scheduleOptions, setScheduleOptions] = useState<string[]>(DEFAULT_SCHEDULES);
+
+  useEffect(() => {
+    getConfig()
+      .then((cfg) => setScheduleOptions(cfg.schedules))
+      .catch(() => { /* keep defaults if Worker not configured */ });
+  }, []);
 
   const handleChange = (field: keyof SearchParams, value: string) => {
     setParams((prev) => ({ ...prev, [field]: value }));
@@ -56,15 +65,13 @@ export default function SearchBar({ onSearch, loading }: SearchBarProps) {
             <i className="fa-solid fa-university mr-1 text-[#1e3a5f]" />
             大学名
           </label>
-          <div className="relative">
-            <input
-              type="text"
-              value={params.universityName}
-              onChange={(e) => handleChange("universityName", e.target.value)}
-              placeholder="例: 東京大学"
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent transition"
-            />
-          </div>
+          <input
+            type="text"
+            value={params.universityName}
+            onChange={(e) => handleChange("universityName", e.target.value)}
+            placeholder="例: 東京大学"
+            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent transition"
+          />
         </div>
 
         {/* Year */}
@@ -80,9 +87,7 @@ export default function SearchBar({ onSearch, loading }: SearchBarProps) {
           >
             <option value="">すべての年度</option>
             {YEAR_OPTIONS.filter((y) => y !== "").map((y) => (
-              <option key={y} value={y}>
-                {y}年
-              </option>
+              <option key={y} value={y}>{y}年</option>
             ))}
           </select>
         </div>
@@ -98,10 +103,9 @@ export default function SearchBar({ onSearch, loading }: SearchBarProps) {
             onChange={(e) => handleChange("schedule", e.target.value)}
             className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent transition"
           >
-            {SCHEDULE_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s === "" ? "すべての区分" : s}
-              </option>
+            <option value="">すべての区分</option>
+            {scheduleOptions.map((s) => (
+              <option key={s} value={s}>{s}</option>
             ))}
           </select>
         </div>
@@ -142,7 +146,7 @@ export default function SearchBar({ onSearch, loading }: SearchBarProps) {
           ) : (
             <i className="fa-solid fa-search" />
           )}
-          検索する
+          検索
         </button>
 
         {hasFilters && (

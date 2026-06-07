@@ -94,6 +94,26 @@ export function getUniversities(): Promise<{ universities: Array<{ id: number; n
   return call<{ universities: Array<{ id: number; name: string }> }>("/api/universities");
 }
 
+export function deleteUniversity(id: number): Promise<{ success: boolean }> {
+  return call<{ success: boolean }>(`/api/universities/${id}`, { method: "DELETE" });
+}
+
+export interface AppConfig {
+  schedules: string[];
+  year_presets: string[];
+}
+
+export function getConfig(): Promise<AppConfig> {
+  return call<AppConfig>("/api/config");
+}
+
+export function updateConfig(data: Partial<AppConfig>): Promise<{ success: boolean }> {
+  return call<{ success: boolean }>("/api/config", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
 export function testConnection(): Promise<{ universities: Array<{ id: number; name: string }> }> {
   return getUniversities();
 }

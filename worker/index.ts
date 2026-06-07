@@ -37,6 +37,60 @@ export default {
         return json({ universities: results }, 200, origin);
       }
 
+      // ── GET /api/config ───────────────────────────────────────────
+      if (path === "/api/config" && request.method === "GET") {
+        await env.DB.exec(
+          "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        );
+        const schedRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'schedules'"
+        ).first<{ value: string }>();
+        const yearRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'year_presets'"
+        ).first<{ value: string }>();
+        const curYear = new Date().getFullYear();
+        const defaultSchedules = ["前期","後期","一般前期","一般後期","推薦","AO","その他"];
+        const defaultYears = Array.from({ length: 8 }, (_, i) => String(curYear - i));
+        return json({
+          schedules:    schedRow ? JSON.parse(schedRow.value)  : defaultSchedules,
+          year_presets: yearRow  ? JSON.parse(yearRow.value)   : defaultYears,
+        }, 200, origin);
+      }
+
+      // ── PUT /api/config ────────────────────────────────────────────
+      if (path === "/api/config" && request.method === "PUT") {
+        await env.DB.exec(
+          "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        );
+        type ConfigBody = { schedules?: string[]; year_presets?: string[] };
+        const body = await request.json<ConfigBody>();
+        const upsert = async (key: string, val: unknown) => {
+          await env.DB.prepare(
+            "INSERT INTO config (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+          ).bind(key, JSON.stringify(val)).run();
+        };
+        if (body.schedules    !== undefined) await upsert("schedules",    body.schedules);
+        if (body.year_presets !== undefined) await upsert("year_presets", body.year_presets);
+        return json({ success: true }, 200, origin);
+      }
+
+      // ── DELETE /api/universities/:id ───────────────────────────────
+      const delUniMatch = path.match(/^\/api\/universities\/(\d+)$/);
+      if (delUniMatch && request.method === "DELETE") {
+        const uniId = Number(delUniMatch[1]);
+        const row = await env.DB.prepare(
+          "SELECT COUNT(*) AS cnt FROM exams WHERE university_id = ?"
+        ).bind(uniId).first<{ cnt: number }>();
+        if (row && row.cnt > 0) {
+          return json(
+            { error: `試験が ${row.cnt} 件登録されています。先に試験を削除してください。` },
+            400, origin
+          );
+        }
+        await env.DB.prepare("DELETE FROM universities WHERE id = ?").bind(uniId).run();
+        return json({ success: true }, 200, origin);
+      }
+
       // ── GET /api/exams ─────────────────────────────────────────────
       if (path === "/api/exams" && request.method === "GET") {
         const uname = url.searchParams.get("universityName");

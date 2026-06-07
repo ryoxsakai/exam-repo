@@ -2,7 +2,10 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { createExam, getUniversities } from "@/lib/api";
+import { createExam, getUniversities, deleteUniversity, getConfig, updateConfig } from "@/lib/api";
+import { DEFAULT_SCHEDULES } from "@/components/SearchBar";
+
+// ── Types ──────────────────────────────────────────────────────────
 
 interface QuestionField {
   id: string;
@@ -12,28 +15,92 @@ interface QuestionField {
   commentaryText: string;
 }
 
+// ── Constants & utilities ──────────────────────────────────────────
+
+const CURRENT_YEAR = new Date().getFullYear();
+const DEFAULT_YEAR_PRESETS = Array.from({ length: 8 }, (_, i) => String(CURRENT_YEAR - i));
+
 function genId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const SCHEDULES = ["前期", "後期", "一般前期", "一般後期", "推薦", "AO", "その他"];
-const CURRENT_YEAR = new Date().getFullYear();
-const RECENT_YEARS = Array.from({ length: 8 }, (_, i) => CURRENT_YEAR - i);
+// Markup toolbar button definitions
+const TOOLBAR_BUTTONS = [
+  { label: "空所",  title: "空所 [[1]]",           before: "[[",    after: "]]",    ph: "1"    },
+  { label: "下線",  title: "下線 __text__",         before: "__",    after: "__",    ph: "text" },
+  { label: "HL",    title: "ハイライト ==text==",    before: "==",    after: "==",    ph: "text" },
+  { label: "問",    title: "問題番号バッジ {{問1}}", before: "{{問",  after: "}}",    ph: "1"    },
+  { label: "選択肢",title: "選択肢 ((A))",          before: "((",    after: ")) ",   ph: "A"    },
+  { label: "脚注",  title: "脚注 ##word::訳##",     before: "##",    after: "::##",  ph: "word" },
+  { label: "下付",  title: "下付き文字 ~~2~~",      before: "~~",    after: "~~",    ph: "2"    },
+  { label: "上付",  title: "上付き文字 ^^st^^",     before: "^^",    after: "^^",    ph: "st"   },
+  { label: "──",   title: "水平線 ----",            before: "\n----\n", after: "",   ph: ""     },
+] as const;
 
-const MARKUP_ITEMS: [string, string][] = [
+const MARKUP_REFERENCE = [
   ["[[1]] / [[A]]", "番号付きブランクバッジ"],
-  ["__text__", "下線"],
-  ["~~2~~", "下付き文字 (H₂O)"],
-  ["^^st^^", "上付き文字 (1ˢᵗ)"],
-  ["==text==", "黄色ハイライト"],
+  ["__text__",      "下線"],
+  ["~~2~~",         "下付き文字 (H₂O)"],
+  ["^^st^^",        "上付き文字 (1ˢᵗ)"],
+  ["==text==",      "黄色ハイライト"],
   ["==text==:blue", "カラーハイライト (blue/red/purple/pink/green/aqua)"],
-  ["{{問1}}", "問題番号バッジ（区切り線付き）"],
-  ["((A)) text", "選択肢（自動インデント）"],
-  ["##word::訳##", "脚注（自動番号付き）"],
-  ["----", "スタイル付き水平線"],
-];
+  ["{{問1}}",       "問題番号バッジ（区切り線付き）"],
+  ["((A)) text",    "選択肢（自動インデント）"],
+  ["##word::訳##",  "脚注（自動番号付き）"],
+  ["----",          "スタイル付き水平線"],
+] as const;
 
-// ── Generic edit modal ─────────────────────────────────────────────
+// ── MarkupToolbar ──────────────────────────────────────────────────
+
+interface MarkupToolbarProps {
+  taRef: React.RefObject<HTMLTextAreaElement>;
+  value: string;
+  onChange: (v: string) => void;
+  onShowReference: () => void;
+}
+
+function MarkupToolbar({ taRef, value, onChange, onShowReference }: MarkupToolbarProps) {
+  const insert = (before: string, after: string, ph: string) => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const s = ta.selectionStart;
+    const e = ta.selectionEnd;
+    const sel = value.substring(s, e);
+    const inner = sel || ph;
+    const newVal = value.slice(0, s) + before + inner + after + value.slice(e);
+    onChange(newVal);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.setSelectionRange(s + before.length, s + before.length + inner.length);
+    });
+  };
+
+  return (
+    <div className="flex items-center gap-1 flex-wrap mb-1.5">
+      {TOOLBAR_BUTTONS.map((btn) => (
+        <button
+          key={btn.label}
+          type="button"
+          title={btn.title}
+          onClick={() => insert(btn.before, btn.after, btn.ph)}
+          className="px-2 py-0.5 rounded border border-slate-200 bg-slate-50 text-[11px] font-600 text-slate-600 hover:border-[#6b46c1]/50 hover:text-[#6b46c1] hover:bg-purple-50 transition font-mono"
+        >
+          {btn.label}
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={onShowReference}
+        className="ml-auto flex items-center gap-1 text-[11px] text-[#6b46c1] hover:text-[#1e3a5f] font-600 transition"
+      >
+        <i className="fa-solid fa-circle-question text-[10px]" />
+        記法一覧
+      </button>
+    </div>
+  );
+}
+
+// ── EditModal ──────────────────────────────────────────────────────
 
 interface EditModalProps {
   title: string;
@@ -61,21 +128,14 @@ function EditModal({
   const commit = () => { if (draft.trim()) onSave(draft.trim()); };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h3 className="text-base font-700 text-[#1e3a5f]">{title}</h3>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
             <i className="fa-solid fa-xmark" />
           </button>
         </div>
-
         <input
           ref={inputRef}
           type={type}
@@ -83,22 +143,19 @@ function EditModal({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") onClose(); }}
-          className="w-full rounded-xl border-2 border-[#6b46c1]/30 bg-slate-50 px-4 py-3 text-base font-600 text-[#1e3a5f] focus:outline-none focus:ring-0 focus:border-[#6b46c1]"
+          className="w-full rounded-xl border-2 border-[#6b46c1]/30 bg-slate-50 px-4 py-3 text-base font-600 text-[#1e3a5f] focus:outline-none focus:border-[#6b46c1]"
         />
-
         {suggestions && (
           <div>
-            {suggestionLabel && (
-              <p className="text-xs text-slate-400 mb-2">{suggestionLabel}</p>
-            )}
+            {suggestionLabel && <p className="text-xs text-slate-400 mb-2">{suggestionLabel}</p>}
             <div className="flex flex-wrap gap-1.5">
               {suggestions.map((s) => (
                 <button
                   key={s}
                   type="button"
-                  onClick={() => setDraft(String(s))}
+                  onClick={() => setDraft(s)}
                   className={`px-3 py-1 rounded-full text-xs font-600 border transition ${
-                    draft === String(s)
+                    draft === s
                       ? "bg-[#6b46c1] text-white border-[#6b46c1]"
                       : "bg-white text-slate-600 border-slate-200 hover:border-[#6b46c1]/50 hover:text-[#6b46c1]"
                   }`}
@@ -109,23 +166,14 @@ function EditModal({
             </div>
           </div>
         )}
-
         <div className="flex gap-2 pt-1">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-600 hover:bg-slate-50 transition"
-          >
+          <button type="button" onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-600 hover:bg-slate-50 transition">
             キャンセル
           </button>
-          <button
-            type="button"
-            onClick={commit}
-            disabled={!draft.trim()}
-            className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#1e3a5f] to-[#6b46c1] text-white text-sm font-700 hover:opacity-90 transition disabled:opacity-40"
-          >
-            <i className="fa-solid fa-check mr-1.5" />
-            保存
+          <button type="button" onClick={commit} disabled={!draft.trim()}
+            className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#1e3a5f] to-[#6b46c1] text-white text-sm font-700 hover:opacity-90 transition disabled:opacity-40">
+            <i className="fa-solid fa-check mr-1.5" />保存
           </button>
         </div>
       </div>
@@ -133,18 +181,12 @@ function EditModal({
   );
 }
 
-// ── Markup reference modal ─────────────────────────────────────────
+// ── MarkupReferenceModal ───────────────────────────────────────────
 
-function MarkupModal({ onClose }: { onClose: () => void }) {
+function MarkupReferenceModal({ onClose }: { onClose: () => void }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 max-h-[80vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h3 className="text-base font-700 text-[#1e3a5f] flex items-center gap-2">
             <i className="fa-solid fa-code text-[#6b46c1]" />
@@ -155,7 +197,7 @@ function MarkupModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="space-y-1">
-          {MARKUP_ITEMS.map(([syntax, desc]) => (
+          {MARKUP_REFERENCE.map(([syntax, desc]) => (
             <div key={syntax} className="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0">
               <code className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-[#6b46c1] font-mono text-xs shrink-0 w-40">
                 {syntax}
@@ -164,11 +206,8 @@ function MarkupModal({ onClose }: { onClose: () => void }) {
             </div>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-600 hover:bg-slate-50 transition"
-        >
+        <button type="button" onClick={onClose}
+          className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-600 hover:bg-slate-50 transition">
           閉じる
         </button>
       </div>
@@ -176,16 +215,9 @@ function MarkupModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ── EditableField: value chip + gear icon ──────────────────────────
+// ── EditableField ──────────────────────────────────────────────────
 
-interface EditableFieldProps {
-  label: string;
-  value: string;
-  onEdit: () => void;
-  suffix?: string;
-}
-
-function EditableField({ label, value, onEdit, suffix }: EditableFieldProps) {
+function EditableField({ label, value, onEdit, suffix }: { label: string; value: string; onEdit: () => void; suffix?: string }) {
   return (
     <div>
       <label className="block text-xs font-600 text-slate-500 uppercase tracking-wide mb-1">
@@ -208,21 +240,69 @@ function EditableField({ label, value, onEdit, suffix }: EditableFieldProps) {
   );
 }
 
-// ── Main page ──────────────────────────────────────────────────────
+// ── AdminPage ──────────────────────────────────────────────────────
 
 export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState<"form" | "config">("form");
+  const [activeTab, setActiveTab] = useState<"form" | "manage" | "config">("form");
 
-  // Config
+  // ── Config state ──
   const [workerUrl, setWorkerUrl] = useState("");
   const [configSaved, setConfigSaved] = useState(false);
   const [testingConn, setTestingConn] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
+  // ── Manage state ──
+  const [universities, setUniversities] = useState<Array<{ id: number; name: string }>>([]);
+  const [uniDeleting, setUniDeleting] = useState<Set<number>>(new Set());
+  const [scheduleOptions, setScheduleOptions] = useState<string[]>(DEFAULT_SCHEDULES);
+  const [yearPresets, setYearPresets] = useState<string[]>(DEFAULT_YEAR_PRESETS);
+  const [newSchedule, setNewSchedule] = useState("");
+  const [newYear, setNewYear] = useState("");
+
+  // ── Form state ──
+  const [universityName, setUniversityName] = useState("");
+  const [year, setYear] = useState(String(CURRENT_YEAR));
+  const [schedule, setSchedule] = useState("");
+  const [questions, setQuestions] = useState<QuestionField[]>([
+    { id: genId(), questionNumber: 1, problemText: "", answerText: "", commentaryText: "" },
+  ]);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+
+  // ── Modal state ──
+  const [modal, setModal] = useState<"year" | "schedule" | "university" | null>(null);
+  const [showMarkupRef, setShowMarkupRef] = useState(false);
+
+  // ── Init ──
   useEffect(() => {
     try { setWorkerUrl(localStorage.getItem("cf_worker_url") || ""); } catch { /* ignore */ }
   }, []);
 
+  // Set default schedule once scheduleOptions load
+  useEffect(() => {
+    if (!schedule && scheduleOptions.length > 0) setSchedule(scheduleOptions[0]);
+  }, [scheduleOptions, schedule]);
+
+  const loadRemote = useCallback(async () => {
+    try {
+      const [uniData, cfg] = await Promise.all([getUniversities(), getConfig()]);
+      setUniversities(uniData.universities);
+      setScheduleOptions(cfg.schedules);
+      setYearPresets(cfg.year_presets);
+    } catch { /* ignore — Worker URL may not be set yet */ }
+  }, []);
+
+  const loadUniversities = useCallback(async () => {
+    try {
+      const data = await getUniversities();
+      setUniversities(data.universities);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { loadRemote(); }, [loadRemote]);
+
+  // ── Config actions ──
   const saveConfig = useCallback(() => {
     try {
       const url = workerUrl.replace(/\/$/, "");
@@ -237,40 +317,58 @@ export default function AdminPage() {
     setTestingConn(true);
     setTestResult(null);
     try {
-      await getUniversities();
+      await loadRemote();
       setTestResult({ ok: true, msg: "接続成功！Worker は正常に動作しています。" });
     } catch (err) {
       setTestResult({ ok: false, msg: String(err) });
     } finally { setTestingConn(false); }
   };
 
-  // Exam form
-  const [universities, setUniversities] = useState<string[]>([]);
-  const [universityName, setUniversityName] = useState("");
-  const [year, setYear] = useState(String(CURRENT_YEAR));
-  const [schedule, setSchedule] = useState("前期");
-  const [questions, setQuestions] = useState<QuestionField[]>([
-    { id: genId(), questionNumber: 1, problemText: "", answerText: "", commentaryText: "" },
-  ]);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitSuccess, setSubmitSuccess] = useState(false);
-
-  const [modal, setModal] = useState<"year" | "schedule" | "university" | null>(null);
-
-  const loadUniversities = useCallback(async () => {
+  // ── Manage actions ──
+  const handleDeleteUniversity = async (u: { id: number; name: string }) => {
+    if (!window.confirm(`「${u.name}」を削除しますか？`)) return;
+    setUniDeleting((prev) => new Set(prev).add(u.id));
     try {
-      const data = await getUniversities();
-      setUniversities(data.universities.map((u) => u.name));
-    } catch {
-      // Silently ignore — Worker URL may not be configured yet
+      await deleteUniversity(u.id);
+      await loadUniversities();
+    } catch (err) {
+      alert(String(err));
+    } finally {
+      setUniDeleting((prev) => { const s = new Set(prev); s.delete(u.id); return s; });
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    loadUniversities();
-  }, [loadUniversities]);
+  const addSchedule = async () => {
+    const v = newSchedule.trim();
+    if (!v || scheduleOptions.includes(v)) return;
+    const updated = [...scheduleOptions, v];
+    setScheduleOptions(updated);
+    setNewSchedule("");
+    try { await updateConfig({ schedules: updated }); } catch { /* ignore */ }
+  };
 
+  const removeSchedule = async (s: string) => {
+    const updated = scheduleOptions.filter((o) => o !== s);
+    setScheduleOptions(updated);
+    try { await updateConfig({ schedules: updated }); } catch { /* ignore */ }
+  };
+
+  const addYear = async () => {
+    const v = newYear.trim();
+    if (!v || isNaN(Number(v)) || yearPresets.includes(v)) return;
+    const updated = [...yearPresets, v].sort((a, b) => Number(b) - Number(a));
+    setYearPresets(updated);
+    setNewYear("");
+    try { await updateConfig({ year_presets: updated }); } catch { /* ignore */ }
+  };
+
+  const removeYear = async (y: string) => {
+    const updated = yearPresets.filter((p) => p !== y);
+    setYearPresets(updated);
+    try { await updateConfig({ year_presets: updated }); } catch { /* ignore */ }
+  };
+
+  // ── Form actions ──
   const addQuestion = () =>
     setQuestions((prev) => [
       ...prev,
@@ -310,7 +408,7 @@ export default function AdminPage() {
       await createExam({
         universityName: universityName.trim(),
         year: Number(year),
-        schedule,
+        schedule: schedule || scheduleOptions[0] || "前期",
         questions: questions
           .filter((q) => q.problemText.trim())
           .map((q) => ({
@@ -323,7 +421,7 @@ export default function AdminPage() {
       setSubmitSuccess(true);
       setUniversityName("");
       setYear(String(CURRENT_YEAR));
-      setSchedule("前期");
+      setSchedule(scheduleOptions[0] || "前期");
       setQuestions([{ id: genId(), questionNumber: 1, problemText: "", answerText: "", commentaryText: "" }]);
       await loadUniversities();
       setTimeout(() => setSubmitSuccess(false), 5000);
@@ -331,6 +429,30 @@ export default function AdminPage() {
       setSubmitError(String(err));
     } finally { setSubmitting(false); }
   };
+
+  // ── Shared input row style ──
+  const addInputRow = (
+    value: string, onChange: (v: string) => void,
+    onAdd: () => void, placeholder: string, type = "text"
+  ) => (
+    <div className="flex gap-2 mt-2">
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onAdd(); } }}
+        placeholder={placeholder}
+        className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent"
+      />
+      <button
+        type="button"
+        onClick={onAdd}
+        className="px-4 py-2 rounded-lg bg-[#6b46c1] text-white text-sm font-600 hover:bg-[#5a389f] transition"
+      >
+        追加
+      </button>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -358,7 +480,11 @@ export default function AdminPage() {
       <main className="max-w-4xl mx-auto px-4 py-8">
         {/* Tab nav */}
         <div className="flex gap-2 mb-6">
-          {(["form", "config"] as const).map((tab) => (
+          {([
+            ["form",   "fa-plus-circle", "問題登録"],
+            ["manage", "fa-database",    "管理"],
+            ["config", "fa-plug",        "設定"],
+          ] as const).map(([tab, icon, label]) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -368,8 +494,8 @@ export default function AdminPage() {
                   : "text-slate-500 hover:text-slate-700"
               }`}
             >
-              <i className={`fa-solid ${tab === "form" ? "fa-plus-circle" : "fa-plug"}`} />
-              {tab === "form" ? "問題登録" : "設定"}
+              <i className={`fa-solid ${icon}`} />
+              {label}
             </button>
           ))}
         </div>
@@ -425,6 +551,109 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* ── Manage tab ── */}
+        {activeTab === "manage" && (
+          <div className="space-y-6">
+            {/* University management */}
+            <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6">
+              <h2 className="text-base font-700 text-[#1e3a5f] flex items-center gap-2 mb-1">
+                <i className="fa-solid fa-university text-[#6b46c1]" />
+                大学管理
+              </h2>
+              <p className="text-xs text-slate-400 mb-4">
+                大学は試験登録時に自動追加されます。試験のない大学のみ削除できます。
+              </p>
+              {universities.length === 0 ? (
+                <p className="text-sm text-slate-400 italic py-4 text-center">
+                  <i className="fa-solid fa-circle-info mr-1" />
+                  {workerUrl ? "登録された大学はありません" : "設定タブで Worker URL を設定してください"}
+                </p>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {universities.map((u) => (
+                    <li key={u.id} className="flex items-center justify-between py-2.5">
+                      <span className="text-sm font-600 text-slate-700">{u.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteUniversity(u)}
+                        disabled={uniDeleting.has(u.id)}
+                        className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500 transition disabled:opacity-40"
+                      >
+                        {uniDeleting.has(u.id)
+                          ? <i className="fa-solid fa-spinner fa-spin" />
+                          : <i className="fa-solid fa-trash-can" />}
+                        削除
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button
+                type="button"
+                onClick={loadUniversities}
+                className="mt-3 flex items-center gap-1.5 text-xs text-[#6b46c1] hover:text-[#1e3a5f] transition"
+              >
+                <i className="fa-solid fa-rotate-right" />
+                再読み込み
+              </button>
+            </div>
+
+            {/* Schedule options management */}
+            <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6">
+              <h2 className="text-base font-700 text-[#1e3a5f] flex items-center gap-2 mb-1">
+                <i className="fa-solid fa-tags text-[#059669]" />
+                試験区分
+              </h2>
+              <p className="text-xs text-slate-400 mb-4">ブラウザに保存。公開ページの絞り込みにも反映されます。</p>
+              <div className="flex flex-wrap gap-2">
+                {scheduleOptions.map((s) => (
+                  <span
+                    key={s}
+                    className="flex items-center gap-1 pl-3 pr-2 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 font-600"
+                  >
+                    {s}
+                    <button
+                      type="button"
+                      onClick={() => removeSchedule(s)}
+                      className="text-emerald-400 hover:text-red-500 transition ml-0.5"
+                    >
+                      <i className="fa-solid fa-xmark text-xs" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              {addInputRow(newSchedule, setNewSchedule, addSchedule, "新しい区分を入力…")}
+            </div>
+
+            {/* Year presets management */}
+            <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6">
+              <h2 className="text-base font-700 text-[#1e3a5f] flex items-center gap-2 mb-1">
+                <i className="fa-solid fa-calendar text-[#0891b2]" />
+                年度プリセット
+              </h2>
+              <p className="text-xs text-slate-400 mb-4">登録フォームの年度モーダルに表示されるクイック選択の候補です。</p>
+              <div className="flex flex-wrap gap-2">
+                {yearPresets.map((y) => (
+                  <span
+                    key={y}
+                    className="flex items-center gap-1 pl-3 pr-2 py-1 rounded-full bg-sky-50 border border-sky-200 text-sm text-sky-800 font-600"
+                  >
+                    {y}年
+                    <button
+                      type="button"
+                      onClick={() => removeYear(y)}
+                      className="text-sky-400 hover:text-red-500 transition ml-0.5"
+                    >
+                      <i className="fa-solid fa-xmark text-xs" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              {addInputRow(newYear, setNewYear, addYear, "例: 2010", "number")}
+            </div>
+          </div>
+        )}
+
         {/* ── Form tab ── */}
         {activeTab === "form" && (
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -447,11 +676,11 @@ export default function AdminPage() {
                       className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent"
                     >
                       <option value="">選択または追加 ↓</option>
-                      {universityName && !universities.includes(universityName) && (
+                      {universityName && !universities.some(u => u.name === universityName) && (
                         <option value={universityName}>{universityName}</option>
                       )}
                       {universities.map((u) => (
-                        <option key={u} value={u}>{u}</option>
+                        <option key={u.id} value={u.name}>{u.name}</option>
                       ))}
                     </select>
                     <button
@@ -465,7 +694,7 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Year — editable via modal */}
+                {/* Year */}
                 <EditableField
                   label="年度"
                   value={year}
@@ -473,7 +702,7 @@ export default function AdminPage() {
                   onEdit={() => setModal("year")}
                 />
 
-                {/* Schedule — editable via modal */}
+                {/* Schedule */}
                 <EditableField
                   label="試験区分"
                   value={schedule}
@@ -494,6 +723,7 @@ export default function AdminPage() {
                   onRemove={() => removeQuestion(q.id)}
                   onMoveUp={idx > 0 ? () => moveQuestion(q.id, "up") : undefined}
                   onMoveDown={idx < questions.length - 1 ? () => moveQuestion(q.id, "down") : undefined}
+                  onShowMarkupRef={() => setShowMarkupRef(true)}
                 />
               ))}
             </div>
@@ -551,7 +781,7 @@ export default function AdminPage() {
           value={year}
           type="number"
           inputMode="numeric"
-          suggestions={RECENT_YEARS.map(String)}
+          suggestions={yearPresets}
           suggestionLabel="クイック選択"
           onClose={() => setModal(null)}
           onSave={(v) => { setYear(v); setModal(null); }}
@@ -561,8 +791,8 @@ export default function AdminPage() {
         <EditModal
           title="試験区分を編集"
           value={schedule}
-          suggestions={SCHEDULES}
-          suggestionLabel="よく使う区分"
+          suggestions={scheduleOptions}
+          suggestionLabel="登録済みの区分"
           onClose={() => setModal(null)}
           onSave={(v) => { setSchedule(v); setModal(null); }}
         />
@@ -571,21 +801,24 @@ export default function AdminPage() {
         <EditModal
           title="大学名を入力"
           value={universityName}
-          suggestions={universities.length > 0 ? universities : undefined}
+          suggestions={universities.length > 0 ? universities.map(u => u.name) : undefined}
           suggestionLabel={universities.length > 0 ? "登録済みの大学" : undefined}
           onClose={() => setModal(null)}
           onSave={(v) => {
             setUniversityName(v);
-            if (!universities.includes(v)) setUniversities((prev) => [...prev, v].sort());
+            if (!universities.some(u => u.name === v)) {
+              setUniversities((prev) => [...prev, { id: -Date.now(), name: v }].sort((a, b) => a.name.localeCompare(b.name)));
+            }
             setModal(null);
           }}
         />
       )}
+      {showMarkupRef && <MarkupReferenceModal onClose={() => setShowMarkupRef(false)} />}
     </div>
   );
 }
 
-// ── Question block ─────────────────────────────────────────────────
+// ── QuestionBlock ──────────────────────────────────────────────────
 
 interface QuestionBlockProps {
   question: QuestionField;
@@ -595,25 +828,29 @@ interface QuestionBlockProps {
   onRemove: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
+  onShowMarkupRef: () => void;
 }
 
-function QuestionBlock({ question, index, total, onChange, onRemove, onMoveUp, onMoveDown }: QuestionBlockProps) {
+function QuestionBlock({ question, index, total, onChange, onRemove, onMoveUp, onMoveDown, onShowMarkupRef }: QuestionBlockProps) {
   const [collapsed, setCollapsed] = useState(false);
-  const [showMarkup, setShowMarkup] = useState(false);
+  const [showAnswer, setShowAnswer] = useState(false);
+  const [showCommentary, setShowCommentary] = useState(false);
 
-  // suppress unused-var warning
+  const problemRef = useRef<HTMLTextAreaElement>(null);
+  const answerRef = useRef<HTMLTextAreaElement>(null);
+  const commentaryRef = useRef<HTMLTextAreaElement>(null);
+
   void index;
 
   return (
     <div className="bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200 select-none">
-        {/* Left — collapse click area */}
+        {/* Left — collapse area */}
         <div
           className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
           onClick={() => setCollapsed((v) => !v)}
         >
-          {/* Editable question number — stops click from collapsing */}
           <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
             <span className="text-xs font-700 text-slate-500 uppercase tracking-wide">大問</span>
             <input
@@ -638,39 +875,22 @@ function QuestionBlock({ question, index, total, onChange, onRemove, onMoveUp, o
 
         {/* Right — action buttons */}
         <div className="flex items-center gap-0.5 ml-2 flex-shrink-0">
-          <button
-            type="button"
-            onClick={onMoveUp}
-            disabled={!onMoveUp}
-            className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-[#6b46c1] disabled:opacity-20 disabled:cursor-not-allowed transition"
-            title="上に移動"
-          >
+          <button type="button" onClick={onMoveUp} disabled={!onMoveUp}
+            className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-[#6b46c1] disabled:opacity-20 disabled:cursor-not-allowed transition" title="上に移動">
             <i className="fa-solid fa-chevron-up text-xs" />
           </button>
-          <button
-            type="button"
-            onClick={onMoveDown}
-            disabled={!onMoveDown}
-            className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-[#6b46c1] disabled:opacity-20 disabled:cursor-not-allowed transition"
-            title="下に移動"
-          >
+          <button type="button" onClick={onMoveDown} disabled={!onMoveDown}
+            className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-[#6b46c1] disabled:opacity-20 disabled:cursor-not-allowed transition" title="下に移動">
             <i className="fa-solid fa-chevron-down text-xs" />
           </button>
           {total > 1 && (
-            <button
-              type="button"
-              onClick={onRemove}
-              className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-red-500 transition"
-              title="この大問を削除"
-            >
+            <button type="button" onClick={onRemove}
+              className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-red-500 transition" title="削除">
               <i className="fa-solid fa-minus-circle text-sm" />
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => setCollapsed((v) => !v)}
-            className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-slate-600 transition ml-1"
-          >
+          <button type="button" onClick={() => setCollapsed((v) => !v)}
+            className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-slate-600 transition ml-1">
             <i className={`fa-solid fa-chevron-${collapsed ? "down" : "up"} text-xs`} />
           </button>
         </div>
@@ -680,20 +900,17 @@ function QuestionBlock({ question, index, total, onChange, onRemove, onMoveUp, o
         <div className="p-5 space-y-4">
           {/* Problem text */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-600 text-slate-500 uppercase tracking-wide">
-                問題文 <span className="text-red-500">*</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => setShowMarkup(true)}
-                className="flex items-center gap-1 text-xs text-[#6b46c1] hover:text-[#1e3a5f] transition font-600"
-              >
-                <i className="fa-solid fa-code text-[10px]" />
-                記法一覧
-              </button>
-            </div>
+            <label className="block text-xs font-600 text-slate-500 uppercase tracking-wide mb-1.5">
+              問題文 <span className="text-red-500">*</span>
+            </label>
+            <MarkupToolbar
+              taRef={problemRef}
+              value={question.problemText}
+              onChange={(v) => onChange("problemText", v)}
+              onShowReference={onShowMarkupRef}
+            />
             <textarea
+              ref={problemRef}
               value={question.problemText}
               onChange={(e) => onChange("problemText", e.target.value)}
               placeholder={"{{問1}}\n次の英文を読み、設問に答えよ。\n\nThe immune system..."}
@@ -702,39 +919,93 @@ function QuestionBlock({ question, index, total, onChange, onRemove, onMoveUp, o
             />
           </div>
 
+          {/* Progressive add buttons */}
+          {(!showAnswer || !showCommentary) && (
+            <div className="flex gap-2 flex-wrap">
+              {!showAnswer && (
+                <button
+                  type="button"
+                  onClick={() => setShowAnswer(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-emerald-300 text-emerald-600 text-xs font-600 hover:bg-emerald-50 hover:border-emerald-400 transition"
+                >
+                  <i className="fa-solid fa-plus text-[10px]" />
+                  解答を追加
+                </button>
+              )}
+              {!showCommentary && (
+                <button
+                  type="button"
+                  onClick={() => setShowCommentary(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-sky-300 text-sky-600 text-xs font-600 hover:bg-sky-50 hover:border-sky-400 transition"
+                >
+                  <i className="fa-solid fa-plus text-[10px]" />
+                  解説を追加
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Answer */}
-          <div>
-            <label className="block text-xs font-600 text-slate-500 uppercase tracking-wide mb-1.5">
-              <i className="fa-solid fa-check-circle text-emerald-500 mr-1" />
-              解答
-            </label>
-            <textarea
-              value={question.answerText}
-              onChange={(e) => onChange("answerText", e.target.value)}
-              placeholder="解答を入力..."
-              rows={4}
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent resize-y"
-            />
-          </div>
+          {showAnswer && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-600 text-slate-500 uppercase tracking-wide">
+                  <i className="fa-solid fa-check-circle text-emerald-500 mr-1" />
+                  解答
+                </label>
+                <button type="button" onClick={() => setShowAnswer(false)}
+                  className="text-xs text-slate-400 hover:text-slate-600 transition flex items-center gap-1">
+                  <i className="fa-solid fa-xmark" />折りたたむ
+                </button>
+              </div>
+              <MarkupToolbar
+                taRef={answerRef}
+                value={question.answerText}
+                onChange={(v) => onChange("answerText", v)}
+                onShowReference={onShowMarkupRef}
+              />
+              <textarea
+                ref={answerRef}
+                value={question.answerText}
+                onChange={(e) => onChange("answerText", e.target.value)}
+                placeholder="解答を入力..."
+                rows={4}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent resize-y"
+              />
+            </div>
+          )}
 
           {/* Commentary */}
-          <div>
-            <label className="block text-xs font-600 text-slate-500 uppercase tracking-wide mb-1.5">
-              <i className="fa-solid fa-lightbulb text-[#0891b2] mr-1" />
-              解説
-            </label>
-            <textarea
-              value={question.commentaryText}
-              onChange={(e) => onChange("commentaryText", e.target.value)}
-              placeholder="解説を入力..."
-              rows={4}
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent resize-y"
-            />
-          </div>
+          {showCommentary && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-600 text-slate-500 uppercase tracking-wide">
+                  <i className="fa-solid fa-lightbulb text-[#0891b2] mr-1" />
+                  解説
+                </label>
+                <button type="button" onClick={() => setShowCommentary(false)}
+                  className="text-xs text-slate-400 hover:text-slate-600 transition flex items-center gap-1">
+                  <i className="fa-solid fa-xmark" />折りたたむ
+                </button>
+              </div>
+              <MarkupToolbar
+                taRef={commentaryRef}
+                value={question.commentaryText}
+                onChange={(v) => onChange("commentaryText", v)}
+                onShowReference={onShowMarkupRef}
+              />
+              <textarea
+                ref={commentaryRef}
+                value={question.commentaryText}
+                onChange={(e) => onChange("commentaryText", e.target.value)}
+                placeholder="解説を入力..."
+                rows={4}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent resize-y"
+              />
+            </div>
+          )}
         </div>
       )}
-
-      {showMarkup && <MarkupModal onClose={() => setShowMarkup(false)} />}
     </div>
   );
 }
