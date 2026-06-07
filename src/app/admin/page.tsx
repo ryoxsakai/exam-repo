@@ -304,7 +304,14 @@ function EditableField({ label, value, onEdit, suffix }: { label: string; value:
 // ── AdminPage ──────────────────────────────────────────────────────
 
 export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState<"form" | "exams" | "manage" | "config">("form");
+  const [activeTab, setActiveTabState] = useState<"form" | "exams" | "manage" | "config">(() =>
+    (loadStorage<string>("cf_admin_tab", "form") as "form" | "exams" | "manage" | "config")
+  );
+
+  const setActiveTab = useCallback((tab: "form" | "exams" | "manage" | "config") => {
+    setActiveTabState(tab);
+    saveStorage("cf_admin_tab", tab);
+  }, []);
 
   // Config
   const [workerUrl, setWorkerUrl] = useState("");
@@ -386,6 +393,10 @@ export default function AdminPage() {
     if (!schedule && scheduleOptions.length > 0) setSchedule(scheduleOptions[0]);
   }, [scheduleOptions, schedule]);
 
+  useEffect(() => {
+    saveStorage("cf_admin_editing_id", editingExamId);
+  }, [editingExamId]);
+
   // ── Remote loaders ──
 
   const loadRemote = useCallback(async () => {
@@ -447,6 +458,13 @@ export default function AdminPage() {
     } catch (err) {
       alert(`読み込みに失敗しました: ${String(err)}`);
     }
+  }, []);
+
+  // Restore last edited exam from localStorage after loadExamForEdit is available
+  useEffect(() => {
+    const savedId = loadStorage<number | null>("cf_admin_editing_id", null);
+    if (savedId) loadExamForEdit(savedId).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const exitEditMode = useCallback(() => {
