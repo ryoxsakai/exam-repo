@@ -5,11 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
     "lint": "next lint",
     "db:migrate": "wrangler d1 execute medical-exam-db --file=schema.sql",
     "db:migrate:local": "wrangler d1 execute medical-exam-db --local --file=schema.sql",
-    "deploy": "npm run build && wrangler pages deploy out"
+    "worker:dev": "wrangler dev worker/index.ts",
+    "worker:deploy": "wrangler deploy worker/index.ts --name medical-exam-worker"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^6.5.1",
