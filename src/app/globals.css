@@ -111,23 +111,18 @@ body {
 
 .question-block-header {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 1rem 0 0.5rem;
 }
 
-.question-block-header::before,
-.question-block-header::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: #94a3b8;
-  border-radius: 1px;
+.question-block-text {
+  line-height: 1.7;
 }
 
 .answer-choice {
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
   margin: 0.4rem 0;
   padding-left: 0.5rem;
 }
@@ -150,7 +145,6 @@ body {
 }
 
 .answer-choice-text {
-  padding-top: 0.1rem;
   line-height: 1.6;
 }
 

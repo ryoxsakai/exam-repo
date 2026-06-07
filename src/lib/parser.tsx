@@ -286,24 +286,17 @@ export function parseTextFull(text: string): ParsedResult {
       continue;
     }
 
-    // {{問N}} at start of line → question badge block
+    // {{問N}} at start of line → question badge inline with rest of text
     if (/^\{\{[^}]+\}\}/.test(line.trim())) {
       const qMatch = line.trim().match(/^\{\{([^}]+)\}\}/);
       if (qMatch) {
+        const rest = line.trim().slice(qMatch[0].length).trim();
         elements.push(
           <div key={k} className="question-block-header">
             <span className="question-badge">{qMatch[1]}</span>
+            {rest && <span className="question-block-text">{parseInline(rest, footnotes, footnotes.length)}</span>}
           </div>
         );
-        // Parse remainder of line if any
-        const rest = line.trim().slice(qMatch[0].length).trim();
-        if (rest) {
-          elements.push(
-            <span key={`${k}-rest`} style={{ display: "block" }}>
-              {parseInline(rest, footnotes, footnotes.length)}
-            </span>
-          );
-        }
         continue;
       }
     }
