@@ -6,7 +6,6 @@ on:
     paths:
       - "worker/**"
       - "wrangler.toml"
-      - "schema.sql"
   workflow_dispatch:
 
 jobs:
