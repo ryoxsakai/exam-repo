@@ -1,9 +1,11 @@
-// Client-side API helper. Reads Worker URL from localStorage and calls
-// the Cloudflare Worker directly (required for GitHub Pages static export).
+// Client-side API helper. Reads Worker URL from localStorage (admin override)
+// or falls back to the URL baked in at build time via NEXT_PUBLIC_WORKER_URL.
+
+const ENV_WORKER_URL = (process.env.NEXT_PUBLIC_WORKER_URL || "").replace(/\/$/, "");
 
 export function getWorkerUrl(): string {
-  if (typeof window === "undefined") return "";
-  return (localStorage.getItem("cf_worker_url") || "").replace(/\/$/, "");
+  if (typeof window === "undefined") return ENV_WORKER_URL;
+  return (localStorage.getItem("cf_worker_url") || ENV_WORKER_URL).replace(/\/$/, "");
 }
 
 async function call<T>(path: string, options?: RequestInit): Promise<T> {

@@ -28,6 +28,9 @@ jobs:
           # Empty basePath for custom domain (exam.lrnr.jp serves from /).
           # Set to /exam-repo here if switching back to github.io/<repo>.
           NEXT_PUBLIC_BASE_PATH: ""
+          # Worker URL baked into the build so any browser can use the app
+          # without needing to configure localStorage first.
+          NEXT_PUBLIC_WORKER_URL: ${{ secrets.NEXT_PUBLIC_WORKER_URL }}
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
