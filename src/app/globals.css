@@ -79,7 +79,7 @@ body {
   justify-content: center;
   min-width: 15px;
   height: 1.35em;
-  padding: 0 1.8em;
+  padding: 0 1.35em;
   margin: 0 0.4em;
   background: white;
   color: black;
@@ -94,7 +94,7 @@ body {
 
 .question-badge {
   display: inline-block;
-  padding: 0.075rem 0.85rem;
+  padding: 0.02rem 0.85rem;
   background: #1e3a5f;
   color: white;
   border-radius: 0.25rem;
