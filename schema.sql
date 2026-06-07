@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS exams (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   university_id INTEGER NOT NULL,
   year INTEGER NOT NULL,
-  schedule TEXT NOT NULL CHECK(schedule IN ('前期', '後期', '推薦', 'AO', 'その他')),
+  schedule TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (university_id) REFERENCES universities(id) ON DELETE CASCADE,
   UNIQUE(university_id, year, schedule)
