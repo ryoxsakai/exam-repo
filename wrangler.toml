@@ -8,7 +8,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "medical-exam-db"
-database_id = "YOUR_D1_DATABASE_ID"
+database_id = "1dff243d-4819-43cd-bf10-8538042d03ea"
 
 [dev]
 port = 8787
