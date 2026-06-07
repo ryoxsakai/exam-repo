@@ -10,7 +10,6 @@ import {
 } from "@/lib/api";
 import { parseTextFull } from "@/lib/parser";
 import { DEFAULT_SCHEDULES } from "@/components/SearchBar";
-import { applyMarkupCss } from "@/components/CustomMarkupCss";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -32,129 +31,6 @@ const DEFAULT_YEAR_PRESETS = Array.from({ length: 8 }, (_, i) => String(CURRENT_
 const YEARS_KEY = "cf_year_presets";
 const SCHEDULES_KEY = "cf_custom_schedules";
 
-const DEFAULT_MARKUP_CSS = `/* ━━━ 空所 [[1]] [[A]] → .blank-badge ━━━ */
-.blank-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 15px;
-  height: 1.35em;
-  padding: 0 3px;
-  background: white;
-  color: black;
-  border: 1.5px solid black;
-  border-radius: 2px;
-  font-size: 0.85em;
-  font-weight: 500;
-  vertical-align: middle;
-  line-height: 1;
-}
-
-/* ━━━ 問題番号バッジ {{問1}} → .question-badge ━━━ */
-.question-badge {
-  display: inline-block;
-  padding: 0.15rem 0.55rem;
-  background: #1e3a5f;
-  color: white;
-  border-radius: 0.25rem;
-  font-size: 0.9rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  margin: 0 0.2rem;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-/* ━━━ 問題番号区切り線 .question-block-header ━━━ */
-.question-block-header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-}
-.question-block-header::before,
-.question-block-header::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: #94a3b8;
-  border-radius: 1px;
-}
-
-/* ━━━ 選択肢 ((A)) → .answer-choice, .answer-choice-label ━━━ */
-.answer-choice {
-  display: flex;
-  align-items: baseline; /* baseline で記号と本文のテキストベースラインを揃える */
-  margin: 0.4rem 0;
-  padding-left: 0.5rem;
-}
-.answer-choice-label {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.6rem;
-  height: 1.6rem;
-  border: 1.5px solid #334155;
-  border-radius: 50%;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #334155;
-  margin-right: 0.5rem;
-  flex-shrink: 0;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-.answer-choice-text { line-height: 1.6; }
-
-/* ━━━ 黄ハイライト ==text== → .highlight-yellow ━━━ */
-.highlight-yellow { background-color: #fef08a; padding: 0.1em 0.2em; border-radius: 0.2em; }
-
-/* ━━━ 青ハイライト ==text==:blue → .highlight-blue ━━━ */
-.highlight-blue { background-color: #bfdbfe; padding: 0.1em 0.2em; border-radius: 0.2em; }
-
-/* ━━━ 赤ハイライト ==text==:red → .highlight-red ━━━ */
-.highlight-red { background-color: #fecaca; padding: 0.1em 0.2em; border-radius: 0.2em; }
-
-/* ━━━ 紫ハイライト ==text==:purple → .highlight-purple ━━━ */
-.highlight-purple { background-color: #e9d5ff; padding: 0.1em 0.2em; border-radius: 0.2em; }
-
-/* ━━━ ピンクハイライト ==text==:pink → .highlight-pink ━━━ */
-.highlight-pink { background-color: #fbcfe8; padding: 0.1em 0.2em; border-radius: 0.2em; }
-
-/* ━━━ 緑ハイライト ==text==:green → .highlight-green ━━━ */
-.highlight-green { background-color: #bbf7d0; padding: 0.1em 0.2em; border-radius: 0.2em; }
-
-/* ━━━ 水色ハイライト ==text==:aqua → .highlight-aqua ━━━ */
-.highlight-aqua { background-color: #a5f3fc; padding: 0.1em 0.2em; border-radius: 0.2em; }
-
-/* ━━━ 脚注 ##word::訳## → .footnote-section ━━━ */
-.footnote-section {
-  margin-top: 1.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid #e2e8f0;
-  font-size: 0.85rem;
-  color: #64748b;
-}
-.footnote-section ol { list-style: none; padding: 0; margin: 0; }
-.footnote-section li { display: flex; align-items: flex-start; gap: 0.4rem; margin-bottom: 0.3rem; line-height: 1.5; }
-.footnote-number { color: #6b46c1; font-size: 0.7em; vertical-align: super; font-weight: 700; cursor: help; }
-
-/* ━━━ 水平線 ---- → .exam-hr ━━━ */
-.exam-hr {
-  border: none;
-  height: 1px;
-  background: linear-gradient(to right, transparent, #cbd5e1, transparent);
-  margin: 1.25rem 0;
-}
-
-/* ━━━ テキスト本文フォント → .parsed-text ━━━ */
-.parsed-text {
-  font-family: "PT Serif", Georgia, serif;
-  font-size: 1rem;
-  line-height: 1.85;
-  color: #1e293b;
-}
-.parsed-text p { margin-bottom: 0.75rem; }`;
 
 const TOOLBAR_BUTTONS = [
   { label: "空所",   title: "空所 [[1]]",            before: "[[",    after: "]]",    ph: "1"    },
@@ -437,10 +313,6 @@ export default function AdminPage() {
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [siteTitle, setSiteTitle] = useState("医学部入試問題データベース");
 
-  // Markup CSS editor
-  const [markupCss, setMarkupCss] = useState(DEFAULT_MARKUP_CSS);
-  const [cssSaved, setCssSaved] = useState(false);
-
   // Manage
   const [universities, setUniversities] = useState<Array<{ id: number; name: string }>>([]);
   const [uniDeleting, setUniDeleting] = useState<Set<number>>(new Set());
@@ -505,8 +377,6 @@ export default function AdminPage() {
     try {
       setWorkerUrl(localStorage.getItem("cf_worker_url") || "");
       setSiteTitle(localStorage.getItem("cf_site_title") || "医学部入試問題データベース");
-      const cachedCss = localStorage.getItem("cf_markup_css");
-      if (cachedCss) { setMarkupCss(cachedCss); applyMarkupCss(cachedCss); }
     } catch { /* ignore */ }
     setScheduleOptions(loadStorage(SCHEDULES_KEY, DEFAULT_SCHEDULES));
     setYearPresets(loadStorage(YEARS_KEY, DEFAULT_YEAR_PRESETS));
@@ -529,11 +399,6 @@ export default function AdminPage() {
       if (cfg.site_title) {
         setSiteTitle(cfg.site_title);
         try { localStorage.setItem("cf_site_title", cfg.site_title); } catch { /* ignore */ }
-      }
-      if (cfg.markup_css) {
-        setMarkupCss(cfg.markup_css);
-        applyMarkupCss(cfg.markup_css);
-        try { localStorage.setItem("cf_markup_css", cfg.markup_css); } catch { /* ignore */ }
       }
     } catch { /* Worker URL not set yet */ }
   }, []);
@@ -640,24 +505,6 @@ export default function AdminPage() {
     } catch (err) {
       setTestResult({ ok: false, msg: String(err) });
     } finally { setTestingConn(false); }
-  };
-
-  const saveMarkupCss = async () => {
-    applyMarkupCss(markupCss);
-    try { localStorage.setItem("cf_markup_css", markupCss); } catch { /* ignore */ }
-    try { await updateConfig({ markup_css: markupCss }); } catch { /* ignore */ }
-    setCssSaved(true);
-    setTimeout(() => setCssSaved(false), 3000);
-  };
-
-  const resetMarkupCss = () => {
-    if (!window.confirm("CSSをデフォルトに戻しますか？")) return;
-    setMarkupCss(DEFAULT_MARKUP_CSS);
-  };
-
-  const previewMarkupCss = () => {
-    applyMarkupCss(markupCss);
-    setShowMarkupRef(true);
   };
 
   // ── Manage ──
@@ -980,46 +827,6 @@ export default function AdminPage() {
                   独自ドメインの変更はリポジトリの <code className="bg-slate-100 px-1 rounded">public/CNAME</code> と
                   GitHub Actions の <code className="bg-slate-100 px-1 rounded">cname:</code> 設定を更新してください。
                 </p>
-              </div>
-            </div>
-
-            {/* Markup CSS editor */}
-            <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-700 text-[#1e3a5f] flex items-center gap-2">
-                  <i className="fa-solid fa-paintbrush text-[#6b46c1]" />マークアップCSS
-                </h2>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={previewMarkupCss}
-                    className="flex items-center gap-1.5 text-xs text-[#6b46c1] hover:text-[#1e3a5f] font-600 transition px-3 py-1.5 rounded-lg border border-[#6b46c1]/30 hover:bg-purple-50">
-                    <i className="fa-solid fa-eye text-[10px]" />プレビュー
-                  </button>
-                  <button type="button" onClick={resetMarkupCss}
-                    className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 font-600 transition px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50">
-                    <i className="fa-solid fa-rotate-left text-[10px]" />リセット
-                  </button>
-                </div>
-              </div>
-              <p className="text-xs text-slate-400 -mt-2">
-                各記法のレンダリングをCSSで直接カスタマイズできます。コメントで対応する記法が確認できます。
-              </p>
-              <textarea
-                value={markupCss}
-                onChange={(e) => setMarkupCss(e.target.value)}
-                rows={24}
-                spellCheck={false}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent resize-y leading-relaxed"
-              />
-              <div className="flex items-center gap-3">
-                <button type="button" onClick={saveMarkupCss}
-                  className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-600 bg-gradient-to-r from-[#1e3a5f] to-[#6b46c1] hover:opacity-90 transition shadow-md">
-                  <i className="fa-solid fa-save" />CSSを保存
-                </button>
-                {cssSaved && (
-                  <span className="text-emerald-600 text-sm flex items-center gap-1.5">
-                    <i className="fa-solid fa-check-circle" />保存しました
-                  </span>
-                )}
               </div>
             </div>
 
