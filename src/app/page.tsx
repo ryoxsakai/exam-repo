@@ -36,6 +36,19 @@ export default function Home() {
     if (typeof window === "undefined") return "医学部入試問題データベース";
     return localStorage.getItem("cf_site_title") || "医学部入試問題データベース";
   });
+  const [searchOpen, setSearchOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const v = localStorage.getItem("cf_search_open");
+    return v === null ? false : v === "true";
+  });
+
+  const toggleSearch = useCallback(() => {
+    setSearchOpen((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("cf_search_open", String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
 
   const handleSearch = useCallback(async (params: SearchParams) => {
     setLoading(true);
@@ -131,7 +144,19 @@ export default function Home() {
       <main className="max-w-6xl mx-auto px-4 py-8 no-print">
         {/* Search Bar */}
         <section className="mb-6">
-          <SearchBar onSearch={handleSearch} loading={loading} />
+          <button
+            onClick={toggleSearch}
+            className="flex items-center gap-2 mb-2 text-sm font-600 text-slate-500 hover:text-slate-700 transition"
+          >
+            <i className={`fa-solid fa-chevron-right text-xs transition-transform duration-200 ${searchOpen ? "rotate-90" : ""}`} />
+            検索条件
+            {!searchOpen && searchWord && (
+              <span className="text-[#6b46c1] font-400 text-xs">「{searchWord}」</span>
+            )}
+          </button>
+          <div className={`overflow-hidden transition-all duration-300 ${searchOpen ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"}`}>
+            <SearchBar onSearch={handleSearch} loading={loading} />
+          </div>
         </section>
 
         {/* Error state */}
