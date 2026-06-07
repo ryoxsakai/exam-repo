@@ -3,9 +3,15 @@
 
 const ENV_WORKER_URL = (process.env.NEXT_PUBLIC_WORKER_URL || "").replace(/\/$/, "");
 
+function normalizeUrl(url: string): string {
+  const u = url.trim().replace(/\/$/, "");
+  if (u && !u.startsWith("http://") && !u.startsWith("https://")) return "https://" + u;
+  return u;
+}
+
 export function getWorkerUrl(): string {
-  if (typeof window === "undefined") return ENV_WORKER_URL;
-  return (localStorage.getItem("cf_worker_url") || ENV_WORKER_URL).replace(/\/$/, "");
+  if (typeof window === "undefined") return normalizeUrl(ENV_WORKER_URL);
+  return normalizeUrl(localStorage.getItem("cf_worker_url") || ENV_WORKER_URL);
 }
 
 async function call<T>(path: string, options?: RequestInit): Promise<T> {

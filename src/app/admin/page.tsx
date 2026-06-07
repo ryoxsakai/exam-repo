@@ -485,7 +485,10 @@ export default function AdminPage() {
 
   const saveConfig = useCallback(() => {
     try {
-      const url = workerUrl.replace(/\/$/, "");
+      let url = workerUrl.trim().replace(/\/$/, "");
+      if (url && !url.startsWith("http://") && !url.startsWith("https://")) {
+        url = "https://" + url;
+      }
       localStorage.setItem("cf_worker_url", url);
       localStorage.setItem("cf_site_title", siteTitle);
       setWorkerUrl(url);
