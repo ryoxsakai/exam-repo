@@ -141,9 +141,9 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-8 no-print">
+      <main className="max-w-6xl mx-auto px-4 py-8">
         {/* Search Bar */}
-        <section className="mb-6">
+        <section className="mb-6 no-print">
           <button
             onClick={toggleSearch}
             className="flex items-center gap-2 mb-2 text-sm font-600 text-slate-500 hover:text-slate-700 transition"
@@ -161,7 +161,7 @@ export default function Home() {
 
         {/* Error state */}
         {error && (
-          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-5 py-4 flex items-start gap-3">
+          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-5 py-4 flex items-start gap-3 no-print">
             <i className="fa-solid fa-triangle-exclamation text-red-500 mt-0.5 flex-shrink-0" />
             <div>
               <p className="text-red-700 font-600 text-sm">エラーが発生しました</p>
@@ -181,7 +181,7 @@ export default function Home() {
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
           {/* Results list */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 no-print">
             {/* Results header */}
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
