@@ -174,7 +174,7 @@ function parseInline(
     if (choiceMatch) {
       const label = choiceMatch[1];
       result.push(
-        <span key={key()} className="answer-choice" style={{ display: "flex", alignItems: "flex-start", marginTop: "0.4rem" }}>
+        <span key={key()} className="answer-choice">
           <span className="answer-choice-label">{label}</span>
           <span className="answer-choice-text" />
         </span>
@@ -249,7 +249,7 @@ export function parseAnswerChoiceLine(
     const label = choiceMatch[1];
     const rest = choiceMatch[2];
     return (
-      <span className="answer-choice" style={{ display: "flex", alignItems: "flex-start", marginTop: "0.4rem" }}>
+      <span className="answer-choice">
         <span className="answer-choice-label">{label}</span>
         <span className="answer-choice-text">
           {rest ? parseInline(rest, footnotes, footnotes.length) : null}
@@ -314,7 +314,7 @@ export function parseTextFull(text: string): ParsedResult {
       const label = choiceMatch[2];
       const rest = choiceMatch[3];
       elements.push(
-        <span key={k} className="answer-choice" style={{ display: "flex", alignItems: "flex-start", marginTop: "0.4rem" }}>
+        <span key={k} className="answer-choice">
           <span className="answer-choice-label">{label}</span>
           <span className="answer-choice-text">
             {rest ? parseInline(rest, footnotes, footnotes.length) : null}

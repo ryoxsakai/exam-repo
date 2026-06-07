@@ -84,7 +84,7 @@ const DEFAULT_MARKUP_CSS = `/* ━━━ 空所 [[1]] [[A]] → .blank-badge ━
 /* ━━━ 選択肢 ((A)) → .answer-choice, .answer-choice-label ━━━ */
 .answer-choice {
   display: flex;
-  align-items: flex-start;
+  align-items: baseline; /* baseline で記号と本文のテキストベースラインを揃える */
   margin: 0.4rem 0;
   padding-left: 0.5rem;
 }
@@ -104,7 +104,7 @@ const DEFAULT_MARKUP_CSS = `/* ━━━ 空所 [[1]] [[A]] → .blank-badge ━
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-.answer-choice-text { padding-top: 0.1rem; line-height: 1.6; }
+.answer-choice-text { line-height: 1.6; }
 
 /* ━━━ 黄ハイライト ==text== → .highlight-yellow ━━━ */
 .highlight-yellow { background-color: #fef08a; padding: 0.1em 0.2em; border-radius: 0.2em; }
