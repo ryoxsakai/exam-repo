@@ -6,6 +6,7 @@ import SearchBar, { SearchParams } from "@/components/SearchBar";
 import ExamCard, { ExamCardData } from "@/components/ExamCard";
 import ExamViewer, { ExamViewerData } from "@/components/ExamViewer";
 import { searchExams, getExam, getConfig, type SearchResult } from "@/lib/api";
+import CustomMarkupCss from "@/components/CustomMarkupCss";
 
 type SortMode = "frequency" | "year";
 
@@ -108,6 +109,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <CustomMarkupCss />
       {/* Hero Header */}
       <header className="bg-gradient-to-r from-[#1e3a5f] via-[#6b46c1] to-[#0891b2] shadow-xl no-print">
         <div className="max-w-6xl mx-auto px-4 py-6">

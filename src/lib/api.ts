@@ -106,6 +106,7 @@ export interface AppConfig {
   schedules: string[];
   year_presets: string[];
   site_title?: string;
+  markup_css?: string;
 }
 
 export function getConfig(): Promise<AppConfig> {
