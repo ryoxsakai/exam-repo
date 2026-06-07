@@ -90,6 +90,10 @@ export function createExam(data: {
   });
 }
 
-export function testConnection(): Promise<{ universities: unknown[] }> {
-  return call<{ universities: unknown[] }>("/api/universities");
+export function getUniversities(): Promise<{ universities: Array<{ id: number; name: string }> }> {
+  return call<{ universities: Array<{ id: number; name: string }> }>("/api/universities");
+}
+
+export function testConnection(): Promise<{ universities: Array<{ id: number; name: string }> }> {
+  return getUniversities();
 }

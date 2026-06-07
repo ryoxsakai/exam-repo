@@ -119,7 +119,7 @@ export default function SearchBar({ onSearch, loading }: SearchBarProps) {
               type="text"
               value={params.word}
               onChange={(e) => handleChange("word", e.target.value)}
-              placeholder="例: measles、胸腺、T lymphocyte"
+              placeholder=""
               className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent transition"
             />
             <i className="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs" />

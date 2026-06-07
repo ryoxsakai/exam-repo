@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { createExam, testConnection } from "@/lib/api";
+import Link from "next/link";
+import { createExam, getUniversities } from "@/lib/api";
 
 interface QuestionField {
   id: string;
@@ -18,6 +19,19 @@ function genId() {
 const SCHEDULES = ["前期", "後期", "一般前期", "一般後期", "推薦", "AO", "その他"];
 const CURRENT_YEAR = new Date().getFullYear();
 const RECENT_YEARS = Array.from({ length: 8 }, (_, i) => CURRENT_YEAR - i);
+
+const MARKUP_ITEMS: [string, string][] = [
+  ["[[1]] / [[A]]", "番号付きブランクバッジ"],
+  ["__text__", "下線"],
+  ["~~2~~", "下付き文字 (H₂O)"],
+  ["^^st^^", "上付き文字 (1ˢᵗ)"],
+  ["==text==", "黄色ハイライト"],
+  ["==text==:blue", "カラーハイライト (blue/red/purple/pink/green/aqua)"],
+  ["{{問1}}", "問題番号バッジ（区切り線付き）"],
+  ["((A)) text", "選択肢（自動インデント）"],
+  ["##word::訳##", "脚注（自動番号付き）"],
+  ["----", "スタイル付き水平線"],
+];
 
 // ── Generic edit modal ─────────────────────────────────────────────
 
@@ -47,7 +61,6 @@ function EditModal({
   const commit = () => { if (draft.trim()) onSave(draft.trim()); };
 
   return (
-    /* backdrop */
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
       onClick={onClose}
@@ -56,7 +69,6 @@ function EditModal({
         className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* header */}
         <div className="flex items-center justify-between">
           <h3 className="text-base font-700 text-[#1e3a5f]">{title}</h3>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
@@ -64,7 +76,6 @@ function EditModal({
           </button>
         </div>
 
-        {/* input */}
         <input
           ref={inputRef}
           type={type}
@@ -75,7 +86,6 @@ function EditModal({
           className="w-full rounded-xl border-2 border-[#6b46c1]/30 bg-slate-50 px-4 py-3 text-base font-600 text-[#1e3a5f] focus:outline-none focus:ring-0 focus:border-[#6b46c1]"
         />
 
-        {/* quick picks */}
         {suggestions && (
           <div>
             {suggestionLabel && (
@@ -100,7 +110,6 @@ function EditModal({
           </div>
         )}
 
-        {/* actions */}
         <div className="flex gap-2 pt-1">
           <button
             type="button"
@@ -124,6 +133,49 @@ function EditModal({
   );
 }
 
+// ── Markup reference modal ─────────────────────────────────────────
+
+function MarkupModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 max-h-[80vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-700 text-[#1e3a5f] flex items-center gap-2">
+            <i className="fa-solid fa-code text-[#6b46c1]" />
+            マークアップ記法一覧
+          </h3>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+            <i className="fa-solid fa-xmark" />
+          </button>
+        </div>
+        <div className="space-y-1">
+          {MARKUP_ITEMS.map(([syntax, desc]) => (
+            <div key={syntax} className="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0">
+              <code className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-[#6b46c1] font-mono text-xs shrink-0 w-40">
+                {syntax}
+              </code>
+              <span className="text-sm text-slate-600">{desc}</span>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-600 hover:bg-slate-50 transition"
+        >
+          閉じる
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── EditableField: value chip + gear icon ──────────────────────────
 
 interface EditableFieldProps {
@@ -140,10 +192,8 @@ function EditableField({ label, value, onEdit, suffix }: EditableFieldProps) {
         {label} <span className="text-red-500">*</span>
       </label>
       <div className="flex items-center gap-2">
-        <div className="flex-1 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 min-h-[42px]">
-          <span className="text-sm font-600 text-[#1e3a5f]">
-            {value}{suffix}
-          </span>
+        <div className="flex-1 flex items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 min-h-[42px]">
+          <span className="text-sm font-600 text-[#1e3a5f]">{value}{suffix}</span>
         </div>
         <button
           type="button"
@@ -187,7 +237,7 @@ export default function AdminPage() {
     setTestingConn(true);
     setTestResult(null);
     try {
-      await testConnection();
+      await getUniversities();
       setTestResult({ ok: true, msg: "接続成功！Worker は正常に動作しています。" });
     } catch (err) {
       setTestResult({ ok: false, msg: String(err) });
@@ -195,6 +245,7 @@ export default function AdminPage() {
   };
 
   // Exam form
+  const [universities, setUniversities] = useState<string[]>([]);
   const [universityName, setUniversityName] = useState("");
   const [year, setYear] = useState(String(CURRENT_YEAR));
   const [schedule, setSchedule] = useState("前期");
@@ -205,8 +256,20 @@ export default function AdminPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
-  // Modal state
-  const [modal, setModal] = useState<"year" | "schedule" | null>(null);
+  const [modal, setModal] = useState<"year" | "schedule" | "university" | null>(null);
+
+  const loadUniversities = useCallback(async () => {
+    try {
+      const data = await getUniversities();
+      setUniversities(data.universities.map((u) => u.name));
+    } catch {
+      // Silently ignore — Worker URL may not be configured yet
+    }
+  }, []);
+
+  useEffect(() => {
+    loadUniversities();
+  }, [loadUniversities]);
 
   const addQuestion = () =>
     setQuestions((prev) => [
@@ -219,6 +282,18 @@ export default function AdminPage() {
       prev.filter((q) => q.id !== id).map((q, i) => ({ ...q, questionNumber: i + 1 }))
     );
 
+  const moveQuestion = (id: string, dir: "up" | "down") => {
+    setQuestions((prev) => {
+      const idx = prev.findIndex((q) => q.id === id);
+      if (idx < 0) return prev;
+      const next = dir === "up" ? idx - 1 : idx + 1;
+      if (next < 0 || next >= prev.length) return prev;
+      const arr = [...prev];
+      [arr[idx], arr[next]] = [arr[next], arr[idx]];
+      return arr;
+    });
+  };
+
   const updateQuestion = (id: string, field: keyof QuestionField, value: string | number) =>
     setQuestions((prev) => prev.map((q) => (q.id === id ? { ...q, [field]: value } : q)));
 
@@ -226,7 +301,7 @@ export default function AdminPage() {
     e.preventDefault();
     setSubmitError(null);
     setSubmitSuccess(false);
-    if (!universityName.trim()) { setSubmitError("大学名を入力してください"); return; }
+    if (!universityName.trim()) { setSubmitError("大学名を選択または入力してください"); return; }
     if (!questions.some((q) => q.problemText.trim())) {
       setSubmitError("少なくとも1つの問題文を入力してください"); return;
     }
@@ -250,6 +325,7 @@ export default function AdminPage() {
       setYear(String(CURRENT_YEAR));
       setSchedule("前期");
       setQuestions([{ id: genId(), questionNumber: 1, problemText: "", answerText: "", commentaryText: "" }]);
+      await loadUniversities();
       setTimeout(() => setSubmitSuccess(false), 5000);
     } catch (err) {
       setSubmitError(String(err));
@@ -271,10 +347,10 @@ export default function AdminPage() {
                 <p className="text-blue-200 text-xs">Admin — Medical Exam Database</p>
               </div>
             </div>
-            <a href="/" className="flex items-center gap-2 text-white/80 hover:text-white text-sm transition">
+            <Link href="/" className="flex items-center gap-2 text-white/80 hover:text-white text-sm transition">
               <i className="fa-solid fa-arrow-left text-xs" />
               公開ページへ
-            </a>
+            </Link>
           </div>
         </div>
       </header>
@@ -323,7 +399,7 @@ export default function AdminPage() {
               <div className="flex items-center gap-3 flex-wrap">
                 <button type="button" onClick={saveConfig}
                   className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-600 bg-gradient-to-r from-[#1e3a5f] to-[#6b46c1] hover:opacity-90 transition shadow-md">
-                  <i className="fa-solid fa-save" />保存する
+                  <i className="fa-solid fa-save" />保存
                 </button>
                 <button type="button" onClick={handleTestConnection} disabled={!workerUrl || testingConn}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-600 hover:bg-slate-50 transition disabled:opacity-40">
@@ -359,19 +435,34 @@ export default function AdminPage() {
                 試験情報
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {/* University */}
-                <div className="sm:col-span-1">
+                {/* University — dropdown + gear icon */}
+                <div>
                   <label className="block text-xs font-600 text-slate-500 uppercase tracking-wide mb-1">
                     大学名 <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="text"
-                    value={universityName}
-                    onChange={(e) => setUniversityName(e.target.value)}
-                    placeholder="例: 東京大学"
-                    required
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent"
-                  />
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={universityName}
+                      onChange={(e) => setUniversityName(e.target.value)}
+                      className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent"
+                    >
+                      <option value="">選択または追加 ↓</option>
+                      {universityName && !universities.includes(universityName) && (
+                        <option value={universityName}>{universityName}</option>
+                      )}
+                      {universities.map((u) => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setModal("university")}
+                      className="flex-shrink-0 w-[42px] h-[42px] flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:text-[#6b46c1] hover:border-[#6b46c1]/40 transition"
+                      title="大学名を入力/追加"
+                    >
+                      <i className="fa-solid fa-gear text-sm" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Year — editable via modal */}
@@ -401,6 +492,8 @@ export default function AdminPage() {
                   total={questions.length}
                   onChange={(field, value) => updateQuestion(q.id, field, value)}
                   onRemove={() => removeQuestion(q.id)}
+                  onMoveUp={idx > 0 ? () => moveQuestion(q.id, "up") : undefined}
+                  onMoveDown={idx < questions.length - 1 ? () => moveQuestion(q.id, "down") : undefined}
                 />
               ))}
             </div>
@@ -444,7 +537,7 @@ export default function AdminPage() {
               >
                 {submitting
                   ? <><i className="fa-solid fa-spinner fa-spin" />登録中...</>
-                  : <><i className="fa-solid fa-upload" />データベースに登録する</>}
+                  : <><i className="fa-solid fa-upload" />登録</>}
               </button>
             </div>
           </form>
@@ -474,6 +567,20 @@ export default function AdminPage() {
           onSave={(v) => { setSchedule(v); setModal(null); }}
         />
       )}
+      {modal === "university" && (
+        <EditModal
+          title="大学名を入力"
+          value={universityName}
+          suggestions={universities.length > 0 ? universities : undefined}
+          suggestionLabel={universities.length > 0 ? "登録済みの大学" : undefined}
+          onClose={() => setModal(null)}
+          onSave={(v) => {
+            setUniversityName(v);
+            if (!universities.includes(v)) setUniversities((prev) => [...prev, v].sort());
+            setModal(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -486,20 +593,27 @@ interface QuestionBlockProps {
   total: number;
   onChange: (field: keyof QuestionField, value: string | number) => void;
   onRemove: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }
 
-function QuestionBlock({ question, index, total, onChange, onRemove }: QuestionBlockProps) {
+function QuestionBlock({ question, index, total, onChange, onRemove, onMoveUp, onMoveDown }: QuestionBlockProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [showMarkup, setShowMarkup] = useState(false);
+
+  // suppress unused-var warning
+  void index;
 
   return (
     <div className="bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden">
       {/* Header */}
-      <div
-        className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200 cursor-pointer select-none"
-        onClick={() => setCollapsed((v) => !v)}
-      >
-        <div className="flex items-center gap-2">
-          {/* Editable question number */}
+      <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200 select-none">
+        {/* Left — collapse click area */}
+        <div
+          className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
+          onClick={() => setCollapsed((v) => !v)}
+        >
+          {/* Editable question number — stops click from collapsing */}
           <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
             <span className="text-xs font-700 text-slate-500 uppercase tracking-wide">大問</span>
             <input
@@ -516,23 +630,49 @@ function QuestionBlock({ question, index, total, onChange, onRemove }: QuestionB
             />
           </div>
           {collapsed && question.problemText && (
-            <span className="text-xs text-slate-400 truncate max-w-xs">
+            <span className="text-xs text-slate-400 truncate">
               {question.problemText.slice(0, 60)}…
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* Right — action buttons */}
+        <div className="flex items-center gap-0.5 ml-2 flex-shrink-0">
+          <button
+            type="button"
+            onClick={onMoveUp}
+            disabled={!onMoveUp}
+            className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-[#6b46c1] disabled:opacity-20 disabled:cursor-not-allowed transition"
+            title="上に移動"
+          >
+            <i className="fa-solid fa-chevron-up text-xs" />
+          </button>
+          <button
+            type="button"
+            onClick={onMoveDown}
+            disabled={!onMoveDown}
+            className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-[#6b46c1] disabled:opacity-20 disabled:cursor-not-allowed transition"
+            title="下に移動"
+          >
+            <i className="fa-solid fa-chevron-down text-xs" />
+          </button>
           {total > 1 && (
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); onRemove(); }}
-              className="text-slate-400 hover:text-red-500 transition p-1"
+              onClick={onRemove}
+              className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-red-500 transition"
               title="この大問を削除"
             >
               <i className="fa-solid fa-minus-circle text-sm" />
             </button>
           )}
-          <i className={`fa-solid fa-chevron-${collapsed ? "down" : "up"} text-slate-400 text-xs`} />
+          <button
+            type="button"
+            onClick={() => setCollapsed((v) => !v)}
+            className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-slate-600 transition ml-1"
+          >
+            <i className={`fa-solid fa-chevron-${collapsed ? "down" : "up"} text-xs`} />
+          </button>
         </div>
       </div>
 
@@ -540,12 +680,19 @@ function QuestionBlock({ question, index, total, onChange, onRemove }: QuestionB
         <div className="p-5 space-y-4">
           {/* Problem text */}
           <div>
-            <label className="block text-xs font-600 text-slate-500 uppercase tracking-wide mb-1.5">
-              問題文 <span className="text-red-500">*</span>
-              <span className="ml-2 text-slate-300 font-400 normal-case text-[11px]">
-                {"{{問1}}"} {"[[1]]"} ==highlight== etc. のマークアップ対応
-              </span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-600 text-slate-500 uppercase tracking-wide">
+                問題文 <span className="text-red-500">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowMarkup(true)}
+                className="flex items-center gap-1 text-xs text-[#6b46c1] hover:text-[#1e3a5f] transition font-600"
+              >
+                <i className="fa-solid fa-code text-[10px]" />
+                記法一覧
+              </button>
+            </div>
             <textarea
               value={question.problemText}
               onChange={(e) => onChange("problemText", e.target.value)}
@@ -584,37 +731,10 @@ function QuestionBlock({ question, index, total, onChange, onRemove }: QuestionB
               className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent resize-y"
             />
           </div>
-
-          {/* Markup reference */}
-          <details className="rounded-lg bg-slate-50 border border-slate-200">
-            <summary className="px-4 py-2.5 text-xs font-600 text-slate-500 cursor-pointer hover:text-slate-700 list-none flex items-center gap-1.5">
-              <i className="fa-solid fa-code" />
-              マークアップ記法の一覧
-            </summary>
-            <div className="px-4 pb-4 pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              {[
-                ["[[1]] / [[A]]", "番号付きブランクバッジ"],
-                ["__text__", "下線"],
-                ["~~2~~", "下付き文字 (H₂O)"],
-                ["^^st^^", "上付き文字 (1ˢᵗ)"],
-                ["==text==", "黄色ハイライト"],
-                ["==text==:blue", "カラーハイライト (blue/red/purple/pink/green/aqua)"],
-                ["{{問1}}", "問題番号バッジ（区切り線付き）"],
-                ["((A)) text", "選択肢（自動インデント）"],
-                ["##word::訳##", "脚注（自動番号付き）"],
-                ["----", "スタイル付き水平線"],
-              ].map(([syntax, desc]) => (
-                <div key={syntax} className="flex items-start gap-2">
-                  <code className="bg-white border border-slate-200 px-1.5 py-0.5 rounded text-[#6b46c1] font-mono shrink-0 text-[11px]">
-                    {syntax}
-                  </code>
-                  <span className="text-slate-500">{desc}</span>
-                </div>
-              ))}
-            </div>
-          </details>
         </div>
       )}
+
+      {showMarkup && <MarkupModal onClose={() => setShowMarkup(false)} />}
     </div>
   );
 }

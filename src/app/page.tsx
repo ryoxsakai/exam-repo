@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
+import Link from "next/link";
 import SearchBar, { SearchParams } from "@/components/SearchBar";
 import ExamCard, { ExamCardData } from "@/components/ExamCard";
 import ExamViewer, { ExamViewerData } from "@/components/ExamViewer";
@@ -100,18 +101,24 @@ export default function Home() {
       {/* Hero Header */}
       <header className="bg-gradient-to-r from-[#1e3a5f] via-[#6b46c1] to-[#0891b2] shadow-xl no-print">
         <div className="max-w-6xl mx-auto px-4 py-6">
-          <div className="flex items-center gap-4">
-            <div className="bg-white/15 rounded-xl p-3">
-              <i className="fa-solid fa-graduation-cap text-white text-2xl" />
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-4">
+              <div className="bg-white/15 rounded-xl p-3">
+                <i className="fa-solid fa-graduation-cap text-white text-2xl" />
+              </div>
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-800 text-white tracking-tight leading-tight">
+                  医学部入試問題データベース
+                </h1>
+                <p className="text-blue-200 text-sm mt-0.5 font-400">
+                  Medical School Entrance Exam Database
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-800 text-white tracking-tight leading-tight">
-                医学部入試問題データベース
-              </h1>
-              <p className="text-blue-200 text-sm mt-0.5 font-400">
-                Medical School Entrance Exam Database
-              </p>
-            </div>
+            <Link href="/admin" className="flex items-center gap-1.5 text-white/70 hover:text-white text-xs transition">
+              <i className="fa-solid fa-gear" />
+              管理
+            </Link>
           </div>
         </div>
       </header>
@@ -130,13 +137,13 @@ export default function Home() {
               <p className="text-red-700 font-600 text-sm">エラーが発生しました</p>
               <p className="text-red-600 text-sm mt-0.5">{error}</p>
               {(error.includes("Worker URL") || error.includes("未設定")) && (
-                <a
+                <Link
                   href="/admin"
                   className="inline-flex items-center gap-1.5 mt-2 text-red-700 underline text-sm hover:text-red-900"
                 >
                   <i className="fa-solid fa-gear text-xs" />
                   管理画面でWorker URLを設定してください
-                </a>
+                </Link>
               )}
             </div>
           </div>
