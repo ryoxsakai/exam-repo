@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createExam, testConnection } from "@/lib/api";
 
 interface QuestionField {
@@ -17,21 +17,160 @@ function genId() {
 
 const SCHEDULES = ["前期", "後期", "一般前期", "一般後期", "推薦", "AO", "その他"];
 const CURRENT_YEAR = new Date().getFullYear();
-const YEARS = Array.from({ length: 30 }, (_, i) => CURRENT_YEAR - i);
+const RECENT_YEARS = Array.from({ length: 8 }, (_, i) => CURRENT_YEAR - i);
+
+// ── Generic edit modal ─────────────────────────────────────────────
+
+interface EditModalProps {
+  title: string;
+  value: string;
+  onClose: () => void;
+  onSave: (v: string) => void;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  type?: string;
+  suggestions?: string[];
+  suggestionLabel?: string;
+}
+
+function EditModal({
+  title, value, onClose, onSave,
+  inputMode = "text", type = "text",
+  suggestions, suggestionLabel,
+}: EditModalProps) {
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
+
+  const commit = () => { if (draft.trim()) onSave(draft.trim()); };
+
+  return (
+    /* backdrop */
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* header */}
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-700 text-[#1e3a5f]">{title}</h3>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+            <i className="fa-solid fa-xmark" />
+          </button>
+        </div>
+
+        {/* input */}
+        <input
+          ref={inputRef}
+          type={type}
+          inputMode={inputMode}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") onClose(); }}
+          className="w-full rounded-xl border-2 border-[#6b46c1]/30 bg-slate-50 px-4 py-3 text-base font-600 text-[#1e3a5f] focus:outline-none focus:ring-0 focus:border-[#6b46c1]"
+        />
+
+        {/* quick picks */}
+        {suggestions && (
+          <div>
+            {suggestionLabel && (
+              <p className="text-xs text-slate-400 mb-2">{suggestionLabel}</p>
+            )}
+            <div className="flex flex-wrap gap-1.5">
+              {suggestions.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setDraft(String(s))}
+                  className={`px-3 py-1 rounded-full text-xs font-600 border transition ${
+                    draft === String(s)
+                      ? "bg-[#6b46c1] text-white border-[#6b46c1]"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-[#6b46c1]/50 hover:text-[#6b46c1]"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* actions */}
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-600 hover:bg-slate-50 transition"
+          >
+            キャンセル
+          </button>
+          <button
+            type="button"
+            onClick={commit}
+            disabled={!draft.trim()}
+            className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#1e3a5f] to-[#6b46c1] text-white text-sm font-700 hover:opacity-90 transition disabled:opacity-40"
+          >
+            <i className="fa-solid fa-check mr-1.5" />
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── EditableField: value chip + gear icon ──────────────────────────
+
+interface EditableFieldProps {
+  label: string;
+  value: string;
+  onEdit: () => void;
+  suffix?: string;
+}
+
+function EditableField({ label, value, onEdit, suffix }: EditableFieldProps) {
+  return (
+    <div>
+      <label className="block text-xs font-600 text-slate-500 uppercase tracking-wide mb-1">
+        {label} <span className="text-red-500">*</span>
+      </label>
+      <div className="flex items-center gap-2">
+        <div className="flex-1 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 min-h-[42px]">
+          <span className="text-sm font-600 text-[#1e3a5f]">
+            {value}{suffix}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="flex-shrink-0 w-[42px] h-[42px] flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:text-[#6b46c1] hover:border-[#6b46c1]/40 transition"
+          title={`${label}を編集`}
+        >
+          <i className="fa-solid fa-gear text-sm" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ──────────────────────────────────────────────────────
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<"form" | "config">("form");
 
-  // ── Config ────────────────────────────────────────────────────────
+  // Config
   const [workerUrl, setWorkerUrl] = useState("");
   const [configSaved, setConfigSaved] = useState(false);
   const [testingConn, setTestingConn] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
-    try {
-      setWorkerUrl(localStorage.getItem("cf_worker_url") || "");
-    } catch { /* ignore */ }
+    try { setWorkerUrl(localStorage.getItem("cf_worker_url") || ""); } catch { /* ignore */ }
   }, []);
 
   const saveConfig = useCallback(() => {
@@ -41,9 +180,7 @@ export default function AdminPage() {
       setWorkerUrl(url);
       setConfigSaved(true);
       setTimeout(() => setConfigSaved(false), 3000);
-    } catch {
-      alert("設定の保存に失敗しました");
-    }
+    } catch { alert("設定の保存に失敗しました"); }
   }, [workerUrl]);
 
   const handleTestConnection = async () => {
@@ -54,12 +191,10 @@ export default function AdminPage() {
       setTestResult({ ok: true, msg: "接続成功！Worker は正常に動作しています。" });
     } catch (err) {
       setTestResult({ ok: false, msg: String(err) });
-    } finally {
-      setTestingConn(false);
-    }
+    } finally { setTestingConn(false); }
   };
 
-  // ── Exam form ────────────────────────────────────────────────────
+  // Exam form
   const [universityName, setUniversityName] = useState("");
   const [year, setYear] = useState(String(CURRENT_YEAR));
   const [schedule, setSchedule] = useState("前期");
@@ -69,6 +204,9 @@ export default function AdminPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+
+  // Modal state
+  const [modal, setModal] = useState<"year" | "schedule" | null>(null);
 
   const addQuestion = () =>
     setQuestions((prev) => [
@@ -88,12 +226,10 @@ export default function AdminPage() {
     e.preventDefault();
     setSubmitError(null);
     setSubmitSuccess(false);
-
     if (!universityName.trim()) { setSubmitError("大学名を入力してください"); return; }
     if (!questions.some((q) => q.problemText.trim())) {
       setSubmitError("少なくとも1つの問題文を入力してください"); return;
     }
-
     setSubmitting(true);
     try {
       await createExam({
@@ -109,7 +245,6 @@ export default function AdminPage() {
             commentaryText: q.commentaryText,
           })),
       });
-
       setSubmitSuccess(true);
       setUniversityName("");
       setYear(String(CURRENT_YEAR));
@@ -118,9 +253,7 @@ export default function AdminPage() {
       setTimeout(() => setSubmitSuccess(false), 5000);
     } catch (err) {
       setSubmitError(String(err));
-    } finally {
-      setSubmitting(false);
-    }
+    } finally { setSubmitting(false); }
   };
 
   return (
@@ -173,24 +306,13 @@ export default function AdminPage() {
                 <i className="fa-brands fa-cloudflare text-orange-500" />
                 Cloudflare Worker 設定
               </h2>
-              <p className="text-sm text-slate-400 mt-1">
-                設定はブラウザの localStorage に保存されます。
-              </p>
+              <p className="text-sm text-slate-400 mt-1">設定はブラウザの localStorage に保存されます。</p>
             </div>
-
-            {/* Worker URL — the critical setting */}
             <div className="rounded-xl border-2 border-[#6b46c1]/30 bg-purple-50 p-4 space-y-3">
               <label className="block text-sm font-700 text-[#6b46c1] mb-1">
                 <i className="fa-solid fa-link mr-2" />
                 Worker URL <span className="text-red-500">*</span>
               </label>
-              <p className="text-xs text-slate-500 -mt-1">
-                デプロイ後に Cloudflare ダッシュボードに表示される URL（例:{" "}
-                <code className="bg-white border border-slate-200 px-1 rounded text-xs">
-                  https://medical-exam-worker.YOUR_SUBDOMAIN.workers.dev
-                </code>
-                ）
-              </p>
               <input
                 type="url"
                 value={workerUrl}
@@ -199,25 +321,15 @@ export default function AdminPage() {
                 className="w-full rounded-lg border border-[#6b46c1]/30 bg-white px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent"
               />
               <div className="flex items-center gap-3 flex-wrap">
-                <button
-                  type="button"
-                  onClick={saveConfig}
-                  className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-600 bg-gradient-to-r from-[#1e3a5f] to-[#6b46c1] hover:opacity-90 transition shadow-md"
-                >
-                  <i className="fa-solid fa-save" />
-                  保存する
+                <button type="button" onClick={saveConfig}
+                  className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-600 bg-gradient-to-r from-[#1e3a5f] to-[#6b46c1] hover:opacity-90 transition shadow-md">
+                  <i className="fa-solid fa-save" />保存する
                 </button>
-                <button
-                  type="button"
-                  onClick={handleTestConnection}
-                  disabled={!workerUrl || testingConn}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-600 hover:bg-slate-50 transition disabled:opacity-40"
-                >
-                  {testingConn ? (
-                    <><i className="fa-solid fa-spinner fa-spin" />接続確認中...</>
-                  ) : (
-                    <><i className="fa-solid fa-wifi" />接続テスト</>
-                  )}
+                <button type="button" onClick={handleTestConnection} disabled={!workerUrl || testingConn}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-600 hover:bg-slate-50 transition disabled:opacity-40">
+                  {testingConn
+                    ? <><i className="fa-solid fa-spinner fa-spin" />確認中...</>
+                    : <><i className="fa-solid fa-wifi" />接続テスト</>}
                 </button>
                 {configSaved && (
                   <span className="text-emerald-600 text-sm flex items-center gap-1.5">
@@ -234,37 +346,6 @@ export default function AdminPage() {
                 </div>
               )}
             </div>
-
-            {/* Setup guide */}
-            <div className="rounded-xl bg-blue-50 border border-blue-200 px-5 py-4 text-sm text-blue-800">
-              <p className="font-700 mb-2 flex items-center gap-1.5">
-                <i className="fa-solid fa-circle-info text-[#0891b2]" />
-                Worker のデプロイ手順
-              </p>
-              <ol className="list-decimal ml-5 space-y-1.5 text-xs text-blue-700">
-                <li>
-                  <code className="bg-blue-100 px-1 rounded">npm install -g wrangler</code> でインストール
-                </li>
-                <li>
-                  <code className="bg-blue-100 px-1 rounded">wrangler login</code> で Cloudflare にログイン
-                </li>
-                <li>
-                  Cloudflare ダッシュボード → Workers &amp; Pages → D1 でデータベース（
-                  <code className="bg-blue-100 px-1 rounded">medical-exam-db</code>）を作成
-                </li>
-                <li>
-                  <code className="bg-blue-100 px-1 rounded">wrangler.toml</code> の{" "}
-                  <code className="bg-blue-100 px-1 rounded">database_id</code> を更新
-                </li>
-                <li>
-                  <code className="bg-blue-100 px-1 rounded">npm run db:migrate</code> でスキーマを適用
-                </li>
-                <li>
-                  <code className="bg-blue-100 px-1 rounded">npm run worker:deploy</code> で Worker をデプロイ
-                </li>
-                <li>表示された Worker URL を上のフィールドに入力して保存</li>
-              </ol>
-            </div>
           </div>
         )}
 
@@ -278,6 +359,7 @@ export default function AdminPage() {
                 試験情報
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* University */}
                 <div className="sm:col-span-1">
                   <label className="block text-xs font-600 text-slate-500 uppercase tracking-wide mb-1">
                     大学名 <span className="text-red-500">*</span>
@@ -291,34 +373,21 @@ export default function AdminPage() {
                     className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-600 text-slate-500 uppercase tracking-wide mb-1">
-                    年度 <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={year}
-                    onChange={(e) => setYear(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent"
-                  >
-                    {YEARS.map((y) => (
-                      <option key={y} value={y}>{y}年</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-600 text-slate-500 uppercase tracking-wide mb-1">
-                    試験区分 <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={schedule}
-                    onChange={(e) => setSchedule(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b46c1] focus:border-transparent"
-                  >
-                    {SCHEDULES.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </div>
+
+                {/* Year — editable via modal */}
+                <EditableField
+                  label="年度"
+                  value={year}
+                  suffix="年"
+                  onEdit={() => setModal("year")}
+                />
+
+                {/* Schedule — editable via modal */}
+                <EditableField
+                  label="試験区分"
+                  value={schedule}
+                  onEdit={() => setModal("schedule")}
+                />
               </div>
             </div>
 
@@ -351,11 +420,8 @@ export default function AdminPage() {
                 <div>
                   <p className="text-red-700 text-sm">{submitError}</p>
                   {submitError.includes("Worker URL") && (
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("config")}
-                      className="mt-2 text-xs text-red-600 underline"
-                    >
+                    <button type="button" onClick={() => setActiveTab("config")}
+                      className="mt-2 text-xs text-red-600 underline">
                       設定タブを開く
                     </button>
                   )}
@@ -376,16 +442,38 @@ export default function AdminPage() {
                 disabled={submitting}
                 className="flex items-center gap-2 px-8 py-3 rounded-xl text-white font-700 bg-gradient-to-r from-[#1e3a5f] to-[#6b46c1] hover:opacity-90 transition disabled:opacity-50 shadow-lg text-sm"
               >
-                {submitting ? (
-                  <><i className="fa-solid fa-spinner fa-spin" />登録中...</>
-                ) : (
-                  <><i className="fa-solid fa-upload" />データベースに登録する</>
-                )}
+                {submitting
+                  ? <><i className="fa-solid fa-spinner fa-spin" />登録中...</>
+                  : <><i className="fa-solid fa-upload" />データベースに登録する</>}
               </button>
             </div>
           </form>
         )}
       </main>
+
+      {/* ── Modals ── */}
+      {modal === "year" && (
+        <EditModal
+          title="年度を編集"
+          value={year}
+          type="number"
+          inputMode="numeric"
+          suggestions={RECENT_YEARS.map(String)}
+          suggestionLabel="クイック選択"
+          onClose={() => setModal(null)}
+          onSave={(v) => { setYear(v); setModal(null); }}
+        />
+      )}
+      {modal === "schedule" && (
+        <EditModal
+          title="試験区分を編集"
+          value={schedule}
+          suggestions={SCHEDULES}
+          suggestionLabel="よく使う区分"
+          onClose={() => setModal(null)}
+          onSave={(v) => { setSchedule(v); setModal(null); }}
+        />
+      )}
     </div>
   );
 }
@@ -405,12 +493,28 @@ function QuestionBlock({ question, index, total, onChange, onRemove }: QuestionB
 
   return (
     <div className="bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden">
+      {/* Header */}
       <div
-        className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200 cursor-pointer select-none"
+        className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200 cursor-pointer select-none"
         onClick={() => setCollapsed((v) => !v)}
       >
-        <div className="flex items-center gap-3">
-          <span className="question-badge text-sm">大問 {question.questionNumber}</span>
+        <div className="flex items-center gap-2">
+          {/* Editable question number */}
+          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <span className="text-xs font-700 text-slate-500 uppercase tracking-wide">大問</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              min={1}
+              value={question.questionNumber}
+              onChange={(e) => {
+                const v = parseInt(e.target.value, 10);
+                if (!isNaN(v) && v > 0) onChange("questionNumber", v);
+              }}
+              className="w-14 text-center rounded-lg border-2 border-[#6b46c1]/30 bg-white px-1 py-1 text-sm font-800 text-[#1e3a5f] focus:outline-none focus:border-[#6b46c1] transition"
+            />
+          </div>
           {collapsed && question.problemText && (
             <span className="text-xs text-slate-400 truncate max-w-xs">
               {question.problemText.slice(0, 60)}…
