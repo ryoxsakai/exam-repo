@@ -67,8 +67,8 @@
 }
 
 body {
-  background-color: hsl(var(--background));
-  color: hsl(var(--foreground));
+  background-color: #F8FAFC;
+  color: #0F172A;
   font-family: "M PLUS 1", system-ui, sans-serif;
 }
 
@@ -95,13 +95,13 @@ body {
 .question-badge {
   display: inline-block;
   padding: 0.2rem 0.85rem;
-  background: #1e3a5f;
+  background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
   color: white;
-  border-radius: 0.25rem;
-  font-size: 0.85rem;
+  border-radius: 0.35rem;
+  font-size: 0.8rem;
   font-family: sans-serif;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   line-height: 1;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
@@ -137,11 +137,11 @@ body {
   justify-content: center;
   min-width: 1.4rem;
   height: 1.4rem;
-  border: 1.5px solid #334155;
+  border: 1.5px solid #CBD5E1;
   border-radius: 50%;
   font-size: 0.75rem;
   font-weight: 700;
-  color: #334155;
+  color: #64748B;
   margin-right: 0.4rem;
   flex-shrink: 0;
   -webkit-print-color-adjust: exact;
@@ -235,8 +235,8 @@ body {
 .parsed-text {
   font-family: "PT Serif", Georgia, serif;
   font-size: 1rem;
-  line-height: 1.85;
-  color: #1e293b;
+  line-height: 1.9;
+  color: #0F172A;
 }
 
 .parsed-text p {
