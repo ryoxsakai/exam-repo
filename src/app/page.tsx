@@ -120,11 +120,14 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Hero Header */}
-      <header className="bg-gradient-to-r from-[#1e3a5f] via-[#6b46c1] to-[#0891b2] shadow-xl no-print">
-        <div className="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
-          <h1 className="text-2xl sm:text-3xl font-800 text-white tracking-tight leading-tight">
+    <div className="min-h-screen bg-[#F8FAFC]">
+      {/* Gradient accent bar */}
+      <div className="h-[3px] bg-gradient-to-r from-[#4F46E5] via-[#7C3AED] to-[#22D3EE] no-print" />
+
+      {/* Header */}
+      <header className="bg-white border-b border-[#E2E8F0] no-print">
+        <div className="max-w-5xl mx-auto px-5 h-14 flex items-center justify-between">
+          <h1 className="text-base font-700 text-[#0F172A] tracking-tight">
             {siteTitle}
           </h1>
           <button
@@ -133,45 +136,45 @@ export default function Home() {
               window.location.reload();
             }}
             title="キャッシュをクリアして再読み込み"
-            className="flex items-center gap-1.5 text-white/60 hover:text-white text-xs font-500 transition px-2 py-1 rounded hover:bg-white/10"
+            className="flex items-center gap-1.5 text-[#94A3B8] hover:text-[#64748B] text-xs transition"
           >
-            <i className="fa-solid fa-rotate-right text-[11px]" />
+            <i className="fa-regular fa-rotate-right text-[11px]" />
             <span className="hidden sm:inline">キャッシュクリア</span>
           </button>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-8">
-        {/* Search Bar */}
-        <section className="mb-6 no-print">
+      <main className="max-w-5xl mx-auto px-5 py-6">
+        {/* Search section */}
+        <section className="mb-5 no-print">
           <button
             onClick={toggleSearch}
-            className="flex items-center gap-2 mb-2 text-sm font-600 text-slate-500 hover:text-slate-700 transition"
+            className="flex items-center gap-1.5 mb-3 text-sm text-[#64748B] hover:text-[#0F172A] transition"
           >
-            <i className={`fa-solid fa-chevron-right text-xs transition-transform duration-200 ${searchOpen ? "rotate-90" : ""}`} />
-            検索条件
+            <i className={`fa-regular fa-chevron-down text-xs transition-transform duration-200 ${searchOpen ? "" : "-rotate-90"}`} />
+            <span className="font-600">絞り込み</span>
             {!searchOpen && searchWord && (
-              <span className="text-[#6b46c1] font-400 text-xs">「{searchWord}」</span>
+              <span className="text-[#4F46E5] font-400 text-xs ml-0.5">「{searchWord}」</span>
             )}
           </button>
-          <div className={`overflow-hidden transition-all duration-300 ${searchOpen ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"}`}>
+          <div className={`overflow-hidden transition-all duration-300 ${searchOpen ? "max-h-[560px] opacity-100" : "max-h-0 opacity-0"}`}>
             <SearchBar onSearch={handleSearch} loading={loading} />
           </div>
         </section>
 
         {/* Error state */}
         {error && (
-          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-5 py-4 flex items-start gap-3 no-print">
-            <i className="fa-solid fa-triangle-exclamation text-red-500 mt-0.5 flex-shrink-0" />
+          <div className="mb-5 rounded-2xl border border-[#FECACA] bg-[#FFF5F5] px-5 py-4 flex items-start gap-3 no-print">
+            <i className="fa-regular fa-triangle-exclamation text-[#EF4444] mt-0.5 flex-shrink-0" />
             <div>
-              <p className="text-red-700 font-600 text-sm">エラーが発生しました</p>
-              <p className="text-red-600 text-sm mt-0.5">{error}</p>
+              <p className="text-[#EF4444] font-600 text-sm">エラーが発生しました</p>
+              <p className="text-[#EF4444]/80 text-sm mt-0.5">{error}</p>
               {(error.includes("Worker URL") || error.includes("未設定")) && (
                 <Link
                   href="/admin"
-                  className="inline-flex items-center gap-1.5 mt-2 text-red-700 underline text-sm hover:text-red-900"
+                  className="inline-flex items-center gap-1.5 mt-2 text-[#EF4444] underline text-sm hover:text-[#DC2626]"
                 >
-                  <i className="fa-solid fa-gear text-xs" />
+                  <i className="fa-regular fa-gear text-xs" />
                   管理画面でWorker URLを設定してください
                 </Link>
               )}
@@ -179,57 +182,49 @@ export default function Home() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
           {/* Results list */}
           <div className="lg:col-span-2 no-print">
             {/* Results header */}
             <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-700 text-slate-700">
-                  {loading ? (
-                    <span className="flex items-center gap-2">
-                      <i className="fa-solid fa-spinner fa-spin text-[#6b46c1]" />
-                      検索中…
-                    </span>
-                  ) : (
-                    <span>
-                      {results.length > 0 ? (
-                        <>
-                          <span className="text-[#6b46c1] font-800">{results.length}</span>
-                          <span className="text-slate-500"> 件</span>
-                          {searchWord && (
-                            <span className="text-slate-400 font-400 ml-1">
-                              「{searchWord}」の検索結果
-                            </span>
-                          )}
-                        </>
-                      ) : hasSearched ? (
-                        <span className="text-slate-400">結果なし</span>
-                      ) : null}
-                    </span>
-                  )}
-                </h2>
-              </div>
+              <p className="text-sm font-600 text-[#64748B]">
+                {loading ? (
+                  <span className="flex items-center gap-2 text-[#94A3B8]">
+                    <i className="fa-solid fa-spinner fa-spin text-[#4F46E5]" />
+                    検索中…
+                  </span>
+                ) : results.length > 0 ? (
+                  <>
+                    <span className="text-[#4F46E5] font-700">{results.length}</span>
+                    <span className="text-[#94A3B8] font-400"> 件</span>
+                    {searchWord && (
+                      <span className="text-[#94A3B8] font-400 ml-1 text-xs">「{searchWord}」</span>
+                    )}
+                  </>
+                ) : hasSearched ? (
+                  <span className="text-[#94A3B8] font-400">結果なし</span>
+                ) : null}
+              </p>
 
               {/* Sort controls */}
               {results.length > 0 && searchWord && (
-                <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-200 p-0.5">
+                <div className="flex items-center gap-0.5 bg-[#F1F5F9] rounded-xl p-0.5">
                   <button
                     onClick={() => handleSortChange("frequency")}
-                    className={`px-2.5 py-1 rounded text-xs font-600 transition ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-600 transition ${
                       sortMode === "frequency"
-                        ? "bg-[#1e3a5f] text-white"
-                        : "text-slate-500 hover:text-slate-700"
+                        ? "bg-white text-[#4F46E5] shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
+                        : "text-[#94A3B8] hover:text-[#64748B]"
                     }`}
                   >
                     頻度順
                   </button>
                   <button
                     onClick={() => handleSortChange("year")}
-                    className={`px-2.5 py-1 rounded text-xs font-600 transition ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-600 transition ${
                       sortMode === "year"
-                        ? "bg-[#1e3a5f] text-white"
-                        : "text-slate-500 hover:text-slate-700"
+                        ? "bg-white text-[#4F46E5] shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
+                        : "text-[#94A3B8] hover:text-[#64748B]"
                     }`}
                   >
                     年度順
@@ -239,15 +234,15 @@ export default function Home() {
             </div>
 
             {/* Cards */}
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               {loading ? (
                 Array.from({ length: 4 }).map((_, i) => (
                   <div
                     key={i}
-                    className="bg-white rounded-xl border border-slate-200 p-4 animate-pulse"
+                    className="bg-white rounded-2xl border border-[#E2E8F0] p-5 animate-pulse"
                   >
-                    <div className="h-4 bg-slate-200 rounded w-3/4 mb-2" />
-                    <div className="h-3 bg-slate-100 rounded w-1/2" />
+                    <div className="h-4 bg-[#F1F5F9] rounded-lg w-3/4 mb-3" />
+                    <div className="h-3 bg-[#F8FAFC] rounded-lg w-1/2" />
                   </div>
                 ))
               ) : results.length > 0 ? (
@@ -260,10 +255,10 @@ export default function Home() {
                   />
                 ))
               ) : hasSearched ? (
-                <div className="text-center py-12 text-slate-400">
-                  <i className="fa-solid fa-magnifying-glass text-3xl mb-3 block opacity-30" />
-                  <p className="text-sm">該当する問題が見つかりませんでした</p>
-                  <p className="text-xs mt-1 text-slate-300">
+                <div className="text-center py-14 text-[#94A3B8]">
+                  <i className="fa-regular fa-magnifying-glass text-3xl mb-3 block opacity-40" />
+                  <p className="text-sm font-500">該当する問題が見つかりませんでした</p>
+                  <p className="text-xs mt-1 text-[#CBD5E1]">
                     検索条件を変えてお試しください
                   </p>
                 </div>
@@ -274,19 +269,19 @@ export default function Home() {
           {/* Exam viewer */}
           <div className="lg:col-span-3">
             {examLoading ? (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-md p-8 text-center">
-                <i className="fa-solid fa-spinner fa-spin text-[#6b46c1] text-3xl mb-3 block" />
-                <p className="text-slate-500 text-sm">問題を読み込み中...</p>
+              <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-[0_1px_4px_rgba(0,0,0,0.04)] p-8 text-center">
+                <i className="fa-solid fa-spinner fa-spin text-[#4F46E5] text-2xl mb-3 block" />
+                <p className="text-[#94A3B8] text-sm">問題を読み込み中...</p>
               </div>
             ) : selectedExam ? (
               <ExamViewer exam={selectedExam} highlightWord={searchWord} />
             ) : (
-              <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
-                <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-[#1e3a5f]/10 to-[#6b46c1]/10 flex items-center justify-center mb-4">
-                  <i className="fa-regular fa-file-lines text-[#6b46c1] text-2xl" />
+              <div className="bg-white rounded-2xl border border-dashed border-[#E2E8F0] p-12 text-center">
+                <div className="mx-auto w-14 h-14 rounded-2xl bg-[#F5F3FF] flex items-center justify-center mb-4">
+                  <i className="fa-regular fa-file-lines text-[#7C3AED] text-xl" />
                 </div>
-                <h3 className="text-slate-600 font-600 mb-1">問題を選択してください</h3>
-                <p className="text-sm text-slate-400">
+                <h3 className="text-[#64748B] font-600 text-sm mb-1">問題を選択してください</h3>
+                <p className="text-xs text-[#94A3B8]">
                   左のリストから問題をクリックすると内容が表示されます
                 </p>
               </div>
@@ -296,10 +291,10 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="mt-12 border-t border-slate-200 bg-white py-6 no-print">
-        <div className="max-w-6xl mx-auto px-4 text-center">
-          <p className="text-slate-400 text-xs">
-            医学部入試問題データベース &copy; {new Date().getFullYear()}
+      <footer className="mt-16 border-t border-[#E2E8F0] bg-white py-5 no-print">
+        <div className="max-w-5xl mx-auto px-5 text-center">
+          <p className="text-[#CBD5E1] text-xs">
+            {siteTitle} &copy; {new Date().getFullYear()}
           </p>
         </div>
       </footer>
