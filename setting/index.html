@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="../assets/css/main.css?v=20260612b" />
+  <link rel="stylesheet" href="../assets/css/main.css?v=20260612c" />
 </head>
 <body>
   <header class="topbar">
@@ -31,7 +31,7 @@
         <div class="brand-mark"><i class="fa-solid fa-graduation-cap"></i></div>
         <div>
           <div class="brand-title" id="site-title">入試問題データベース</div>
-          <div class="brand-sub">Entrance Exam Database</div>
+          <div class="brand-sub" id="site-subtitle">Entrance Exam Database</div>
         </div>
       </div>
       <div class="topbar-spacer"></div>
@@ -51,11 +51,17 @@
     <section data-panel="main" class="panel active">
       <div class="card">
         <div class="card-head"><h3><i class="fa-solid fa-heading ic"></i> サイトタイトル</h3></div>
+        <span class="field-label">タイトル</span>
         <div class="inline-add">
           <input type="text" id="cfg-title" placeholder="入試問題データベース" />
           <button class="btn primary" id="cfg-title-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
         </div>
-        <p class="hint" style="margin-top:8px">閲覧ページ・設定ページのタイトルに反映されます（Worker にも保存し全端末で共有）。</p>
+        <span class="field-label" style="margin-top:12px">サブタイトル（タイトル下の小さな英字表記）</span>
+        <div class="inline-add">
+          <input type="text" id="cfg-subtitle" placeholder="Entrance Exam Database" />
+          <button class="btn primary" id="cfg-subtitle-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+        </div>
+        <p class="hint" style="margin-top:8px">閲覧ページ・設定ページのヘッダーに反映されます（Worker にも保存し全端末で共有）。</p>
       </div>
 
       <div class="card">
@@ -69,7 +75,7 @@
       </div>
 
       <div class="card">
-        <div class="card-head"><h3><i class="fa-solid fa-arrow-up-wide-short ic"></i> タブの並び順</h3></div>
+        <div class="card-head"><h3><i class="fa-solid fa-arrow-up-wide-short ic"></i> タブの並び順・名前</h3></div>
         <div class="grid-2">
           <div>
             <span class="field-label"><i class="fa-solid fa-book-open"></i> 閲覧ページのタブ</span>
@@ -80,7 +86,7 @@
             <ul class="sort-list" id="order-setting"></ul>
           </div>
         </div>
-        <p class="hint" style="margin-top:10px">並び順は端末ごとに保存されます（localStorage）。</p>
+        <p class="hint" style="margin-top:10px">名前は直接編集できます。並び順・名前は端末ごとに保存されます（localStorage）。設定ページのタブはアイコンのみ表示で、名前はツールチップに使われます。</p>
       </div>
     </section>
 
@@ -274,6 +280,17 @@
     </div>
   </div>
 
+  <!-- ===== 記法一覧モーダル ===== -->
+  <div class="modal-overlay" id="syntax-modal">
+    <div class="modal wide">
+      <div class="modal-head">
+        <i class="fa-solid fa-circle-question ic"></i><h3>入試問題記法 一覧</h3><span class="spacer"></span>
+        <button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" id="syntax-body"></div>
+    </div>
+  </div>
+
   <!-- ===== プレビューモーダル ===== -->
   <div class="modal-overlay" id="preview-modal">
     <div class="modal wide">
@@ -285,10 +302,10 @@
     </div>
   </div>
 
-  <script src="../assets/js/store.js?v=20260612b"></script>
-  <script src="../assets/js/api.js?v=20260612b"></script>
-  <script src="../assets/js/ui.js?v=20260612b"></script>
-  <script src="../assets/js/markup.js?v=20260612b"></script>
-  <script src="../assets/js/settings.js?v=20260612b"></script>
+  <script src="../assets/js/store.js?v=20260612c"></script>
+  <script src="../assets/js/api.js?v=20260612c"></script>
+  <script src="../assets/js/ui.js?v=20260612c"></script>
+  <script src="../assets/js/markup.js?v=20260612c"></script>
+  <script src="../assets/js/settings.js?v=20260612c"></script>
 </body>
 </html>
