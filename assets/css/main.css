@@ -280,6 +280,8 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 /* Modal tabs */
 .modal .tabs { margin: 0 0 18px; }
 
+#corpus-results { margin-top: 20px; }
+
 /* ---------- コーパス対象絞り込み（チェックボックスグループ） ---------- */
 .cf-group { margin-bottom: 18px; }
 .cf-group:last-child { margin-bottom: 0; }

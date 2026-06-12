@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="assets/css/main.css?v=20260612aj" />
+  <link rel="stylesheet" href="assets/css/main.css?v=20260612al" />
 </head>
 <body>
   <!-- ===== Topbar ===== -->
@@ -60,8 +60,8 @@
         <div class="card-head">
           <h3><i class="fa-solid fa-language ic"></i> コーパス分析設定</h3>
           <span class="spacer"></span>
-          <button class="btn ghost" id="btn-corpus-filter"><i class="fa-solid fa-filter"></i> 対象を絞り込み</button>
-          <button class="btn primary" id="btn-run-corpus"><i class="fa-solid fa-play"></i> 分析実行</button>
+          <button class="icon-btn" id="btn-corpus-filter" title="対象を絞り込み"><i class="fa-solid fa-filter"></i></button>
+          <button class="icon-btn primary" id="btn-run-corpus" title="分析実行"><i class="fa-solid fa-play"></i></button>
         </div>
         <div class="grid-3">
           <label class="field">
@@ -135,10 +135,10 @@
       </div>
       <div class="modal-body" id="corpus-filter-body"></div>
       <div class="modal-foot">
-        <button class="btn ghost" id="cf-reset"><i class="fa-solid fa-rotate-left"></i> すべて選択</button>
+        <button class="icon-btn" id="cf-reset" title="すべて選択"><i class="fa-solid fa-rotate-left"></i></button>
         <span class="spacer"></span>
-        <button class="btn ghost" data-close>キャンセル</button>
-        <button class="btn primary" id="cf-apply"><i class="fa-solid fa-check"></i> 適用</button>
+        <button class="icon-btn" data-close title="キャンセル"><i class="fa-solid fa-xmark"></i></button>
+        <button class="icon-btn primary" id="cf-apply" title="適用"><i class="fa-solid fa-check"></i></button>
       </div>
     </div>
   </div>
