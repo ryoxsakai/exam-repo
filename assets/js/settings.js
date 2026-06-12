@@ -302,20 +302,20 @@
 
       // 最初の大問は試験情報と共に表示
       html += "<tr>" +
-        '<td><span class="pill em">' + esc(r.year) + "</span></td><td><strong>" + esc(r.university_name) + "</strong></td><td>" + esc(r.schedule) + "</td><td>問' + uniq[0] + "</td>" +
-        '<td class="row-actions">' +
-        '<button class="icon-btn" data-view="' + r.exam_id + '" title="表示"><i class="fa-solid fa-file-lines"></i></button>' +
-        '<button class="icon-btn" data-edit="' + r.exam_id + ':' + uniq[0] + '" title="編集"><i class="fa-solid fa-pen"></i></button>' +
-        '<button class="icon-btn danger" data-del="' + r.exam_id + '" title="削除"><i class="fa-solid fa-trash"></i></button>' +
+        "<td><span class=\"pill em\">" + esc(r.year) + "</span></td><td><strong>" + esc(r.university_name) + "</strong></td><td>" + esc(r.schedule) + "</td><td>問" + uniq[0] + "</td>" +
+        "<td class=\"row-actions\">" +
+        "<button class=\"icon-btn\" data-view=\"" + r.exam_id + "\" title=\"表示\"><i class=\"fa-solid fa-file-lines\"></i></button>" +
+        "<button class=\"icon-btn\" data-edit=\"" + r.exam_id + ":" + uniq[0] + "\" title=\"編集\"><i class=\"fa-solid fa-pen\"></i></button>" +
+        "<button class=\"icon-btn danger\" data-del=\"" + r.exam_id + "\" title=\"削除\"><i class=\"fa-solid fa-trash\"></i></button>" +
         "</td></tr>";
 
       // 2番目以降の大問をサブ行として表示
       for (var i = 1; i < uniq.length; i++) {
-        html += "<tr style='background:rgba(0,0,0,0.02)'>" +
-          '<td></td><td></td><td></td><td>問' + uniq[i] + "</td>" +
-          '<td class="row-actions">' +
-          '<button class="icon-btn" data-view="' + r.exam_id + '" title="表示"><i class="fa-solid fa-file-lines"></i></button>' +
-          '<button class="icon-btn" data-edit="' + r.exam_id + ':' + uniq[i] + '" title="編集"><i class="fa-solid fa-pen"></i></button>' +
+        html += "<tr style=\"background:rgba(0,0,0,0.02)\">" +
+          "<td></td><td></td><td></td><td>問" + uniq[i] + "</td>" +
+          "<td class=\"row-actions\">" +
+          "<button class=\"icon-btn\" data-view=\"" + r.exam_id + "\" title=\"表示\"><i class=\"fa-solid fa-file-lines\"></i></button>" +
+          "<button class=\"icon-btn\" data-edit=\"" + r.exam_id + ":" + uniq[i] + "\" title=\"編集\"><i class=\"fa-solid fa-pen\"></i></button>" +
           "</td></tr>";
       }
     });
