@@ -50,7 +50,8 @@
     el("sm-run").addEventListener("click", runSearch);
     el("btn-clear-filter").addEventListener("click", clearFilter);
     el("btn-run-corpus").addEventListener("click", runCorpus);
-    el("exam-print").addEventListener("click", function () { window.print(); });
+    el("exam-print").addEventListener("click", printExam);
+    el("exam-copy").addEventListener("click", copyExam);
 
     // 検索モーダル内タブ
     $all("#search-modal-tabs .tab").forEach(function (t) {
@@ -256,6 +257,42 @@
       el("exam-modal-body").innerHTML = '<div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div>";
     });
   }
+  // 印刷: モーダルUIは出さず、本文のみを #print-area 経由で印刷
+  function printExam() {
+    var area = el("print-area");
+    if (!area) {
+      area = create("div", { id: "print-area" });
+      document.body.appendChild(area);
+    }
+    area.innerHTML = '<h1 class="print-title">' + esc(el("exam-modal-title").textContent) + "</h1>" +
+      el("exam-modal-body").innerHTML;
+    window.print();
+  }
+
+  // コピー: 表示中の本文テキストをクリップボードへ
+  function copyExam() {
+    var text = el("exam-modal-title").textContent + "\n\n" + el("exam-modal-body").innerText;
+    var done = function () { UI.toast("コピーしました", "ok"); };
+    var fail = function () { UI.toast("コピーに失敗しました", "err"); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { legacyCopy(text) ? done() : fail(); });
+    } else {
+      legacyCopy(text) ? done() : fail();
+    }
+  }
+  function legacyCopy(text) {
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      var ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    } catch (e) { return false; }
+  }
+
   function renderField(label, icon, text) {
     var r = Markup.render(text);
     return '<div style="margin-bottom:14px">' +
