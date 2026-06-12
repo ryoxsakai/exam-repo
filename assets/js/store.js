@@ -58,7 +58,8 @@
     /* Worker URL */
     getWorkerUrl: function () {
       var u = (readRaw(KEYS.workerUrl, "") || "").trim().replace(/\/$/, "");
-      if (u && !/^https?:\/\//.test(u)) u = "https://" + u;
+      if (!u) u = "https://medical-exam-worker.ryoxsakai.workers.dev";
+      if (!/^https?:\/\//.test(u)) u = "https://" + u;
       return u;
     },
     setWorkerUrl: function (url) { localStorage.setItem(KEYS.workerUrl, (url || "").trim()); },
