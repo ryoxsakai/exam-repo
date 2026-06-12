@@ -6,6 +6,7 @@
      ##語::訳##     … 脚注（語注）
      ==語== :色     … ハイライト（色: yellow/blue/red/purple/pink/green/aqua）
      __語__         … 下線
+     **語**         … 太字
      ~~x~~          … 下付き
      ^^x^^          … 上付き
      ((A)) 本文      … 選択肢（行頭）
@@ -42,12 +43,14 @@
       var m;
 
       // [[N]] 空所
-      // 左の間隔は margin でなくスペース文字で確保（行頭に来たときは
-      // ブラウザが行頭スペースを消すので左端にぴったり揃う）
+      // 左右の間隔はどちらもスペース文字で確保（行頭・行末ではブラウザが
+      // スペースを消すため CSS マージンより自然に揃う）
       if ((m = rem.match(/^\[\[([^\]]+)\]\]/))) {
         if (out && !/[\s(\[{「『（【]$/.test(out)) out += " ";
         out += '<span class="blank-badge">' + esc(m[1]) + "</span>";
-        rem = rem.slice(m[0].length); continue;
+        rem = rem.slice(m[0].length);
+        if (rem.length && !/^[\s.,;:!?\]）」』】。、！？]/.test(rem)) out += " ";
+        continue;
       }
       // ##語::訳## 脚注
       if ((m = rem.match(/^##([^:]+)::([^#]+)##/))) {
@@ -83,6 +86,11 @@
         out += "<sup>" + esc(m[1]) + "</sup>";
         rem = rem.slice(m[0].length); continue;
       }
+      // **太字**
+      if ((m = rem.match(/^\*\*([^*]+)\*\*/))) {
+        out += "<strong>" + inline(m[1], footnotes) + "</strong>";
+        rem = rem.slice(m[0].length); continue;
+      }
       // {{問N}}（行中）
       if ((m = rem.match(/^\{\{([^}]+)\}\}/))) {
         out += '<span class="question-badge">' + esc(m[1]) + "</span>";
@@ -99,7 +107,7 @@
       while (end < rem.length) {
         var ch = rem[end];
         if (ch === "[" || ch === "#" || ch === "=" || ch === "_" ||
-            ch === "~" || ch === "^" || ch === "{" || ch === "(") break;
+            ch === "~" || ch === "^" || ch === "{" || ch === "(" || ch === "*") break;
         end++;
       }
       var plain = esc(smartQuotes(rem.slice(0, end)));
@@ -185,6 +193,7 @@
     t = t.replace(/==([^=]+)==:\w+/g, "$1");        // 色ハイライト
     t = t.replace(/==([^=]+)==/g, "$1");            // ハイライト
     t = t.replace(/__([^_]+)__/g, "$1");            // 下線
+    t = t.replace(/\*\*([^*]+)\*\*/g, "$1");       // 太字
     t = t.replace(/~~([^~]+)~~/g, "$1");            // 下付き
     t = t.replace(/\^\^([^^]+)\^\^/g, "$1");        // 上付き
     t = t.replace(/\(\(([^)]+)\)\)/g, " ");         // 選択肢ラベル

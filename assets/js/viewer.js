@@ -28,9 +28,11 @@
   var state = {
     filter: { word: "", universityName: "", year: "", schedule: "", qnum: "" },
     rows: [],
+    sortedRows: [],
     sort: { key: "year", dir: "desc" },
+    nav: { examId: null, qnum: null },
     config: null,
-    corpus: null,        // 取得済み corpus questions
+    corpus: null,
     charts: {}
   };
 
@@ -71,6 +73,17 @@
     el("exam-copy").addEventListener("click", copyExam);
     el("exam-fontsize").addEventListener("click", cycleFontSize);
     applyFontSize(Store.getFontSize());
+    el("exam-prev").addEventListener("click", function () {
+      var idx = findNavIndex();
+      if (idx > 0) { var r = state.sortedRows[idx - 1]; openExam(r.exam_id, r.question_number); }
+    });
+    el("exam-next").addEventListener("click", function () {
+      var idx = findNavIndex();
+      if (idx >= 0 && idx < state.sortedRows.length - 1) { var r = state.sortedRows[idx + 1]; openExam(r.exam_id, r.question_number); }
+    });
+    el("exam-show-all").addEventListener("click", function () {
+      if (state.nav.examId != null) openExam(state.nav.examId, null);
+    });
 
     // 検索モーダル内タブ
     $all("#search-modal-tabs .tab").forEach(function (t) {
@@ -245,13 +258,14 @@
         '<td><span class="pill em">' + esc(r.year) + "</span></td>" +
         "<td><strong>" + esc(r.university_name) + "</strong></td>" +
         "<td>" + esc(r.schedule) + "</td>" +
-        "<td>問" + esc(r.question_number) + "</td>" +
+        "<td>大問" + esc(r.question_number) + "</td>" +
         "<td>" + esc(r.category) + "</td>" +
         (showOcc ? '<td><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
         '<td class="row-actions"><button class="icon-btn" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
         "</tr>";
     });
     html += "</tbody></table></div>";
+    state.sortedRows = rows;
     el("results-area").innerHTML = html;
 
     $all("th.sortable", el("results-area")).forEach(function (th) {
@@ -271,8 +285,27 @@
     });
   }
 
+  /* ---------------- 入試問題 ナビゲーション ---------------- */
+  function findNavIndex() {
+    var nav = state.nav, rows = state.sortedRows;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].exam_id === nav.examId && rows[i].question_number === nav.qnum) return i;
+    }
+    return -1;
+  }
+  function updateExamNav() {
+    var idx = findNavIndex(), total = state.sortedRows.length;
+    var prevBtn = el("exam-prev"), nextBtn = el("exam-next");
+    prevBtn.disabled = (idx <= 0);
+    nextBtn.disabled = (idx < 0 || idx >= total - 1);
+    el("exam-nav-label").textContent = (idx >= 0 && total > 0) ? (idx + 1) + " / " + total : "";
+    el("exam-show-all").style.display = (state.nav.qnum != null) ? "" : "none";
+  }
+
   /* ---------------- 入試問題 表示モーダル ---------------- */
   function openExam(examId, qnum) {
+    state.nav = { examId: examId, qnum: qnum };
+    updateExamNav();
     saveOpenExam(examId, qnum);
     UI.openModal(el("exam-modal"));
     el("exam-modal-body").innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';

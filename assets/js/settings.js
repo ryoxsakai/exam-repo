@@ -19,7 +19,7 @@
   var state = {
     config: { schedules: [], year_presets: [], question_categories: [], section_types: [] },
     universities: [],
-    list: { filter: { word: "", universityName: "", year: "", schedule: "", qnum: "" }, rows: [], sort: { key: "year", dir: "desc" } },
+    list: { filter: { word: "", universityName: "", year: "", schedule: "", qnum: "" }, rows: [], sortedRows: [], sort: { key: "year", dir: "desc" }, nav: { examId: null, qnum: null } },
     reg: { sections: [], editingExamId: null, meta: { year: "", university: "", schedule: "", qnum: "1", category: "" } },
     editCtx: null  // 汎用編集モーダルの対象
   };
@@ -228,11 +228,36 @@
   }
 
   /* ================= タブ3: 入試問題一覧 ================= */
+  function findListNavIndex() {
+    var nav = state.list.nav, rows = state.list.sortedRows;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].exam_id === nav.examId && rows[i].question_number === nav.qnum) return i;
+    }
+    return -1;
+  }
+  function updateListExamNav() {
+    var idx = findListNavIndex(), total = state.list.sortedRows.length;
+    el("exam-prev").disabled = (idx <= 0);
+    el("exam-next").disabled = (idx < 0 || idx >= total - 1);
+    el("exam-nav-label").textContent = (idx >= 0 && total > 0) ? (idx + 1) + " / " + total : "";
+    el("exam-show-all").style.display = (state.list.nav.qnum != null) ? "" : "none";
+  }
   function wireList() {
     el("list-search").addEventListener("click", function () { openSearchModal(runListSearch); });
     el("list-clear").addEventListener("click", function () {
       state.list.filter = { word: "", universityName: "", year: "", schedule: "", qnum: "" };
       loadList();
+    });
+    el("exam-prev").addEventListener("click", function () {
+      var idx = findListNavIndex(), rows = state.list.sortedRows;
+      if (idx > 0) { var r = rows[idx - 1]; openExam(r.exam_id, r.question_number); }
+    });
+    el("exam-next").addEventListener("click", function () {
+      var idx = findListNavIndex(), rows = state.list.sortedRows;
+      if (idx >= 0 && idx < rows.length - 1) { var r = rows[idx + 1]; openExam(r.exam_id, r.question_number); }
+    });
+    el("exam-show-all").addEventListener("click", function () {
+      if (state.list.nav.examId != null) openExam(state.list.nav.examId, null);
     });
   }
   function runListSearch() {
@@ -305,6 +330,7 @@
         "</td></tr>";
     });
     html += "</tbody></table></div>";
+    state.list.sortedRows = rows;
     el("list-area").innerHTML = html;
     $all("th.sortable", el("list-area")).forEach(function (th) {
       th.addEventListener("click", function () {
@@ -369,6 +395,8 @@
 
   /* 入試問題表示モーダル */
   function openExam(examId, qnum) {
+    state.list.nav = { examId: examId, qnum: qnum };
+    updateListExamNav();
     UI.openModal(el("exam-modal"));
     el("exam-modal-body").innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';
     Api.getExam(examId).then(function (data) {
@@ -527,6 +555,7 @@
     { l: "蛍光", t: "ハイライト ==語==",        b: "==", a: "==" },
     { l: "色",   t: "色付きハイライト ==語==:色", b: "==", a: "==:yellow" },
     { l: "下線", t: "下線 __語__",              b: "__", a: "__" },
+    { l: "太字", t: "太字 **語**",              b: "**", a: "**" },
     { l: "語注", t: "語注 ##語::訳##",          b: "##", a: "::訳##" },
     { l: "下付", t: "下付き ~~x~~",             b: "~~", a: "~~" },
     { l: "上付", t: "上付き ^^x^^",             b: "^^", a: "^^" },
@@ -586,6 +615,7 @@
     { code: "This is ==important==.", desc: "ハイライト（黄）" },
     { code: "A ==keyword==:blue here.", desc: "色付きハイライト（yellow/blue/red/purple/pink/green/aqua）" },
     { code: "An __underlined__ word.", desc: "下線" },
+    { code: "A **bold** word.", desc: "太字" },
     { code: "H~~2~~O and 1^^st^^.", desc: "下付き・上付き" },
     { code: "((A)) apple\n((B)) a very long choice that wraps neatly onto the next line", desc: "選択肢（行頭。折り返しも整形）" },
     { code: "----", desc: "区切り線" },

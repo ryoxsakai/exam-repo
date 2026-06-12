@@ -274,6 +274,8 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 #exam-modal .modal-head h3, #preview-modal .modal-head h3 { font-size: 13px; font-weight: 600; }
 #exam-modal .modal-head > .ic, #preview-modal .modal-head > .ic { font-size: 13px; }
 #exam-modal .modal-head .icon-btn, #preview-modal .modal-head .icon-btn { width: 34px; height: 34px; border-radius: 9px; font-size: 13px; }
+#exam-modal .modal-foot { padding: 10px 14px; gap: 6px; justify-content: flex-start; }
+#exam-nav-label { font-size: 12px; color: var(--muted); min-width: 3.5em; text-align: center; }
 
 /* Modal tabs */
 .modal .tabs { margin: 0 0 18px; }
@@ -357,7 +359,7 @@ table.data tbody tr:last-child td { border-bottom: 0; }
   display: inline-flex; align-items: center; justify-content: center;
   /* 左の間隔はマージンでなく描画時に挿入するスペース文字で確保する。
      行頭ではブラウザがスペースを消すため、折り返し時に左端へぴったり揃う */
-  width: 5em; box-sizing: border-box; padding: calc(.2em + 1px) 0; margin: 0 calc(.3em + 2px) 0 0;
+  width: 5em; box-sizing: border-box; padding: calc(.2em + 1px) 0; margin: 0;
   background: #fff; color: #000; border: 1.5px solid #000; border-radius: 3px;
   font-size: .82em; font-family: var(--sans); font-weight: 600; vertical-align: .04em; line-height: 1;
   text-indent: 0; overflow: hidden;
