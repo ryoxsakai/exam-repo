@@ -269,6 +269,11 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 .modal-head .spacer { flex: 1; }
 .modal-body { padding: 18px; overflow-y: auto; flex: 1 1 auto; }
 .modal-foot { padding: 14px 18px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 10px; background: var(--grad-soft); flex-shrink: 0; }
+/* 閲覧モーダルのヘッダーはよりコンパクトに */
+#exam-modal .modal-head { padding: 9px 14px; gap: 7px; }
+#exam-modal .modal-head h3 { font-size: 13px; font-weight: 600; }
+#exam-modal .modal-head > .ic { font-size: 13px; }
+#exam-modal .modal-head .icon-btn { width: 34px; height: 34px; border-radius: 9px; font-size: 13px; }
 
 /* Modal tabs */
 .modal .tabs { margin: 0 0 18px; }
@@ -327,11 +332,16 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 .exam-doc .blk { display: block; text-align: justify; }
 .exam-doc .blk.indent { text-indent: 3em; }
 .em-dash { letter-spacing: -.15em; }
-/* 文字サイズ切替（問題閲覧モーダル） */
+/* 文字サイズ切替（問題閲覧モーダル） — 5段階 */
+.fs-xs .exam-doc { font-size: 12px; }
 .fs-sm .exam-doc { font-size: 14px; }
 .fs-md .exam-doc { font-size: 16px; }
 .fs-lg .exam-doc { font-size: 19px; }
-.question-block-header { display: flex; align-items: baseline; gap: 3px; margin: 18px 0 8px; }
+.fs-xl .exam-doc { font-size: 22px; }
+.question-block-header { display: flex; align-items: baseline; flex-wrap: nowrap; gap: 3px; margin: 18px 0 8px; }
+@media (max-width: 600px) {
+  .question-block-header { display: inline-flex; margin: 4px 0; }
+}
 .question-badge {
   /* [[]]（blank-badge）と同サイズ。薄いブルーのグラデーション背景 */
   display: inline-flex; align-items: center; justify-content: center;
@@ -478,9 +488,11 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
     break-inside: avoid; page-break-inside: avoid;
   }
   #print-area .print-check { display: none !important; }
+  #print-area.fs-xs .exam-doc { font-size: 9pt; }
   #print-area.fs-sm .exam-doc { font-size: 10.5pt; }
   #print-area.fs-md .exam-doc { font-size: 12pt; }
   #print-area.fs-lg .exam-doc { font-size: 14pt; }
+  #print-area.fs-xl .exam-doc { font-size: 16pt; }
   #print-area .question-badge, #print-area .blank-badge,
   #print-area mark.hl {
     -webkit-print-color-adjust: exact; print-color-adjust: exact;

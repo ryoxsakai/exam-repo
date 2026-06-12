@@ -149,8 +149,15 @@
         continue;
       }
 
+      // @@ 行頭タグ → 強制字下げなし（indent 抑制）
+      var noIndent = false;
+      if (/^\s*@@/.test(line)) {
+        noIndent = true;
+        line = line.replace(/^\s*@@\s?/, "");
+        trimmed = line.trim();
+      }
       // 段落先頭かつ英語大文字で始まる行のみ字下げ
-      var indent = paraStart && /^[A-Z]/.test(trimmed);
+      var indent = !noIndent && paraStart && /^[A-Z]/.test(trimmed);
       html += '<span class="blk' + (indent ? " indent" : "") + '">' + inline(line, footnotes) + "</span>";
       paraStart = false;
     }
@@ -178,6 +185,7 @@
     t = t.replace(/~~([^~]+)~~/g, "$1");            // 下付き
     t = t.replace(/\^\^([^^]+)\^\^/g, "$1");        // 上付き
     t = t.replace(/\(\(([^)]+)\)\)/g, " ");         // 選択肢ラベル
+    t = t.replace(/^@@\s?/gm, "");                  // @@ 字下げ抑制タグ
     t = t.replace(/----/g, " ");
     return t;
   }

@@ -286,8 +286,8 @@
     });
   }
   // 文字サイズ切替（小→中→大の循環。localStorage に保存し印刷にも反映）
-  var FS_ORDER = ["sm", "md", "lg"];
-  var FS_LABEL = { sm: "小", md: "中", lg: "大" };
+  var FS_ORDER = ["xs", "sm", "md", "lg", "xl"];
+  var FS_LABEL = { xs: "極小", sm: "小", md: "中", lg: "大", xl: "極大" };
   function applyFontSize(size) {
     var body = el("exam-modal-body");
     FS_ORDER.forEach(function (s) { body.classList.remove("fs-" + s); });
