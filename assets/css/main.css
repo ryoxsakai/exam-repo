@@ -269,11 +269,11 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 .modal-head .spacer { flex: 1; }
 .modal-body { padding: 18px; overflow-y: auto; flex: 1 1 auto; }
 .modal-foot { padding: 14px 18px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 10px; background: var(--grad-soft); flex-shrink: 0; }
-/* 閲覧モーダルのヘッダーはよりコンパクトに */
-#exam-modal .modal-head { padding: 9px 14px; gap: 7px; }
-#exam-modal .modal-head h3 { font-size: 13px; font-weight: 600; }
-#exam-modal .modal-head > .ic { font-size: 13px; }
-#exam-modal .modal-head .icon-btn { width: 34px; height: 34px; border-radius: 9px; font-size: 13px; }
+/* 閲覧・プレビューモーダルのヘッダーはよりコンパクトに */
+#exam-modal .modal-head, #preview-modal .modal-head { padding: 9px 14px; gap: 7px; }
+#exam-modal .modal-head h3, #preview-modal .modal-head h3 { font-size: 13px; font-weight: 600; }
+#exam-modal .modal-head > .ic, #preview-modal .modal-head > .ic { font-size: 13px; }
+#exam-modal .modal-head .icon-btn, #preview-modal .modal-head .icon-btn { width: 34px; height: 34px; border-radius: 9px; font-size: 13px; }
 
 /* Modal tabs */
 .modal .tabs { margin: 0 0 18px; }

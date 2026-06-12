@@ -368,12 +368,43 @@
   /* ================= タブ4: 問題登録 ================= */
   var SECTION_ICONS = { "問題": "fa-circle-question", "解答": "fa-circle-check", "解説": "fa-comment-dots" };
 
+  /* ---- プレビューモーダルの文字サイズ・印刷（viewer.js と同じ5段階） ---- */
+  var PV_FS_ORDER = ["xs", "sm", "md", "lg", "xl"];
+  var PV_FS_LABEL = { xs: "極小", sm: "小", md: "中", lg: "大", xl: "極大" };
+  function applyPreviewFontSize(size) {
+    var body = el("preview-body");
+    PV_FS_ORDER.forEach(function (s) { body.classList.remove("fs-" + s); });
+    body.classList.add("fs-" + size);
+    el("preview-fontsize").title = "文字サイズ変更（現在: " + PV_FS_LABEL[size] + "）";
+  }
+  function printPreview() {
+    var area = el("print-area");
+    area.className = "fs-" + Store.getFontSize();
+    var clone = el("preview-body").cloneNode(true);
+    $all(".print-check", clone).forEach(function (n) { n.remove(); });
+    area.innerHTML = '<h1 class="print-title">' + esc(el("preview-modal-title").textContent) + "</h1>" + clone.innerHTML;
+    window.print();
+  }
+  function openPreview(title, bodyHtml) {
+    el("preview-modal-title").textContent = title;
+    el("preview-body").innerHTML = bodyHtml;
+    applyPreviewFontSize(Store.getFontSize());
+    UI.openModal(el("preview-modal"));
+  }
+
   function wireRegister() {
     el("reg-add-section").addEventListener("click", function () { addSection(); renderReg(); saveDraft(); });
     el("reg-reset").addEventListener("click", resetReg);
     el("reg-new").addEventListener("click", resetReg);
     el("reg-save").addEventListener("click", saveReg);
     el("reg-preview").addEventListener("click", previewReg);
+    el("preview-fontsize").addEventListener("click", function () {
+      var next = PV_FS_ORDER[(PV_FS_ORDER.indexOf(Store.getFontSize()) + 1) % PV_FS_ORDER.length];
+      Store.setFontSize(next);
+      applyPreviewFontSize(next);
+      toast("文字サイズ: " + PV_FS_LABEL[next], "ok");
+    });
+    el("preview-print").addEventListener("click", printPreview);
     el("reg-year-edit").addEventListener("click", function () { openYearEdit(); });
     el("reg-sched-edit").addEventListener("click", function () { openScheduleEdit(); });
     el("reg-uni-edit").addEventListener("click", function () { openUniversityEdit(); });
@@ -506,8 +537,7 @@
       b.addEventListener("click", function () {
         var i = Number(b.getAttribute("data-secpv"));
         var sec = state.reg.sections[i];
-        el("preview-body").innerHTML = field(sec.type, SECTION_ICONS[sec.type] || "fa-file-lines", sec.text || "（未入力）");
-        UI.openModal(el("preview-modal"));
+        openPreview(sec.type, field(sec.type, SECTION_ICONS[sec.type] || "fa-file-lines", sec.text || "（未入力）"));
       });
     });
   }
@@ -596,6 +626,8 @@
   }
   function previewReg() {
     var data = collectReg();
+    var m = state.reg.meta;
+    var title = [m.year, m.university, m.schedule].filter(Boolean).join(" ") || "プレビュー";
     var q = data.questions[0];
     var fields = [];
     Markup.parseSections(q.problemText || "").forEach(function (sec) {
@@ -604,8 +636,7 @@
     if (q.answerText.trim()) fields.push(field("解答", "fa-circle-check", q.answerText));
     if (q.commentaryText.trim()) fields.push(field("解説", "fa-comment-dots", q.commentaryText));
     var body = '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
-    el("preview-body").innerHTML = body;
-    UI.openModal(el("preview-modal"));
+    openPreview(title, body);
   }
   function loadExamIntoForm(examId) {
     Api.getExam(examId).then(function (data) {
