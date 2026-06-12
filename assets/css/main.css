@@ -333,10 +333,13 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 .fs-lg .exam-doc { font-size: 19px; }
 .question-block-header { display: flex; align-items: baseline; gap: 10px; margin: 18px 0 8px; }
 .question-badge {
-  display: inline-block; padding: 3px 16px; border-radius: 7px; font-family: var(--sans);
-  background: #fff; color: var(--navy); border: 1.5px solid var(--navy);
-  font-size: 12.5px; font-weight: 700; letter-spacing: .03em;
-  line-height: 1.5; min-width: 5em; text-align: center; white-space: nowrap; flex-shrink: 0;
+  /* [[]]（blank-badge）と同サイズ。薄いブルーのグラデーション背景 */
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 2.2em; padding: calc(.2em + 1px) 1.4em; margin: 0 calc(.3em + 2px);
+  background: linear-gradient(135deg, #F0FAFD, #CAF0F8);
+  color: var(--navy); border: 1.5px solid var(--sky); border-radius: 3px;
+  font-size: .82em; font-family: var(--sans); font-weight: 700; vertical-align: .04em; line-height: 1;
+  text-indent: 0; white-space: nowrap; flex-shrink: 0; letter-spacing: .03em;
 }
 .blank-badge {
   display: inline-flex; align-items: center; justify-content: center;
@@ -368,6 +371,14 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
   flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; word-break: normal; hyphens: auto;
   text-indent: 0;
 }
+/* インラインの ((A)) — 文中に丸囲みラベルとして表示（余白を取らない） */
+.choice-inline {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.45em; height: 1.45em; padding: 0 .1em;
+  border: 1.5px solid var(--ink); border-radius: 50%;
+  font-family: var(--sans); font-size: .72em; font-weight: 700; color: var(--ink);
+  vertical-align: .08em; margin: 0 .12em; line-height: 1; text-indent: 0;
+}
 .footnote-section { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); font-size: .82em; color: var(--muted); font-family: var(--sans); }
 .footnote-section ol { list-style: none; padding: 0; margin: 0; }
 .footnote-section li { display: flex; gap: 8px; margin-bottom: 4px; line-height: 1.5; }
@@ -378,6 +389,15 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: .06em;
   text-transform: uppercase; color: var(--muted); margin: 0 0 8px;
   display: flex; align-items: center; gap: 8px;
+}
+/* セクションタイトル横の印刷チェック */
+.exam-section-title .print-check {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; font-weight: 600; color: var(--muted);
+  letter-spacing: 0; cursor: pointer; user-select: none;
+}
+.exam-section-title .print-check input {
+  accent-color: var(--blue); cursor: pointer; margin: 0; width: 13px; height: 13px;
 }
 .exam-section + .exam-section { margin-top: 22px; padding-top: 20px; border-top: 1px dashed var(--line); }
 
@@ -452,7 +472,12 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
     font-family: var(--sans); font-size: 14pt; font-weight: 700;
     margin: 0 0 12pt; padding-bottom: 6pt; border-bottom: 1px solid #000;
   }
-  #print-area .exam-section { break-inside: avoid-page; }
+  /* 段落・選択肢の途中で改ページしない */
+  #print-area .exam-doc .blk,
+  #print-area .answer-choice {
+    break-inside: avoid; page-break-inside: avoid;
+  }
+  #print-area .print-check { display: none !important; }
   #print-area.fs-sm .exam-doc { font-size: 10.5pt; }
   #print-area.fs-md .exam-doc { font-size: 12pt; }
   #print-area.fs-lg .exam-doc { font-size: 14pt; }

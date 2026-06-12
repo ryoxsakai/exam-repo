@@ -349,11 +349,13 @@
       el("exam-modal-title").textContent = ex.year + "年 " + ex.university_name + " " + ex.schedule;
       var body = "";
       (ex.questions || []).forEach(function (q) {
-        body += '<div class="exam-section">';
-        body += field("問題", "fa-circle-question", q.problem_text);
-        if (q.answer_text && q.answer_text.trim()) body += field("解答", "fa-circle-check", q.answer_text);
-        if (q.commentary_text && q.commentary_text.trim()) body += field("解説", "fa-comment-dots", q.commentary_text);
-        body += "</div>";
+        var fields = [];
+        Markup.parseSections(q.problem_text || "").forEach(function (sec) {
+          if (sec.text.trim()) fields.push(field(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text));
+        });
+        if (q.answer_text && q.answer_text.trim()) fields.push(field("解答", "fa-circle-check", q.answer_text));
+        if (q.commentary_text && q.commentary_text.trim()) fields.push(field("解説", "fa-comment-dots", q.commentary_text));
+        body += '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
       });
       el("exam-modal-body").innerHTML = body || '<div class="empty">大問が登録されていません。</div>';
     }).catch(function (e) { el("exam-modal-body").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
@@ -593,13 +595,13 @@
   function previewReg() {
     var data = collectReg();
     var q = data.questions[0];
-    var body = '<div class="exam-section">';
+    var fields = [];
     Markup.parseSections(q.problemText || "").forEach(function (sec) {
-      if (sec.text.trim()) body += field(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text);
+      if (sec.text.trim()) fields.push(field(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text));
     });
-    if (q.answerText.trim()) body += field("解答", "fa-circle-check", q.answerText);
-    if (q.commentaryText.trim()) body += field("解説", "fa-comment-dots", q.commentaryText);
-    body += "</div>";
+    if (q.answerText.trim()) fields.push(field("解答", "fa-circle-check", q.answerText));
+    if (q.commentaryText.trim()) fields.push(field("解説", "fa-comment-dots", q.commentaryText));
+    var body = '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
     el("preview-body").innerHTML = body;
     UI.openModal(el("preview-modal"));
   }
