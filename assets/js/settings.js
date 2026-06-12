@@ -290,13 +290,34 @@
     });
     html += '<th style="text-align:right">操作</th></tr></thead><tbody>';
     rows.forEach(function (r) {
+      // 大問番号リストを解析
+      var qnums = String(r.matching || "").split(",").map(function (x) { return Number(x.trim()); })
+        .filter(function (n) { return !isNaN(n); });
+      qnums.sort(function (a, b) { return a - b; });
+      // 重複除去
+      var uniq = [];
+      qnums.forEach(function (n) { if (uniq.indexOf(n) < 0) uniq.push(n); });
+      // 大問がない場合は1個と仮定
+      if (!uniq.length) uniq = [1];
+
+      // 最初の大問は試験情報と共に表示
       html += "<tr>" +
-        '<td><span class="pill em">' + esc(r.year) + "</span></td><td><strong>" + esc(r.university_name) + "</strong></td><td>" + esc(r.schedule) + "</td><td>" + esc(fmtQNums(r.matching, r.question_count)) + "</td>" +
+        '<td><span class="pill em">' + esc(r.year) + "</span></td><td><strong>" + esc(r.university_name) + "</strong></td><td>" + esc(r.schedule) + "</td><td>問' + uniq[0] + "</td>" +
         '<td class="row-actions">' +
         '<button class="icon-btn" data-view="' + r.exam_id + '" title="表示"><i class="fa-solid fa-file-lines"></i></button>' +
-        '<button class="icon-btn" data-edit="' + r.exam_id + '" title="編集"><i class="fa-solid fa-pen"></i></button>' +
+        '<button class="icon-btn" data-edit="' + r.exam_id + ':' + uniq[0] + '" title="編集"><i class="fa-solid fa-pen"></i></button>' +
         '<button class="icon-btn danger" data-del="' + r.exam_id + '" title="削除"><i class="fa-solid fa-trash"></i></button>' +
         "</td></tr>";
+
+      // 2番目以降の大問をサブ行として表示
+      for (var i = 1; i < uniq.length; i++) {
+        html += "<tr style='background:rgba(0,0,0,0.02)'>" +
+          '<td></td><td></td><td></td><td>問' + uniq[i] + "</td>" +
+          '<td class="row-actions">' +
+          '<button class="icon-btn" data-view="' + r.exam_id + '" title="表示"><i class="fa-solid fa-file-lines"></i></button>' +
+          '<button class="icon-btn" data-edit="' + r.exam_id + ':' + uniq[i] + '" title="編集"><i class="fa-solid fa-pen"></i></button>' +
+          "</td></tr>";
+      }
     });
     html += "</tbody></table></div>";
     el("list-area").innerHTML = html;
@@ -309,7 +330,15 @@
       });
     });
     $all("[data-view]", el("list-area")).forEach(function (b) { b.addEventListener("click", function () { openExam(Number(b.getAttribute("data-view"))); }); });
-    $all("[data-edit]", el("list-area")).forEach(function (b) { b.addEventListener("click", function () { loadExamIntoForm(Number(b.getAttribute("data-edit"))); }); });
+    $all("[data-edit]", el("list-area")).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var val = b.getAttribute("data-edit");
+        var parts = val.split(":");
+        var examId = Number(parts[0]);
+        var qnum = parts[1] ? Number(parts[1]) : undefined;
+        loadExamIntoForm(examId, qnum);
+      });
+    });
     $all("[data-del]", el("list-area")).forEach(function (b) {
       b.addEventListener("click", function () {
         if (!confirm("この入試問題を削除しますか？（大問もすべて削除されます）")) return;
@@ -654,11 +683,19 @@
     var body = '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
     openPreview(title, body);
   }
-  function loadExamIntoForm(examId) {
+  function loadExamIntoForm(examId, questionNumber) {
     Api.getExam(examId).then(function (data) {
       var ex = data.exam;
-      var q = (ex.questions || [])[0] || { question_number: 1, problem_text: "", answer_text: "", commentary_text: "" };
+      // 指定された大問番号を探す（未指定の場合は最初の大問）
+      var q = null;
+      if (questionNumber !== undefined) {
+        q = (ex.questions || []).find(function (qu) { return qu.question_number === questionNumber; });
+      }
+      if (!q) q = (ex.questions || [])[0];
+      if (!q) q = { question_number: 1, problem_text: "", answer_text: "", commentary_text: "" };
+
       state.reg.editingExamId = examId;
+      state.reg.editingQuestionNumber = q.question_number;
       state.reg.sections = [];
 
       var sections = Markup.parseSections(q.problem_text);
