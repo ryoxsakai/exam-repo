@@ -593,7 +593,10 @@
   function previewReg() {
     var data = collectReg();
     var q = data.questions[0];
-    var body = '<div class="exam-section">' + field("問題", "fa-circle-question", q.problemText);
+    var body = '<div class="exam-section">';
+    Markup.parseSections(q.problemText || "").forEach(function (sec) {
+      if (sec.text.trim()) body += field(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text);
+    });
     if (q.answerText.trim()) body += field("解答", "fa-circle-check", q.answerText);
     if (q.commentaryText.trim()) body += field("解説", "fa-comment-dots", q.commentaryText);
     body += "</div>";
@@ -606,7 +609,11 @@
       var q = (ex.questions || [])[0] || { question_number: 1, problem_text: "", answer_text: "", commentary_text: "" };
       state.reg.editingExamId = examId;
       state.reg.sections = [];
-      if (q.problem_text) state.reg.sections.push({ type: "問題", text: q.problem_text });
+      if (q.problem_text) {
+        Markup.parseSections(q.problem_text).forEach(function (sec) {
+          state.reg.sections.push({ type: sec.type, text: sec.text });
+        });
+      }
       if (q.answer_text) state.reg.sections.push({ type: "解答", text: q.answer_text });
       if (q.commentary_text) state.reg.sections.push({ type: "解説", text: q.commentary_text });
       if (!state.reg.sections.length) addSection("問題");

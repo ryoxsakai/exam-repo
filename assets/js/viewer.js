@@ -5,6 +5,12 @@
   "use strict";
   var el = UI.el, $ = UI.$, $all = UI.$all, create = UI.create, esc = UI.escapeHtml;
 
+  var SECTION_ICONS = { "問題": "fa-circle-question", "解答": "fa-circle-check", "解説": "fa-comment-dots" };
+
+  function saveOpenExam(id) { try { sessionStorage.setItem("exam_open_id", String(id)); } catch (e) {} }
+  function clearOpenExam() { try { sessionStorage.removeItem("exam_open_id"); } catch (e) {} }
+  function getOpenExam() { try { var v = sessionStorage.getItem("exam_open_id"); return v ? Number(v) : null; } catch (e) { return null; } }
+
   var TAB_DEFS = {
     search: { id: "search", label: "通常検索", icon: "fa-table-list" },
     corpus: { id: "corpus", label: "コーパス検索", icon: "fa-language" }
@@ -45,6 +51,10 @@
     // モーダル配線
     UI.wireModal(el("search-modal"));
     UI.wireModal(el("exam-modal"));
+    // 試験モーダルを閉じたとき、保存済み exam ID をクリア
+    var _examModal = el("exam-modal");
+    _examModal.addEventListener("mousedown", function (e) { if (e.target === _examModal) clearOpenExam(); });
+    $all("[data-close]", _examModal).forEach(function (b) { b.addEventListener("click", clearOpenExam); });
     el("btn-open-search").addEventListener("click", openSearch);
     el("btn-open-search-2").addEventListener("click", openSearch);
     el("sm-run").addEventListener("click", runSearch);
@@ -70,7 +80,9 @@
       el("results-area").innerHTML = noWorkerHtml();
       return;
     }
+    var _savedExamId = getOpenExam();
     loadConfig().then(loadResults);
+    if (_savedExamId) openExam(_savedExamId);
   }
 
   function noWorkerHtml() {
@@ -250,6 +262,7 @@
 
   /* ---------------- 入試問題 表示モーダル ---------------- */
   function openExam(examId) {
+    saveOpenExam(examId);
     UI.openModal(el("exam-modal"));
     el("exam-modal-body").innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';
     Api.getExam(examId).then(function (data) {
@@ -258,7 +271,9 @@
       var body = "";
       (ex.questions || []).forEach(function (q) {
         body += '<div class="exam-section">';
-        body += renderField("問題", "fa-circle-question", q.problem_text);
+        Markup.parseSections(q.problem_text || "").forEach(function (sec) {
+          if (sec.text.trim()) body += renderField(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text);
+        });
         if (q.answer_text && q.answer_text.trim()) body += renderField("解答", "fa-circle-check", q.answer_text);
         if (q.commentary_text && q.commentary_text.trim()) body += renderField("解説", "fa-comment-dots", q.commentary_text);
         body += "</div>";

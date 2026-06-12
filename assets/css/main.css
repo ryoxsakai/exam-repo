@@ -333,13 +333,14 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 .fs-lg .exam-doc { font-size: 19px; }
 .question-block-header { display: flex; align-items: baseline; gap: 10px; margin: 18px 0 8px; }
 .question-badge {
-  display: inline-block; padding: 3px 13px; border-radius: 7px; font-family: var(--sans);
-  background: var(--grad-blue); color: #fff; font-size: 12.5px; font-weight: 700; letter-spacing: .03em;
-  line-height: 1.5;
+  display: inline-block; padding: 3px 16px; border-radius: 7px; font-family: var(--sans);
+  background: #fff; color: var(--navy); border: 1.5px solid var(--navy);
+  font-size: 12.5px; font-weight: 700; letter-spacing: .03em;
+  line-height: 1.5; min-width: 5em; text-align: center; white-space: nowrap; flex-shrink: 0;
 }
 .blank-badge {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 2.2em; padding: calc(.2em + 1px) 0.7em; margin: 0 calc(.3em + 2px);
+  min-width: 2.2em; padding: calc(.2em + 1px) 1.4em; margin: 0 calc(.3em + 2px);
   background: #fff; color: #000; border: 1.5px solid #000; border-radius: 3px;
   font-size: .82em; font-family: var(--sans); font-weight: 600; vertical-align: .04em; line-height: 1;
   text-indent: 0;
