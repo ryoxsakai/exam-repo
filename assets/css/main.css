@@ -325,6 +325,10 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 /* ---------- Exam display (markup output) ---------- */
 .exam-doc { font-family: var(--serif); font-size: 16px; line-height: 1.95; color: var(--ink); }
 .exam-doc .blk { display: block; }
+/* 文字サイズ切替（問題閲覧モーダル） */
+.fs-sm .exam-doc { font-size: 14px; }
+.fs-md .exam-doc { font-size: 16px; }
+.fs-lg .exam-doc { font-size: 19px; }
 .question-block-header { display: flex; align-items: baseline; gap: 10px; margin: 18px 0 8px; }
 .question-badge {
   display: inline-block; padding: 3px 13px; border-radius: 7px; font-family: var(--sans);
@@ -432,6 +436,9 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
     margin: 0 0 12pt; padding-bottom: 6pt; border-bottom: 1px solid #000;
   }
   #print-area .exam-section { break-inside: avoid-page; }
+  #print-area.fs-sm .exam-doc { font-size: 10.5pt; }
+  #print-area.fs-md .exam-doc { font-size: 12pt; }
+  #print-area.fs-lg .exam-doc { font-size: 14pt; }
   #print-area .question-badge, #print-area .blank-badge,
   #print-area mark.hl {
     -webkit-print-color-adjust: exact; print-color-adjust: exact;

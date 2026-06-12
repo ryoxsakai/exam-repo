@@ -16,7 +16,8 @@
     lastTabMain:   "exam_lasttab_main",      // 閲覧ページで最後に開いたタブ
     stopwords:     "exam_stopword_lists",    // ストップワードリスト [{name,words[]}]
     vocab:         "exam_vocab_lists",       // 語彙リスト [{name,words[]}]
-    sectionTypes:  "exam_section_types"      // 問題登録のプルダウン候補（問題/解答/解説…）
+    sectionTypes:  "exam_section_types",     // 問題登録のプルダウン候補（問題/解答/解説…）
+    fontSize:      "exam_fontsize"           // 問題閲覧モーダルの文字サイズ (sm/md/lg)
   };
 
   function read(key, fallback) {
@@ -137,7 +138,14 @@
       if (!Array.isArray(t) || !t.length) { t = DEFAULT_SECTION_TYPES.slice(); write(KEYS.sectionTypes, t); }
       return t;
     },
-    setSectionTypes: function (t) { write(KEYS.sectionTypes, t); }
+    setSectionTypes: function (t) { write(KEYS.sectionTypes, t); },
+
+    /* 問題閲覧モーダルの文字サイズ */
+    getFontSize: function () {
+      var v = readRaw(KEYS.fontSize, "md");
+      return (v === "sm" || v === "lg") ? v : "md";
+    },
+    setFontSize: function (v) { localStorage.setItem(KEYS.fontSize, v); }
   };
 
   global.Store = Store;
