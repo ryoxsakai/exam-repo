@@ -347,6 +347,7 @@ export default {
         const uname    = url.searchParams.get("universityName") || "";
         const year     = url.searchParams.get("year") || "";
         const schedule = url.searchParams.get("schedule") || "";
+        const category = url.searchParams.get("category") || "";
 
         // 大問ごとに1行返す（exam_id + question_number で一意）
         let sql = `
@@ -367,6 +368,7 @@ export default {
         if (uname)    { sql += " AND u.name LIKE ?";    params.push(`%${uname}%`); }
         if (year)     { sql += " AND e.year = ?";       params.push(Number(year)); }
         if (schedule) { sql += " AND e.schedule = ?";   params.push(schedule); }
+        if (category) { sql += " AND q.category = ?";   params.push(category); }
 
         sql += " ORDER BY e.year DESC, u.name ASC, q.question_number ASC";
 

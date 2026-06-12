@@ -26,7 +26,7 @@
 
   // 状態
   var state = {
-    filter: { word: "", universityName: "", year: "", schedule: "", qnum: "" },
+    filter: { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "" },
     rows: [],
     sortedRows: [],
     sort: { key: "year", dir: "desc" },
@@ -34,7 +34,7 @@
     config: null,
     corpus: null,
     // null = 制限なし。配列なら該当値のみ対象（値は文字列で保持）
-    corpusFilter: { universities: null, years: null, schedules: null, qnums: null },
+    corpusFilter: { universities: null, years: null, schedules: null, qnums: null, categories: null },
     charts: {}
   };
 
@@ -143,6 +143,7 @@
       fillSelect(el("sm-year"), cfg.year_presets || [], "指定なし");
       fillSelect(el("sm-schedule"), cfg.schedules || [], "指定なし");
       fillSelect(el("sm-university"), unis.map(function (u) { return u.name; }), "指定なし");
+      fillSelect(el("sm-category"), cfg.question_categories || [], "指定なし");
     });
   }
 
@@ -160,6 +161,7 @@
     el("sm-year").value = state.filter.year;
     el("sm-schedule").value = state.filter.schedule;
     el("sm-qnum").value = state.filter.qnum;
+    el("sm-category").value = state.filter.category;
     UI.openModal(el("search-modal"));
   }
   function runSearch() {
@@ -168,7 +170,8 @@
       universityName: el("sm-university").value,
       year: el("sm-year").value,
       schedule: el("sm-schedule").value,
-      qnum: el("sm-qnum").value.trim()
+      qnum: el("sm-qnum").value.trim(),
+      category: el("sm-category").value
     };
     UI.closeModal(el("search-modal"));
     UI.setActiveTab(el("main-tabs"), "search");
@@ -176,7 +179,7 @@
     loadResults();
   }
   function clearFilter() {
-    state.filter = { word: "", universityName: "", year: "", schedule: "", qnum: "" };
+    state.filter = { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "" };
     loadResults();
   }
 
@@ -187,7 +190,8 @@
     el("results-area").innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
     Api.search({
       word: state.filter.word, universityName: state.filter.universityName,
-      year: state.filter.year, schedule: state.filter.schedule
+      year: state.filter.year, schedule: state.filter.schedule,
+      category: state.filter.category
     }).then(function (data) {
       var rows = (data.results || []).map(function (r) {
         return {
@@ -225,6 +229,7 @@
     if (f.universityName) parts.push(f.universityName);
     if (f.schedule) parts.push(f.schedule);
     if (f.qnum) parts.push("大問" + f.qnum);
+    if (f.category) parts.push(f.category);
     el("filter-summary").textContent = parts.length ? parts.join(" / ") + " で絞り込み中" : "すべての入試問題を表示中";
   }
 
@@ -463,7 +468,8 @@
     { key: "universities", label: "大学", field: "university_name" },
     { key: "years",        label: "年度", field: "year" },
     { key: "schedules",    label: "方式", field: "schedule" },
-    { key: "qnums",        label: "大問", field: "question_number" }
+    { key: "qnums",        label: "大問", field: "question_number" },
+    { key: "categories",   label: "種別", field: "category" }
   ];
 
   function applyCorpusFilter(qs) {
@@ -473,6 +479,7 @@
       if (f.years && f.years.indexOf(String(q.year)) < 0) return false;
       if (f.schedules && f.schedules.indexOf(String(q.schedule)) < 0) return false;
       if (f.qnums && f.qnums.indexOf(String(q.question_number)) < 0) return false;
+      if (f.categories && f.categories.indexOf(String(q.category || "")) < 0) return false;
       return true;
     });
   }

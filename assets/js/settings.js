@@ -19,7 +19,7 @@
   var state = {
     config: { schedules: [], year_presets: [], question_categories: [], section_types: [] },
     universities: [],
-    list: { filter: { word: "", universityName: "", year: "", schedule: "", qnum: "" }, rows: [], sortedRows: [], sort: { key: "year", dir: "desc" }, nav: { examId: null, qnum: null } },
+    list: { filter: { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "" }, rows: [], sortedRows: [], sort: { key: "year", dir: "desc" }, nav: { examId: null, qnum: null } },
     reg: { sections: [], editingExamId: null, meta: { year: "", university: "", schedule: "", qnum: "1", category: "" } },
     editCtx: null  // 汎用編集モーダルの対象
   };
@@ -214,6 +214,7 @@
       fillSelect(el("sm-year"), state.config.year_presets, "指定なし");
       fillSelect(el("sm-schedule"), state.config.schedules, "指定なし");
       fillSelect(el("sm-university"), state.universities.map(function (u) { return u.name; }), "指定なし");
+      fillSelect(el("sm-category"), state.config.question_categories || [], "指定なし");
       // 登録フォーム
       fillRegSelects();
     });
@@ -245,7 +246,7 @@
   function wireList() {
     el("list-search").addEventListener("click", function () { openSearchModal(runListSearch); });
     el("list-clear").addEventListener("click", function () {
-      state.list.filter = { word: "", universityName: "", year: "", schedule: "", qnum: "" };
+      state.list.filter = { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "" };
       loadList();
     });
     el("exam-prev").addEventListener("click", function () {
@@ -272,9 +273,10 @@
     if (f.word) parts.push("「" + f.word + "」");
     if (f.year) parts.push(f.year + "年"); if (f.universityName) parts.push(f.universityName);
     if (f.schedule) parts.push(f.schedule); if (f.qnum) parts.push("大問" + f.qnum);
+    if (f.category) parts.push(f.category);
     el("list-summary").textContent = parts.length ? parts.join(" / ") : "すべての入試問題";
     el("list-area").innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
-    Api.search({ word: f.word, universityName: f.universityName, year: f.year, schedule: f.schedule }).then(function (data) {
+    Api.search({ word: f.word, universityName: f.universityName, year: f.year, schedule: f.schedule, category: f.category }).then(function (data) {
       var rows = (data.results || []).map(function (r) {
         return {
           exam_id: r.exam_id, question_id: r.question_id,
@@ -376,11 +378,11 @@
     searchCb = cb;
     var f = state.list.filter;
     el("sm-word").value = f.word; el("sm-year").value = f.year; el("sm-university").value = f.universityName;
-    el("sm-schedule").value = f.schedule; el("sm-qnum").value = f.qnum;
+    el("sm-schedule").value = f.schedule; el("sm-qnum").value = f.qnum; el("sm-category").value = f.category || "";
     UI.openModal(el("search-modal"));
   }
   function readSearchModal() {
-    return { word: el("sm-word").value.trim(), universityName: el("sm-university").value, year: el("sm-year").value, schedule: el("sm-schedule").value, qnum: el("sm-qnum").value.trim() };
+    return { word: el("sm-word").value.trim(), universityName: el("sm-university").value, year: el("sm-year").value, schedule: el("sm-schedule").value, qnum: el("sm-qnum").value.trim(), category: el("sm-category").value };
   }
   function wireSearchModalTabs() {
     $all("#search-modal-tabs .tab").forEach(function (t) {
