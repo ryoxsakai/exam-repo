@@ -280,11 +280,20 @@ export default {
           await env.DB.prepare("UPDATE exams SET schedule = ? WHERE id = ?").bind(body.schedule, examId).run();
 
         if (body.questions !== undefined) {
-          await env.DB.prepare("DELETE FROM questions WHERE exam_id = ?").bind(examId).run();
+          // DELETE ALL + INSERT の代わりに UPSERT で各大問を個別更新
+          // （他の大問を消さないようにするため）
           for (const q of body.questions) {
-            await env.DB.prepare(
-              "INSERT INTO questions (exam_id, question_number, category, problem_text, answer_text, commentary_text) VALUES (?, ?, ?, ?, ?, ?)"
-            ).bind(examId, Math.max(1, Number(q.questionNumber) || 1), q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").run();
+            const qnum = Math.max(1, Number(q.questionNumber) || 1);
+            await env.DB.prepare(`
+              INSERT INTO questions (exam_id, question_number, category, problem_text, answer_text, commentary_text)
+              VALUES (?, ?, ?, ?, ?, ?)
+              ON CONFLICT(exam_id, question_number) DO UPDATE SET
+                category = excluded.category,
+                problem_text = excluded.problem_text,
+                answer_text = excluded.answer_text,
+                commentary_text = excluded.commentary_text,
+                updated_at = datetime('now')
+            `).bind(examId, qnum, q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").run();
           }
         }
 
