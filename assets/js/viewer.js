@@ -326,13 +326,13 @@
     }
     area.className = "fs-" + Store.getFontSize();
     var clone = el("exam-modal-body").cloneNode(true);
-    $all(".print-check", clone).forEach(function (n) { n.remove(); });
+    $all(".print-check", clone).forEach(function (n) { n.parentNode.removeChild(n); });
     $all(".exam-section", clone).forEach(function (sec) {
-      $all(".exam-field-sep", sec).forEach(function (h) { h.remove(); });
+      $all(".exam-field-sep", sec).forEach(function (h) { h.parentNode.removeChild(h); });
       var kept = [];
       $all(".exam-field", sec).forEach(function (f) {
         if (Store.isPrintSection(f.getAttribute("data-sectype"))) kept.push(f);
-        else f.remove();
+        else f.parentNode.removeChild(f);
       });
       // 残ったセクション間に区切り線を入れ直す
       kept.forEach(function (f, i) {
@@ -342,7 +342,7 @@
           f.parentNode.insertBefore(hr, f);
         }
       });
-      if (!kept.length) sec.remove();
+      if (!kept.length) sec.parentNode.removeChild(sec);
     });
     area.innerHTML = '<h1 class="print-title">' + esc(el("exam-modal-title").textContent) + "</h1>" +
       clone.innerHTML;
@@ -368,7 +368,7 @@
       document.body.appendChild(ta);
       ta.focus(); ta.select();
       var ok = document.execCommand("copy");
-      ta.remove();
+      document.body.removeChild(ta);
       return ok;
     } catch (e) { return false; }
   }

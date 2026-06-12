@@ -381,7 +381,7 @@
     var area = el("print-area");
     area.className = "fs-" + Store.getFontSize();
     var clone = el("preview-body").cloneNode(true);
-    $all(".print-check", clone).forEach(function (n) { n.remove(); });
+    $all(".print-check", clone).forEach(function (n) { n.parentNode.removeChild(n); });
     area.innerHTML = '<h1 class="print-title">' + esc(el("preview-modal-title").textContent) + "</h1>" + clone.innerHTML;
     window.print();
   }
