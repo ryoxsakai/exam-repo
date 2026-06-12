@@ -104,9 +104,7 @@
     ["pr-year", "pr-university", "pr-schedule"].forEach(function (id) {
       el(id).addEventListener("change", loadPrintPreview);
     });
-    ["pr-cover", "pr-problem", "pr-answer"].forEach(function (id) {
-      el(id).addEventListener("change", renderPrintPreview);
-    });
+    el("pr-cover").addEventListener("change", renderPrintPreview);
     el("btn-print-run").addEventListener("click", runPrint);
     el("btn-print-run-2").addEventListener("click", runPrint);
 
@@ -518,7 +516,7 @@
       var inner = "";
       qs.forEach(function (q) {
         var secs = questionSections(q).filter(function (s) {
-          return s.text && s.text.trim() && (isAnswerSide(s.type) === answerSide);
+          return s.text && s.text.trim() && (isAnswerSide(s.type) === answerSide) && Store.isPrintSection(s.type);
         });
         if (!secs.length) return;
         inner += '<div class="print-q"><div class="print-q-head">大問' + esc(q.question_number) + "</div>";
@@ -528,13 +526,46 @@
       if (!inner) return "";
       return '<div class="print-part"><div class="print-part-head">' + esc(title) + "</div>" + inner + "</div>";
     }
-    if (opts.problem) html += part("問題", false);
-    if (opts.answer) html += part("解答・解説", true);
+    html += part("問題", false);
+    html += part("解答・解説", true);
     return html;
   }
 
   function printOptions() {
-    return { cover: el("pr-cover").checked, problem: el("pr-problem").checked, answer: el("pr-answer").checked };
+    return { cover: el("pr-cover").checked };
+  }
+
+  // 選択中の試験から登場するセクション種別を問題面／解答面に分けてチェックUI化。
+  // チェック状態はモーダル印刷と共通の Store.isPrintSection を用いる。
+  function renderPrintSectionControls() {
+    var box = el("pr-sections");
+    if (!state.printExam) { box.innerHTML = ""; return; }
+    var problem = [], answer = [];
+    (state.printExam.questions || []).forEach(function (q) {
+      questionSections(q).forEach(function (s) {
+        if (!s.text || !s.text.trim()) return;
+        var arr = isAnswerSide(s.type) ? answer : problem;
+        if (arr.indexOf(s.type) < 0) arr.push(s.type);
+      });
+    });
+    function group(title, types) {
+      if (!types.length) return "";
+      var h = '<div class="pr-secgroup"><div class="pr-secgroup-head">' + esc(title) + "</div>" +
+        '<div class="pr-secgroup-opts">';
+      types.forEach(function (t) {
+        var ck = Store.isPrintSection(t) ? " checked" : "";
+        h += '<label class="check-inline"><input type="checkbox" data-prsec="' + esc(t) + '"' + ck + "> <span>" + esc(t) + "</span></label>";
+      });
+      return h + "</div></div>";
+    }
+    var html = group("問題面に印刷するセクション", problem) + group("解答面に印刷するセクション", answer);
+    box.innerHTML = html ? '<div class="card pr-seccard">' + html + "</div>" : "";
+    $all("[data-prsec]", box).forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        Store.setPrintSection(cb.getAttribute("data-prsec"), cb.checked);
+        renderPrintPreview();
+      });
+    });
   }
 
   function loadPrintPreview() {
@@ -542,6 +573,7 @@
     var year = el("pr-year").value, uni = el("pr-university").value, sched = el("pr-schedule").value;
     if (!year || !uni || !sched) {
       state.printExam = null;
+      renderPrintSectionControls();
       el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-print ic"></i>年度・大学・方式をすべて選択してください。</div></div>';
       return;
     }
@@ -550,6 +582,7 @@
       var exams = (data.exams || []).filter(function (e) { return e.university_name === uni && String(e.year) === String(year) && e.schedule === sched; });
       if (!exams.length) {
         state.printExam = null;
+        renderPrintSectionControls();
         el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>該当する入試問題がありません。</div></div>';
         return;
       }
@@ -557,6 +590,7 @@
         var questions = [];
         results.forEach(function (r) { (r.exam.questions || []).forEach(function (q) { questions.push(q); }); });
         state.printExam = { year: year, university_name: uni, schedule: sched, questions: questions };
+        renderPrintSectionControls();
         renderPrintPreview();
       });
     }).catch(function (e) {

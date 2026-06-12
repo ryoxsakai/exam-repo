@@ -501,6 +501,9 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 /* ---------- 問題印刷タブ（プレビュー＋印刷で共通の見た目） ---------- */
 .check-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; user-select: none; }
 .check-inline input { accent-color: var(--emerald-dark); }
+.pr-seccard { margin-top: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.pr-secgroup-head { font-family: var(--sans); font-size: 13px; font-weight: 700; color: var(--ink-soft); margin-bottom: 8px; }
+.pr-secgroup-opts { display: flex; flex-wrap: wrap; gap: 8px 14px; }
 #print-preview { margin-top: 16px; }
 .print-doc {
   background: #fff; border: 1px solid var(--line); border-radius: 14px;
