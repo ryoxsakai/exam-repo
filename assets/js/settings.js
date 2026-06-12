@@ -28,6 +28,7 @@
   function init() {
     el("site-title").textContent = Store.getSiteTitle();
     document.title = "設定 — " + Store.getSiteTitle();
+    UI.applyDomainLinks();
 
     var order = Store.getTabOrder("setting", SET_ORDER);
     var active = Store.getLastTab("setting");
@@ -74,6 +75,28 @@
     });
     renderOrderList("main", MAIN_TABS, MAIN_ORDER, el("order-main"));
     renderOrderList("setting", SET_TABS, SET_ORDER, el("order-setting"));
+
+    // 独自ドメイン
+    var dom = Store.getCustomDomain();
+    el("cfg-domain").value = dom;
+    updateDomainCurrent();
+    el("cfg-domain-save").addEventListener("click", function () {
+      Store.setCustomDomain(el("cfg-domain").value);
+      UI.applyDomainLinks();
+      updateDomainCurrent();
+      if (Store.getWorkerUrl()) {
+        Api.updateConfig({ custom_domain: Store.getCustomDomain() })
+          .then(function () { toast("独自ドメインを保存しました", "ok"); })
+          .catch(function () { toast("ローカルに保存しました（Worker未接続）", "ok"); });
+      } else toast("ローカルに保存しました", "ok");
+    });
+  }
+
+  function updateDomainCurrent() {
+    var base = Store.getBaseUrl();
+    el("domain-current").innerHTML = base
+      ? '<i class="fa-solid fa-link"></i> リンク先: <code>' + esc(base) + "/</code> ・ <code>" + esc(base) + "/setting/</code>"
+      : '<i class="fa-solid fa-link-slash"></i> 未設定（相対パスでリンク）。現在アクセス中: <code>' + esc(location.hostname) + "</code>";
   }
 
   function renderOrderList(page, defs, defOrder, container) {
@@ -139,6 +162,13 @@
       if (!Array.isArray(state.config.schedules)) state.config.schedules = [];
       if (!Array.isArray(state.config.year_presets)) state.config.year_presets = [];
       state.universities = (res[1] && res[1].universities) || [];
+      // 独自ドメイン（Worker 側にあればローカル未設定時に取り込む）
+      if (state.config.custom_domain && !Store.getCustomDomain()) {
+        Store.setCustomDomain(state.config.custom_domain);
+        el("cfg-domain").value = Store.getCustomDomain();
+        UI.applyDomainLinks();
+        updateDomainCurrent();
+      }
       // 検索モーダルの選択肢
       fillSelect(el("sm-year"), state.config.year_presets, "指定なし");
       fillSelect(el("sm-schedule"), state.config.schedules, "指定なし");

@@ -9,11 +9,20 @@
   <meta http-equiv="Expires" content="0" />
   <title>設定 — 入試問題データベース</title>
 
+  <!-- iOS ホーム画面アイコン / Web App -->
+  <link rel="apple-touch-icon" href="/DB2.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/DB2.png" />
+  <link rel="apple-touch-icon-precomposed" href="/DB2.png" />
+  <link rel="icon" type="image/png" href="/DB2.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="入試DB 設定" />
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="../assets/css/main.css?v=20260612" />
+  <link rel="stylesheet" href="../assets/css/main.css?v=20260612b" />
 </head>
 <body>
   <header class="topbar">
@@ -26,7 +35,7 @@
         </div>
       </div>
       <div class="topbar-spacer"></div>
-      <a class="icon-btn" href="../" title="閲覧ページへ"><i class="fa-solid fa-house"></i></a>
+      <a class="icon-btn" id="nav-home" href="../" title="閲覧ページへ"><i class="fa-solid fa-house"></i></a>
     </div>
   </header>
 
@@ -47,6 +56,16 @@
           <button class="btn primary" id="cfg-title-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
         </div>
         <p class="hint" style="margin-top:8px">閲覧ページ・設定ページのタイトルに反映されます（Worker にも保存し全端末で共有）。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-globe ic"></i> 独自ドメイン</h3></div>
+        <div class="inline-add">
+          <input type="text" id="cfg-domain" placeholder="例: exam.lrnr.jp" />
+          <button class="btn primary" id="cfg-domain-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+        </div>
+        <p class="hint" style="margin-top:8px">登録すると、ページ間の移動リンク（ホーム⇄設定）やアイコンの参照先にこのドメインを使い、リンク切れを防ぎます。空欄にすると相対パスに戻ります。</p>
+        <p class="hint" id="domain-current" style="margin-top:4px"></p>
       </div>
 
       <div class="card">
@@ -266,10 +285,10 @@
     </div>
   </div>
 
-  <script src="../assets/js/store.js?v=20260612"></script>
-  <script src="../assets/js/api.js?v=20260612"></script>
-  <script src="../assets/js/ui.js?v=20260612"></script>
-  <script src="../assets/js/markup.js?v=20260612"></script>
-  <script src="../assets/js/settings.js?v=20260612"></script>
+  <script src="../assets/js/store.js?v=20260612b"></script>
+  <script src="../assets/js/api.js?v=20260612b"></script>
+  <script src="../assets/js/ui.js?v=20260612b"></script>
+  <script src="../assets/js/markup.js?v=20260612b"></script>
+  <script src="../assets/js/settings.js?v=20260612b"></script>
 </body>
 </html>

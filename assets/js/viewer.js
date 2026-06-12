@@ -29,6 +29,9 @@
     el("page-title-text").textContent = title;
     document.title = title;
 
+    // ナビリンクを独自ドメイン基準に（リンク切れ防止）
+    UI.applyDomainLinks();
+
     // タブ構築
     var order = Store.getTabOrder("main", DEFAULT_ORDER);
     var active = Store.getLastTab("main");
@@ -85,6 +88,11 @@
         el("site-title").textContent = cfg.site_title;
         el("page-title-text").textContent = cfg.site_title;
         document.title = cfg.site_title;
+      }
+      // 独自ドメインが Worker 側にあり、ローカル未設定なら取り込んでリンク再適用
+      if (cfg.custom_domain && !Store.getCustomDomain()) {
+        Store.setCustomDomain(cfg.custom_domain);
+        UI.applyDomainLinks();
       }
       fillSelect(el("sm-year"), cfg.year_presets || [], "指定なし");
       fillSelect(el("sm-schedule"), cfg.schedules || [], "指定なし");
