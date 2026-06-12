@@ -58,6 +58,7 @@
       onChange: function (id) { Store.setLastTab("main", id); if (id === "corpus") ensureCorpusControls(); }
     });
     UI.setActiveTab(el("main-tabs"), active);
+    if (active === "corpus") ensureCorpusControls();
 
     // モーダル配線
     UI.wireModal(el("search-modal"));
