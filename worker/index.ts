@@ -27,6 +27,28 @@ async function ensureCategoryColumn(env: Env) {
   }
 }
 
+// question_number = 0 のレコードを修正（各 exam 内で id 順に 1 始まりで採番）
+async function fixZeroQuestionNumbers(env: Env) {
+  const zeros = await env.DB.prepare(
+    "SELECT id, exam_id FROM questions WHERE question_number <= 0 ORDER BY exam_id, id"
+  ).all<{ id: number; exam_id: number }>();
+  if (!zeros.results.length) return;
+
+  // exam_id ごとに既存の最大番号を取得してから採番
+  const examMax: Record<number, number> = {};
+  for (const row of zeros.results) {
+    if (!(row.exam_id in examMax)) {
+      const maxRow = await env.DB.prepare(
+        "SELECT MAX(question_number) AS m FROM questions WHERE exam_id = ? AND question_number > 0"
+      ).bind(row.exam_id).first<{ m: number | null }>();
+      examMax[row.exam_id] = maxRow?.m ?? 0;
+    }
+    examMax[row.exam_id] += 1;
+    await env.DB.prepare("UPDATE questions SET question_number = ? WHERE id = ?")
+      .bind(examMax[row.exam_id], row.id).run();
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const origin = request.headers.get("Origin");
@@ -38,6 +60,8 @@ export default {
     }
 
     try {
+      await fixZeroQuestionNumbers(env);
+
       // ── GET /api/universities ──────────────────────────────────────
       if (path === "/api/universities" && request.method === "GET") {
         const { results } = await env.DB.prepare(
@@ -196,7 +220,7 @@ export default {
           const created = await env.DB.prepare(`
             INSERT INTO questions (exam_id, question_number, category, problem_text, answer_text, commentary_text)
             VALUES (?, ?, ?, ?, ?, ?) RETURNING *
-          `).bind(exam.id, q.questionNumber, q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").first();
+          `).bind(exam.id, Math.max(1, Number(q.questionNumber) || 1), q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").first();
           if (created) createdQuestions.push(created);
         }
 
@@ -260,7 +284,7 @@ export default {
           for (const q of body.questions) {
             await env.DB.prepare(
               "INSERT INTO questions (exam_id, question_number, category, problem_text, answer_text, commentary_text) VALUES (?, ?, ?, ?, ?, ?)"
-            ).bind(examId, q.questionNumber, q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").run();
+            ).bind(examId, Math.max(1, Number(q.questionNumber) || 1), q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").run();
           }
         }
 
