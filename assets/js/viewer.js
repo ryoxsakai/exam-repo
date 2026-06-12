@@ -52,6 +52,8 @@
     el("btn-run-corpus").addEventListener("click", runCorpus);
     el("exam-print").addEventListener("click", printExam);
     el("exam-copy").addEventListener("click", copyExam);
+    el("exam-fontsize").addEventListener("click", cycleFontSize);
+    applyFontSize(Store.getFontSize());
 
     // 検索モーダル内タブ
     $all("#search-modal-tabs .tab").forEach(function (t) {
@@ -257,6 +259,23 @@
       el("exam-modal-body").innerHTML = '<div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div>";
     });
   }
+  // 文字サイズ切替（小→中→大の循環。localStorage に保存し印刷にも反映）
+  var FS_ORDER = ["sm", "md", "lg"];
+  var FS_LABEL = { sm: "小", md: "中", lg: "大" };
+  function applyFontSize(size) {
+    var body = el("exam-modal-body");
+    FS_ORDER.forEach(function (s) { body.classList.remove("fs-" + s); });
+    body.classList.add("fs-" + size);
+    el("exam-fontsize").title = "文字サイズ変更（現在: " + FS_LABEL[size] + "）";
+  }
+  function cycleFontSize() {
+    var cur = Store.getFontSize();
+    var next = FS_ORDER[(FS_ORDER.indexOf(cur) + 1) % FS_ORDER.length];
+    Store.setFontSize(next);
+    applyFontSize(next);
+    UI.toast("文字サイズ: " + FS_LABEL[next], "ok");
+  }
+
   // 印刷: モーダルUIは出さず、本文のみを #print-area 経由で印刷
   function printExam() {
     var area = el("print-area");
@@ -264,6 +283,7 @@
       area = create("div", { id: "print-area" });
       document.body.appendChild(area);
     }
+    area.className = "fs-" + Store.getFontSize();
     area.innerHTML = '<h1 class="print-title">' + esc(el("exam-modal-title").textContent) + "</h1>" +
       el("exam-modal-body").innerHTML;
     window.print();
