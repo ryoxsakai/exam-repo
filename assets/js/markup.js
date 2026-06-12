@@ -82,7 +82,10 @@
             ch === "~" || ch === "^" || ch === "{") break;
         end++;
       }
-      out += esc(rem.slice(0, end));
+      var plain = esc(rem.slice(0, end));
+      // ピリオドの直後に大文字が来る場合、スペースを2つ分に広げる
+      plain = plain.replace(/\. ([A-Z])/g, ".&ensp;$1");
+      out += plain;
       rem = rem.slice(end);
     }
     return out;
