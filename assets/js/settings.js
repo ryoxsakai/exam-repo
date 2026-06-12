@@ -590,16 +590,31 @@
     var year = el("reg-year").value, uni = el("reg-university").value, sched = el("reg-schedule").value;
     var qnum = Number(el("reg-qnum").value) || 1;
     var category = el("reg-category").value || "";
-    var problem = [], answer = [], commentary = [];
+
+    // problemText に全セクションを順序どおり統合（セクション区切り {{名}} 付き）
+    var problemLines = [];
     state.reg.sections.forEach(function (sec) {
       var t = sec.text || "";
-      if (sec.type === "解答") answer.push(t);
-      else if (sec.type === "解説") commentary.push(t);
-      else problem.push((sec.type !== "問題" ? "{{" + sec.type + "}}\n" : "") + t);
+      if (sec.type !== "問題") problemLines.push("{{" + sec.type + "}}");
+      if (t) problemLines.push(t);
     });
+    var problemText = problemLines.join("\n\n");
+
+    // 後方互換のため、解答・解説も別途抽出
+    var answer = [], commentary = [];
+    state.reg.sections.forEach(function (sec) {
+      if (sec.type === "解答") answer.push(sec.text || "");
+      else if (sec.type === "解説") commentary.push(sec.text || "");
+    });
+
     return {
       universityName: uni, year: Number(year), schedule: sched,
-      questions: [{ questionNumber: qnum, category: category, problemText: problem.join("\n\n"), answerText: answer.join("\n\n"), commentaryText: commentary.join("\n\n") }]
+      questions: [{
+        questionNumber: qnum, category: category,
+        problemText: problemText,
+        answerText: answer.join("\n\n"),
+        commentaryText: commentary.join("\n\n")
+      }]
     };
   }
   function saveReg() {
@@ -632,11 +647,10 @@
     var title = [m.year, m.university, m.schedule].filter(Boolean).join(" ") || "プレビュー";
     var q = data.questions[0];
     var fields = [];
+    // problemText に全セクション（問題・解答・解説）が順序どおり含まれている
     Markup.parseSections(q.problemText || "").forEach(function (sec) {
       if (sec.text.trim()) fields.push(field(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text));
     });
-    if (q.answerText.trim()) fields.push(field("解答", "fa-circle-check", q.answerText));
-    if (q.commentaryText.trim()) fields.push(field("解説", "fa-comment-dots", q.commentaryText));
     var body = '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
     openPreview(title, body);
   }
@@ -646,13 +660,23 @@
       var q = (ex.questions || [])[0] || { question_number: 1, problem_text: "", answer_text: "", commentary_text: "" };
       state.reg.editingExamId = examId;
       state.reg.sections = [];
-      if (q.problem_text) {
-        Markup.parseSections(q.problem_text).forEach(function (sec) {
-          state.reg.sections.push({ type: sec.type, text: sec.text });
-        });
+
+      var sections = Markup.parseSections(q.problem_text);
+      var hasAnswerSection = sections.some(function (s) { return s.type === "解答"; });
+      var hasCommentarySection = sections.some(function (s) { return s.type === "解説"; });
+
+      sections.forEach(function (sec) {
+        state.reg.sections.push({ type: sec.type, text: sec.text });
+      });
+
+      // 既存互換：別カラムに解答・解説がある場合は追加
+      if (q.answer_text && q.answer_text.trim() && !hasAnswerSection) {
+        state.reg.sections.push({ type: "解答", text: q.answer_text });
       }
-      if (q.answer_text) state.reg.sections.push({ type: "解答", text: q.answer_text });
-      if (q.commentary_text) state.reg.sections.push({ type: "解説", text: q.commentary_text });
+      if (q.commentary_text && q.commentary_text.trim() && !hasCommentarySection) {
+        state.reg.sections.push({ type: "解説", text: q.commentary_text });
+      }
+
       if (!state.reg.sections.length) addSection("問題");
       state.reg.meta = {
         year: String(ex.year), university: ex.university_name, schedule: ex.schedule,

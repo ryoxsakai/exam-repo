@@ -271,11 +271,24 @@
       var body = "";
       (ex.questions || []).forEach(function (q) {
         var fields = [];
-        Markup.parseSections(q.problem_text || "").forEach(function (sec) {
+        var sections = Markup.parseSections(q.problem_text || "");
+
+        // problem_text に {{解答}} {{解説}} が含まれているかチェック
+        var hasAnswerSection = sections.some(function (s) { return s.type === "解答"; });
+        var hasCommentarySection = sections.some(function (s) { return s.type === "解説"; });
+
+        // 既存互換：別カラムに解答・解説がある場合、セクションに追加
+        if (q.answer_text && q.answer_text.trim() && !hasAnswerSection) {
+          sections.push({ type: "解答", text: q.answer_text });
+        }
+        if (q.commentary_text && q.commentary_text.trim() && !hasCommentarySection) {
+          sections.push({ type: "解説", text: q.commentary_text });
+        }
+
+        sections.forEach(function (sec) {
           if (sec.text.trim()) fields.push(renderField(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text));
         });
-        if (q.answer_text && q.answer_text.trim()) fields.push(renderField("解答", "fa-circle-check", q.answer_text));
-        if (q.commentary_text && q.commentary_text.trim()) fields.push(renderField("解説", "fa-comment-dots", q.commentary_text));
+
         // セクション間に区切り線を自動挿入
         body += '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
       });
