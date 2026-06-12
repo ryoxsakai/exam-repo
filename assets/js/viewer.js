@@ -33,6 +33,8 @@
     nav: { examId: null, qnum: null },
     config: null,
     corpus: null,
+    // null = 制限なし。配列なら該当値のみ対象（値は文字列で保持）
+    corpusFilter: { universities: null, years: null, schedules: null, qnums: null },
     charts: {}
   };
 
@@ -69,6 +71,12 @@
     el("sm-run").addEventListener("click", runSearch);
     el("btn-clear-filter").addEventListener("click", clearFilter);
     el("btn-run-corpus").addEventListener("click", runCorpus);
+    UI.wireModal(el("corpus-filter-modal"));
+    el("btn-corpus-filter").addEventListener("click", openCorpusFilter);
+    el("cf-apply").addEventListener("click", applyCorpusFilterModal);
+    el("cf-reset").addEventListener("click", function () {
+      $all('#corpus-filter-body input[type="checkbox"]').forEach(function (b) { b.checked = true; });
+    });
     el("exam-print").addEventListener("click", printExam);
     el("exam-copy").addEventListener("click", copyExam);
     el("exam-fontsize").addEventListener("click", cycleFontSize);
@@ -450,6 +458,113 @@
       '<div class="exam-doc">' + r.html + "</div></div>";
   }
 
+  /* ---------------- コーパス対象絞り込み ---------------- */
+  var CF_GROUPS = [
+    { key: "universities", label: "大学", field: "university_name" },
+    { key: "years",        label: "年度", field: "year" },
+    { key: "schedules",    label: "方式", field: "schedule" },
+    { key: "qnums",        label: "大問", field: "question_number" }
+  ];
+
+  function applyCorpusFilter(qs) {
+    var f = state.corpusFilter;
+    return qs.filter(function (q) {
+      if (f.universities && f.universities.indexOf(String(q.university_name)) < 0) return false;
+      if (f.years && f.years.indexOf(String(q.year)) < 0) return false;
+      if (f.schedules && f.schedules.indexOf(String(q.schedule)) < 0) return false;
+      if (f.qnums && f.qnums.indexOf(String(q.question_number)) < 0) return false;
+      return true;
+    });
+  }
+
+  function cfLabel(field, v) {
+    if (field === "year") return v + "年";
+    if (field === "question_number") return "大問" + v;
+    return v;
+  }
+
+  function openCorpusFilter() {
+    if (!Store.getWorkerUrl()) { UI.toast("Worker URL が未設定です", "err"); return; }
+    UI.openModal(el("corpus-filter-modal"));
+    el("corpus-filter-body").innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';
+    var p = state.corpus ? Promise.resolve({ questions: state.corpus }) : Api.getCorpus();
+    p.then(function (data) {
+      state.corpus = data.questions || [];
+      renderCorpusFilterBody();
+    }).catch(function (e) {
+      el("corpus-filter-body").innerHTML = '<div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div>";
+    });
+  }
+
+  function renderCorpusFilterBody() {
+    var qs = state.corpus || [];
+    if (!qs.length) {
+      el("corpus-filter-body").innerHTML = '<div class="empty"><i class="fa-solid fa-inbox ic"></i>入試問題が登録されていません。</div>';
+      return;
+    }
+    var html = "";
+    CF_GROUPS.forEach(function (g) {
+      var vals = [];
+      qs.forEach(function (q) {
+        var v = String(q[g.field]);
+        if (vals.indexOf(v) < 0) vals.push(v);
+      });
+      if (g.field === "year") vals.sort(function (a, b) { return Number(b) - Number(a); });
+      else if (g.field === "question_number") vals.sort(function (a, b) { return Number(a) - Number(b); });
+      else vals.sort();
+      var sel = state.corpusFilter[g.key];
+      html += '<div class="cf-group"><div class="cf-group-head">' +
+        '<span class="field-label">' + esc(g.label) + "</span>" +
+        '<button class="btn ghost sm" data-cftoggle="' + g.key + '">全選択/解除</button>' +
+        "</div>" + '<div class="cf-options">';
+      vals.forEach(function (v) {
+        var checked = (sel == null || sel.indexOf(v) >= 0) ? " checked" : "";
+        html += '<label><input type="checkbox" data-cfgroup="' + esc(g.key) + '" value="' + esc(v) + '"' + checked + ">" +
+          esc(cfLabel(g.field, v)) + "</label>";
+      });
+      html += "</div></div>";
+    });
+    el("corpus-filter-body").innerHTML = html;
+    $all("[data-cftoggle]", el("corpus-filter-body")).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var key = b.getAttribute("data-cftoggle");
+        var boxes = $all('[data-cfgroup="' + key + '"]', el("corpus-filter-body"));
+        var allChecked = boxes.every(function (x) { return x.checked; });
+        boxes.forEach(function (x) { x.checked = !allChecked; });
+      });
+    });
+  }
+
+  function applyCorpusFilterModal() {
+    var f = {}, missing = null;
+    CF_GROUPS.forEach(function (g) {
+      var boxes = $all('[data-cfgroup="' + g.key + '"]', el("corpus-filter-body"));
+      if (!boxes.length) { f[g.key] = null; return; }
+      var checked = [];
+      boxes.forEach(function (b) { if (b.checked) checked.push(b.value); });
+      if (!checked.length) missing = g.label;
+      // 全選択は「制限なし」として保持（新規登録分も自動で対象に含める）
+      f[g.key] = (checked.length === boxes.length) ? null : checked;
+    });
+    if (missing) { UI.toast(missing + " を1つ以上選択してください", "err"); return; }
+    state.corpusFilter = f;
+    UI.closeModal(el("corpus-filter-modal"));
+    updateCorpusFilterSummary();
+    if (state.corpus) analyzeCorpus();
+  }
+
+  function updateCorpusFilterSummary() {
+    var f = state.corpusFilter, parts = [];
+    CF_GROUPS.forEach(function (g) {
+      var sel = f[g.key];
+      if (sel == null) return;
+      var labels = sel.map(function (v) { return cfLabel(g.field, v); });
+      parts.push(g.label + ": " + (labels.length <= 4 ? labels.join("・") : labels.slice(0, 4).join("・") + " ほか" + (labels.length - 4) + "件"));
+    });
+    el("corpus-filter-summary").innerHTML = '<i class="fa-solid fa-filter"></i> 対象: ' +
+      (parts.length ? esc(parts.join(" / ")) : "すべての入試問題");
+  }
+
   /* ---------------- コーパス分析 ---------------- */
   function ensureCorpusControls() {
     // ストップワード / 語彙リストの選択肢を最新化
@@ -483,7 +598,11 @@
   }
 
   function analyzeCorpus() {
-    var qs = state.corpus || [];
+    var qs = applyCorpusFilter(state.corpus || []);
+    if (!qs.length) {
+      el("corpus-results").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-filter ic"></i>絞り込み条件に該当する入試問題がありません。「対象を絞り込み」から条件を見直してください。</div></div>';
+      return;
+    }
     // ドキュメント（KWIC用ラベル付き）と全文
     var docs = qs.map(function (q) {
       var text = Markup.strip([q.problem_text, q.answer_text, q.commentary_text].join("\n"));
