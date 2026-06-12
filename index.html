@@ -1,10 +1,144 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>医学部入試問題データベース</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- キャッシュクリア -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>入試問題データベース</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <link rel="stylesheet" href="assets/css/main.css?v=20260612" />
 </head>
 <body>
+  <!-- ===== Topbar ===== -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-mark"><i class="fa-solid fa-graduation-cap"></i></div>
+        <div>
+          <div class="brand-title" id="site-title">入試問題データベース</div>
+          <div class="brand-sub">Entrance Exam Database</div>
+        </div>
+      </div>
+      <div class="topbar-spacer"></div>
+      <button class="icon-btn primary" id="btn-open-search" title="検索"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <a class="icon-btn" href="setting/" title="設定"><i class="fa-solid fa-gear"></i></a>
+    </div>
+  </header>
+
+  <main class="shell">
+    <div class="page-head">
+      <h1 class="page-title"><span class="ic"><i class="fa-solid fa-book-open"></i></span><span id="page-title-text">入試問題データベース</span></h1>
+      <p class="page-desc">年度・大学・方式から探す通常検索と、英語コーパス分析の2つのモードがあります。</p>
+    </div>
+
+    <!-- ===== タブ（タイトル下・横スクロール） ===== -->
+    <nav class="tabs" id="main-tabs"></nav>
+
+    <!-- ===== タブ1: 通常検索 ===== -->
+    <section data-panel="search" class="panel active">
+      <div class="toolbar">
+        <button class="btn primary" id="btn-open-search-2"><i class="fa-solid fa-magnifying-glass"></i> 検索</button>
+        <span class="hint" id="filter-summary">すべての入試問題を表示中</span>
+        <span class="spacer"></span>
+        <button class="btn ghost sm" id="btn-clear-filter"><i class="fa-solid fa-rotate-left"></i> 条件クリア</button>
+      </div>
+      <div id="results-area"></div>
+    </section>
+
+    <!-- ===== タブ2: コーパス検索 ===== -->
+    <section data-panel="corpus" class="panel">
+      <div class="card">
+        <div class="card-head">
+          <h3><i class="fa-solid fa-language ic"></i> コーパス分析設定</h3>
+          <span class="spacer"></span>
+          <button class="btn primary" id="btn-run-corpus"><i class="fa-solid fa-play"></i> 分析実行</button>
+        </div>
+        <div class="grid-3">
+          <label class="field">
+            <span class="field-label"><i class="fa-solid fa-magnifying-glass-chart"></i> 検索語（KWIC / 頻度ハイライト）</span>
+            <input type="text" id="corpus-word" placeholder="例: immune" />
+          </label>
+          <label class="field">
+            <span class="field-label"><i class="fa-solid fa-ban"></i> ストップワードリスト</span>
+            <select id="corpus-stopword"></select>
+          </label>
+          <label class="field">
+            <span class="field-label"><i class="fa-solid fa-list-check"></i> 語彙リスト（カバー率）</span>
+            <select id="corpus-vocab"></select>
+          </label>
+        </div>
+        <p class="hint" style="margin-top:10px"><i class="fa-solid fa-circle-info"></i> 対象は登録済み全入試問題の英文テキスト（問題・解答・解説）です。記法は自動で除去されます。</p>
+      </div>
+      <div id="corpus-results"></div>
+    </section>
+  </main>
+
+  <!-- ===== 検索モーダル ===== -->
+  <div class="modal-overlay" id="search-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <i class="fa-solid fa-magnifying-glass ic"></i>
+        <h3>入試問題を検索</h3>
+        <span class="spacer"></span>
+        <button class="icon-btn" data-close title="閉じる"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <nav class="tabs" id="search-modal-tabs">
+          <button class="tab active" data-mtab="normal"><i class="fa-solid fa-sliders"></i><span>条件で検索</span></button>
+          <button class="tab" data-mtab="keyword"><i class="fa-solid fa-key"></i><span>キーワード検索</span></button>
+        </nav>
+
+        <div data-mpanel="normal">
+          <div class="grid-2">
+            <label class="field"><span class="field-label">年度</span><select id="sm-year"><option value="">指定なし</option></select></label>
+            <label class="field"><span class="field-label">大学名</span><select id="sm-university"><option value="">指定なし</option></select></label>
+            <label class="field"><span class="field-label">方式</span><select id="sm-schedule"><option value="">指定なし</option></select></label>
+            <label class="field"><span class="field-label">大問番号</span><input type="number" id="sm-qnum" min="1" placeholder="例: 1" /></label>
+          </div>
+        </div>
+
+        <div data-mpanel="keyword" style="display:none">
+          <label class="field">
+            <span class="field-label">キーワード（問題・解答・解説の本文を全文検索）</span>
+            <input type="text" id="sm-word" placeholder="例: immune system" />
+          </label>
+          <p class="hint" style="margin-top:8px"><i class="fa-solid fa-circle-info"></i> 出現回数の多い順に並びます。条件タブの絞り込みと併用できます。</p>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-close>キャンセル</button>
+        <button class="btn primary" id="sm-run"><i class="fa-solid fa-magnifying-glass"></i> 検索</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 入試問題 表示モーダル ===== -->
+  <div class="modal-overlay" id="exam-modal">
+    <div class="modal wide">
+      <div class="modal-head">
+        <i class="fa-solid fa-file-lines ic"></i>
+        <h3 id="exam-modal-title">入試問題</h3>
+        <span class="spacer"></span>
+        <button class="icon-btn" id="exam-print" title="印刷"><i class="fa-solid fa-print"></i></button>
+        <button class="icon-btn" data-close title="閉じる"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" id="exam-modal-body"></div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="assets/js/store.js?v=20260612"></script>
+  <script src="assets/js/api.js?v=20260612"></script>
+  <script src="assets/js/ui.js?v=20260612"></script>
+  <script src="assets/js/markup.js?v=20260612"></script>
+  <script src="assets/js/corpus.js?v=20260612"></script>
+  <script src="assets/js/viewer.js?v=20260612"></script>
 </body>
 </html>

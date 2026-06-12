@@ -1,82 +1,65 @@
-# 医学部入試問題データベース — マークアップ記法
+# 入試問題データベース — CLAUDE.md
 
-問題文・解答・解説テキストに使用するカスタム記法の一覧。
+英語入試問題を蓄積し、閲覧・全文検索・英語コーパス分析を行う静的サイト + Cloudflare Worker(D1) アプリ。
 
----
+## 構成
 
-## ブロック要素
+- **フロントエンド**: 素の HTML/CSS/JS（ビルド不要の静的サイト）。GitHub Pages（`exam.lrnr.jp`）に **deploy from a branch** で配信。
+  - `index.html` … 閲覧ページ（通常検索 / コーパス検索）
+  - `setting/index.html` … 設定ページ（メイン設定 / 接続設定 / 入試問題一覧 / 問題登録 / コーパス検索設定）
+  - `assets/css/main.css` … デザインシステム（Noto Sans JP / Source Serif 4、エメラルド+ブルー）
+  - `assets/js/` … `store`(localStorage) / `api`(Worker) / `ui` / `markup` / `corpus` / `viewer` / `settings`
+- **バックエンド**: `worker/index.ts`（Cloudflare Worker） + `schema.sql`（D1 / SQLite）。`wrangler.toml` で設定。
+  - `.github/workflows/worker-deploy.yml` が `worker/**` 変更時に自動デプロイ。
 
-| 記法 | 説明 | 例 |
-|------|------|-----|
-| `{{問1}}` | 大問番号バッジ（行頭に記述、以降のテキストは同行に続く） | `{{問1}} 次の文章を読んで答えよ。` |
-| `----` | 区切り線（スタイル付き `<hr>`） | `----` |
-| 空行 | 段落の区切り | |
+> フロントは各 HTML の `<head>` にキャッシュ無効化メタ + アセットURLの `?v=` クエリでキャッシュをクリアする。
 
-## インライン要素
+## 入試問題記法（`assets/js/markup.js`）
 
-| 記法 | 説明 | 例 |
-|------|------|-----|
-| `[[1]]` | 空所バッジ（穴埋め番号。`[[A]]` のようにアルファベットも可） | `[[1]]に入る語を答えよ` |
-| `((ア))` | 選択肢ラベル（行頭に記述すると選択肢行になる） | `((ア)) 細胞膜` |
-| `==text==` | 黄色ハイライト | `==重要語==` |
-| `==text==:color` | カラーハイライト（color: yellow / blue / red / purple / pink / green / aqua） | `==キーワード==:blue` |
-| `__text__` | 下線 | `__重要__` |
-| `~~N~~` | 下付き文字（subscript） | `CO~~2~~` |
-| `^^text^^` | 上付き文字（superscript） | `x^^2^^` |
-| `##word::translation##` | 脚注（word に `*N` 番号付きリンク、末尾に訳語リスト） | `##osmosis::浸透##` |
-
-## 選択肢行の書き方
-
-行頭に `((ラベル))` を書くと選択肢行として整形される。
-
-```
-((ア)) アミノ酸
-((イ)) 脂肪酸
-((ウ)) グルコース
-```
-
-## 複合例
-
-```
-{{問1}} 次の文章中の空所 [[1]]〜[[3]] に入る語を答えよ。
-
-細胞は ==細胞膜==:blue によって外部と隔てられ、
-##osmosis::浸透## によって水分を調節する。
-CO~~2~~ の濃度が x^^2^^ に比例するとき、
-__この関係を確認せよ。__
-
-----
-
-((ア)) アミノ酸
-((イ)) 脂肪酸
-((ウ)) グルコース
-((エ)) グリセロール
-```
-
----
-
-## Worker API（Cloudflare Worker + D1）
-
-| エンドポイント | メソッド | 説明 |
-|----------------|---------|------|
-| `/api/search` | GET | 試験検索（`word`, `universityName`, `year`, `schedule`） |
-| `/api/exams` | POST | 試験作成 |
-| `/api/exams/:id` | GET | 試験取得 |
-| `/api/exams/:id` | PUT | 試験更新 |
-| `/api/exams/:id` | DELETE | 試験削除 |
-| `/api/universities` | GET | 大学一覧 |
-| `/api/universities/:id` | DELETE | 大学削除 |
-| `/api/config` | GET | 設定取得（`schedules`, `year_presets`, `site_title`） |
-| `/api/config` | PUT | 設定更新 |
-
-Worker URL は `localStorage` の `cf_worker_url` キーに保存。未設定時は `NEXT_PUBLIC_WORKER_URL` 環境変数を参照。`https://` が付いていない場合は自動補完。
-
-## localStorage キー一覧
-
-| キー | 説明 |
+| 記法 | 意味 |
 |------|------|
-| `cf_worker_url` | Cloudflare Worker の URL |
-| `cf_site_title` | サイトタイトル（キャッシュ） |
-| `cf_search_open` | 検索バーの開閉状態 |
-| `cf_admin_tab` | 管理画面の最終タブ |
-| `cf_admin_editing_id` | 管理画面で最後に編集していた試験ID |
+| `{{問1}}` | 大問見出しバッジ（行頭で見出し化） |
+| `[[1]]` `[[A]]` | 空所バッジ |
+| `##語::訳##` | 語注（脚注。本文に上付き番号、末尾に訳一覧） |
+| `==語==` | 黄ハイライト |
+| `==語==:色` | 色付きハイライト（色: yellow/blue/red/purple/pink/green/aqua） |
+| `__語__` | 下線 |
+| `~~x~~` | 下付き |
+| `^^x^^` | 上付き |
+| `((A)) 本文` | 選択肢（行頭。丸ラベル＋本文。長い選択肢は綺麗に折り返す） |
+| `----` | 区切り線 |
+| 空行 | 段落間隔 |
+
+`Markup.render(text) → {html, footnotes}` で HTML 化、`Markup.strip(text)` で記法除去（コーパス分析の前処理）。
+
+## Worker API（`worker/index.ts`）
+
+ベースURLは設定ページ「接続設定」で登録（localStorage `cf_worker_url`）。
+
+| メソッド / パス | 用途 |
+|------|------|
+| `GET /api/config` / `PUT /api/config` | サイト設定（`schedules`=方式, `year_presets`=年度, `site_title`, `markup_css`） |
+| `GET /api/universities` / `DELETE /api/universities/:id` | 大学一覧 / 削除 |
+| `GET /api/exams` `POST /api/exams` | 試験一覧（filter: universityName,year,schedule）/ 登録 |
+| `GET/PUT/DELETE /api/exams/:id` | 試験詳細 / 更新 / 削除 |
+| `GET /api/search` | 全文検索（word,universityName,year,schedule。出現回数つき） |
+| `GET /api/corpus` | **全大問の英文テキスト一括取得**（クライアント側コーパス分析用） |
+
+データモデル: `universities` 1—N `exams`(year, schedule) 1—N `questions`(question_number, problem_text, answer_text, commentary_text)。
+
+## コーパス分析（`assets/js/corpus.js`）
+
+`GET /api/corpus` の全英文を対象に、クライアント側で分析:
+
+- **頻度リスト** + Chart.js 棒グラフ（ストップワード除外可）
+- **KWIC コンコーダンス**（検索語の前後文脈）
+- **n-gram（連語）** バイグラム / トライグラム
+- **語彙レベルカバー率**（Target1900 等の語彙リスト基準。延べ/異なり語カバー率、リスト外語）+ ドーナツチャート
+- **語数・難易度統計**（総語数 / 異なり語 / TTR / 文数 / 平均文長 / 平均語長）
+
+ストップワードリスト・語彙リストは設定ページ「コーパス検索設定」で登録（localStorage）。
+
+## 設定の保存先
+
+- **Worker(D1) config**: サイトタイトル / 方式(schedules) / 年度(year_presets) … 全端末で共有
+- **localStorage**: Worker URL / タブ順 / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補
