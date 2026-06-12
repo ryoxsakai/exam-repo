@@ -373,11 +373,13 @@
     el("exam-modal-body").innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';
     Api.getExam(examId).then(function (data) {
       var ex = data.exam;
-      el("exam-modal-title").textContent = ex.year + "年 " + ex.university_name + " " + ex.schedule;
+      var title = ex.year + "年 " + ex.university_name + " " + ex.schedule;
       var questions = ex.questions || [];
       if (qnum != null) {
+        title += " 問" + qnum;
         questions = questions.filter(function (q) { return q.question_number === qnum; });
       }
+      el("exam-modal-title").textContent = title;
       var body = "";
       questions.forEach(function (q) {
         var fields = [];
