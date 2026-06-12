@@ -16,6 +16,7 @@
     lastTabMain:   "exam_lasttab_main",      // 閲覧ページで最後に開いたタブ
     stopwords:     "exam_stopword_lists",    // ストップワードリスト [{name,words[]}]
     vocab:         "exam_vocab_lists",       // 語彙リスト [{name,words[]}]
+    wlCache:       "exam_wordlist_cache",    // Worker 保存リストのキャッシュ {stop:[...],level:[...]}
     sectionTypes:  "exam_section_types",     // 問題登録のプルダウン候補（問題/解答/解説…）
     fontSize:      "exam_fontsize",          // 問題閲覧モーダルの文字サイズ (sm/md/lg)
     regDraft:      "exam_reg_draft",         // 問題登録フォームの下書き（リロードしても保持）
@@ -134,6 +135,54 @@
       return lists;
     },
     setVocabLists: function (lists) { write(KEYS.vocab, lists); },
+
+    /* ===== Worker 保存リスト（ストップワード=stop / レベル別語彙=level） ===== */
+    // Worker から取得した生の行 [{id,type,name,data}] をローカルにキャッシュ。
+    getWLCache: function (type) {
+      var all = read(KEYS.wlCache, {}) || {};
+      return Array.isArray(all[type]) ? all[type] : [];
+    },
+    setWLCache: function (type, lists) {
+      var all = read(KEYS.wlCache, {}) || {};
+      all[type] = lists || [];
+      write(KEYS.wlCache, all);
+    },
+    // 内蔵リスト（DBに保存せず常に利用可能）
+    builtinStopList: function () {
+      return { id: "builtin-stop", name: "汎用英語ストップワード（内蔵）", type: "stop", builtin: true, words: DEFAULT_STOPWORDS.slice() };
+    },
+    builtinLevelList: function () {
+      var o = global.OXFORD5000;
+      if (!o) return null;
+      return { id: "builtin-oxford", name: (o.name || "Oxford 5000") + "（内蔵）", type: "level", builtin: true, levels: o.levels || {} };
+    },
+    // 内蔵 + Worker キャッシュをマージして返す（UI 表示順は内蔵が先頭）
+    getStopLists: function () {
+      var out = [this.builtinStopList()];
+      this.getWLCache("stop").forEach(function (l) {
+        out.push({ id: l.id, name: l.name, type: "stop", words: Array.isArray(l.data) ? l.data : [] });
+      });
+      return out;
+    },
+    getLevelLists: function () {
+      var bl = this.builtinLevelList();
+      var out = bl ? [bl] : [];
+      this.getWLCache("level").forEach(function (l) {
+        out.push({ id: l.id, name: l.name, type: "level", levels: (l.data && typeof l.data === "object") ? l.data : {} });
+      });
+      return out;
+    },
+    // Worker から stop / level の両方を取得してキャッシュへ。Promise を返す。
+    hydrateWordLists: function () {
+      if (!this.getWorkerUrl() || typeof Api === "undefined") return Promise.resolve();
+      return Promise.all([
+        Api.getWordLists("stop").catch(function () { return { lists: [] }; }),
+        Api.getWordLists("level").catch(function () { return { lists: [] }; })
+      ]).then(function (res) {
+        Store.setWLCache("stop", (res[0] && res[0].lists) || []);
+        Store.setWLCache("level", (res[1] && res[1].lists) || []);
+      });
+    },
 
     /* 問題登録のセクション種別プルダウン候補（ローカルキャッシュ） */
     getSectionTypes: function () {

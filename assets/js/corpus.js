@@ -108,6 +108,42 @@
     };
   }
 
+  // レベル別語彙分析。levelMap = { word: "A1" | ... } の語→レベル写像。
+  // 延べ語(token)・異なり語(type)をレベルごとに集計し、各レベルの語頻度も返す。
+  var LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"];
+  function levelStats(tokens, levelMap) {
+    var tokenByLevel = Object.create(null), wordsByLevel = Object.create(null);
+    LEVEL_ORDER.forEach(function (l) { tokenByLevel[l] = 0; wordsByLevel[l] = Object.create(null); });
+    var off = Object.create(null), tokenOff = 0;
+    for (var i = 0; i < tokens.length; i++) {
+      var w = tokens[i];
+      var lv = levelMap ? levelMap[w] : null;
+      if (lv && tokenByLevel[lv] != null) {
+        tokenByLevel[lv]++;
+        wordsByLevel[lv][w] = (wordsByLevel[lv][w] || 0) + 1;
+      } else {
+        tokenOff++; off[w] = (off[w] || 0) + 1;
+      }
+    }
+    var perLevel = LEVEL_ORDER.map(function (l) {
+      var arr = Object.keys(wordsByLevel[l]).map(function (w) { return { word: w, count: wordsByLevel[l][w] }; });
+      arr.sort(function (a, b) { return b.count - a.count || (a.word < b.word ? -1 : 1); });
+      return { level: l, tokens: tokenByLevel[l], types: arr.length, words: arr };
+    });
+    var offArr = Object.keys(off).map(function (w) { return { word: w, count: off[w] }; });
+    offArr.sort(function (a, b) { return b.count - a.count || (a.word < b.word ? -1 : 1); });
+    var inLevelTokens = tokens.length - tokenOff;
+    return {
+      order: LEVEL_ORDER.slice(),
+      perLevel: perLevel,
+      tokenTotal: tokens.length,
+      tokenInLevel: inLevelTokens,
+      tokenOff: tokenOff,
+      offTypes: offArr.length,
+      off: offArr
+    };
+  }
+
   // 語数・難易度統計
   function stats(text, tokens) {
     var types = Object.create(null);
@@ -134,6 +170,8 @@
     ngrams: ngrams,
     kwic: kwic,
     coverage: coverage,
+    levelStats: levelStats,
+    LEVEL_ORDER: LEVEL_ORDER,
     stats: stats
   };
 })(window);

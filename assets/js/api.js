@@ -50,6 +50,10 @@
     deleteQuestion:   function (examId, qnum) { return call("/api/questions/" + examId + "/" + qnum, { method: "DELETE" }); },
     search:           function (p) { return call("/api/search" + qs(p)); },
     getCorpus:        function () { return call("/api/corpus"); },
+    getWordLists:     function (type) { return call("/api/wordlists" + qs({ type: type })); },
+    createWordList:   function (d) { return call("/api/wordlists", { method: "POST", body: JSON.stringify(d) }); },
+    updateWordList:   function (id, d) { return call("/api/wordlists/" + id, { method: "PUT", body: JSON.stringify(d) }); },
+    deleteWordList:   function (id) { return call("/api/wordlists/" + id, { method: "DELETE" }); },
     testConnection:   function () { return call("/api/universities"); }
   };
 

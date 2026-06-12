@@ -35,6 +35,8 @@
     corpus: null,
     // null = 制限なし。配列なら該当値のみ対象（値は文字列で保持）
     corpusFilter: { universities: null, years: null, schedules: null, qnums: null, categories: null },
+    levelStats: null,
+    levelListName: "",
     charts: {}
   };
 
@@ -55,14 +57,15 @@
     if (DEFAULT_ORDER.indexOf(active) < 0) active = order[0];
     UI.buildTabs({
       tabsEl: el("main-tabs"), order: order, defs: TAB_DEFS, active: active, page: "main",
-      onChange: function (id) { Store.setLastTab("main", id); if (id === "corpus") ensureCorpusControls(); }
+      onChange: function (id) { Store.setLastTab("main", id); if (id === "corpus") refreshCorpusLists(); }
     });
     UI.setActiveTab(el("main-tabs"), active);
-    if (active === "corpus") ensureCorpusControls();
+    if (active === "corpus") refreshCorpusLists(); else ensureCorpusControls();
 
     // モーダル配線
     UI.wireModal(el("search-modal"));
     UI.wireModal(el("exam-modal"));
+    UI.wireModal(el("level-detail-modal"));
     // 試験モーダルを閉じたとき、保存済み exam ID をクリア
     var _examModal = el("exam-modal");
     _examModal.addEventListener("mousedown", function (e) { if (e.target === _examModal) clearOpenExam(); });
@@ -575,15 +578,16 @@
 
   /* ---------------- コーパス分析 ---------------- */
   function ensureCorpusControls() {
-    // ストップワード / 語彙リストの選択肢を最新化
+    // ストップワード（Worker 内蔵＋共有リスト）
     var sw = el("corpus-stopword");
     var swSel = sw.value;
     sw.innerHTML = '<option value="">なし（除外しない）</option>';
-    Store.getStopwordLists().forEach(function (l, i) {
+    Store.getStopLists().forEach(function (l, i) {
       var o = create("option"); o.value = String(i); o.textContent = l.name + "（" + l.words.length + "語）"; sw.appendChild(o);
     });
     if (sw.querySelector('option[value="0"]') && swSel === "") sw.value = "0"; else sw.value = swSel;
 
+    // 語彙リスト（カバー率。localStorage）
     var vc = el("corpus-vocab");
     var vcSel = vc.value;
     vc.innerHTML = '<option value="">なし</option>';
@@ -591,6 +595,21 @@
       var o = create("option"); o.value = String(i); o.textContent = l.name + "（" + l.words.length + "語）"; vc.appendChild(o);
     });
     vc.value = vcSel;
+
+    // レベル別語彙リスト（CEFR分析。Worker 内蔵＋共有リスト。既定は内蔵）
+    var lv = el("corpus-level");
+    var lvSel = lv.value;
+    lv.innerHTML = '<option value="">なし</option>';
+    Store.getLevelLists().forEach(function (l, i) {
+      var n = Object.keys(l.levels || {}).length;
+      var o = create("option"); o.value = String(i); o.textContent = l.name + "（" + n + "語）"; lv.appendChild(o);
+    });
+    if (lv.querySelector('option[value="0"]') && lvSel === "") lv.value = "0"; else lv.value = lvSel;
+  }
+
+  // コーパスタブ表示時に Worker から共有リストを取り込んでから選択肢を再構築
+  function refreshCorpusLists() {
+    return Store.hydrateWordLists().then(ensureCorpusControls, ensureCorpusControls);
   }
 
   function runCorpus() {
@@ -625,9 +644,11 @@
     }
 
     var swIdx = el("corpus-stopword").value;
-    var stopSet = swIdx !== "" ? Corpus.toSet(Store.getStopwordLists()[Number(swIdx)].words) : null;
+    var stopSet = swIdx !== "" ? Corpus.toSet(Store.getStopLists()[Number(swIdx)].words) : null;
     var vcIdx = el("corpus-vocab").value;
     var vocab = vcIdx !== "" ? Store.getVocabLists()[Number(vcIdx)] : null;
+    var lvIdx = el("corpus-level").value;
+    var levelList = lvIdx !== "" ? Store.getLevelLists()[Number(lvIdx)] : null;
     var word = el("corpus-word").value.trim();
 
     var st = Corpus.stats(fullText, tokens);
@@ -708,12 +729,103 @@
       html += "</tbody></table></div></div>";
     }
 
+    // --- 語彙レベル分析（CEFR） ---
+    var lvStats = null;
+    if (levelList) {
+      lvStats = Corpus.levelStats(tokens, levelList.levels || {});
+      state.levelStats = lvStats;
+      state.levelListName = levelList.name;
+      html += renderLevelSection(lvStats, levelList.name);
+    }
+
     el("corpus-results").innerHTML = html;
 
     // チャート描画
     destroyCharts();
     drawFreqChart(top);
     if (vocab) drawCovChart(Corpus.coverage(tokens, Corpus.toSet(vocab.words)));
+    if (lvStats) drawLevelChart(lvStats);
+
+    // レベル詳細モーダルを開く（行タップ）
+    $all("[data-level]", el("corpus-results")).forEach(function (b) {
+      b.addEventListener("click", function () { openLevelDetail(b.getAttribute("data-level")); });
+    });
+  }
+
+  // CEFR レベルごとの色（A1=易→C2=難）
+  var LEVEL_COLORS = {
+    A1: "#34d399", A2: "#10b981", B1: "#3b82f6", B2: "#6366f1",
+    C1: "#a855f7", C2: "#ec4899", off: "#cbd5e1"
+  };
+  function renderLevelSection(s, listName) {
+    var inTok = s.tokenInLevel || 0;
+    var h = '<div class="card"><div class="card-head"><h3><i class="fa-solid fa-layer-group ic"></i> 語彙レベル分析: ' +
+      esc(listName) + "</h3><span class=\"spacer\"></span><span class=\"hint\">タップで各レベルの語一覧</span></div>" +
+      '<div class="grid-2"><div><canvas id="level-chart" height="200"></canvas></div>' +
+      '<div class="stat-grid">' +
+      stat((s.tokenTotal ? (inTok / s.tokenTotal * 100) : 0).toFixed(1) + "%", "リスト収録率（延べ）") +
+      stat(inTok, "リスト内 (延べ)") +
+      stat(s.tokenOff, "リスト外 (延べ)") +
+      stat(s.offTypes, "リスト外 異なり語") +
+      "</div></div>";
+    // レベル別テーブル（延べ語比率つき・行タップで詳細）
+    h += '<div class="table-wrap" style="margin-top:14px"><table class="data freq-table"><thead><tr>' +
+      "<th>レベル</th><th>延べ語</th><th>異なり語</th><th>延べ比率</th><th>分布</th></tr></thead><tbody>";
+    s.perLevel.forEach(function (lv) {
+      var pct = s.tokenTotal ? (lv.tokens / s.tokenTotal * 100) : 0;
+      h += '<tr class="level-row" data-level="' + esc(lv.level) + '" style="cursor:pointer">' +
+        '<td><span class="level-badge" style="background:' + LEVEL_COLORS[lv.level] + '">' + esc(lv.level) + "</span></td>" +
+        "<td class='num'>" + lv.tokens + "</td><td class='num'>" + lv.types + "</td>" +
+        "<td class='num'>" + pct.toFixed(1) + "%</td>" +
+        '<td><div class="bar-track"><div class="bar" style="width:' + Math.max(2, pct) + "%;background:" + LEVEL_COLORS[lv.level] + '"></div></div></td></tr>';
+    });
+    var offPct = s.tokenTotal ? (s.tokenOff / s.tokenTotal * 100) : 0;
+    h += '<tr class="level-row" data-level="off" style="cursor:pointer">' +
+      '<td><span class="level-badge" style="background:' + LEVEL_COLORS.off + ';color:#334155">リスト外</span></td>' +
+      "<td class='num'>" + s.tokenOff + "</td><td class='num'>" + s.offTypes + "</td>" +
+      "<td class='num'>" + offPct.toFixed(1) + "%</td>" +
+      '<td><div class="bar-track"><div class="bar" style="width:' + Math.max(2, offPct) + "%;background:" + LEVEL_COLORS.off + '"></div></div></td></tr>';
+    h += "</tbody></table></div></div>";
+    return h;
+  }
+
+  function openLevelDetail(level) {
+    var s = state.levelStats; if (!s) return;
+    var words, title;
+    if (level === "off") {
+      words = s.off;
+      title = "リスト外の語（" + esc(state.levelListName || "") + "）";
+    } else {
+      var lv = null;
+      s.perLevel.forEach(function (p) { if (p.level === level) lv = p; });
+      words = lv ? lv.words : [];
+      title = level + " の語（" + esc(state.levelListName || "") + "）";
+    }
+    el("level-detail-title").innerHTML = '<span class="level-badge" style="background:' +
+      (LEVEL_COLORS[level] || LEVEL_COLORS.off) + (level === "off" ? ";color:#334155" : "") + '">' +
+      (level === "off" ? "リスト外" : esc(level)) + "</span> " + (words.length) + " 語";
+    var body = '<div class="table-wrap"><table class="data freq-table"><thead><tr><th>#</th><th>語</th><th>頻度</th></tr></thead><tbody>';
+    if (!words.length) body += '<tr><td colspan="3" class="hint">該当する語はありません。</td></tr>';
+    words.forEach(function (w, i) {
+      body += "<tr><td class='num'>" + (i + 1) + "</td><td><strong>" + esc(w.word) + "</strong></td><td class='num'>" + w.count + "</td></tr>";
+    });
+    body += "</tbody></table></div>";
+    el("level-detail-body").innerHTML = body;
+    UI.openModal(el("level-detail-modal"));
+  }
+
+  function drawLevelChart(s) {
+    var ctx = el("level-chart"); if (!ctx || !global.Chart) return;
+    var labels = [], data = [], colors = [];
+    s.perLevel.forEach(function (lv) {
+      if (lv.tokens > 0) { labels.push(lv.level); data.push(lv.tokens); colors.push(LEVEL_COLORS[lv.level]); }
+    });
+    if (s.tokenOff > 0) { labels.push("リスト外"); data.push(s.tokenOff); colors.push(LEVEL_COLORS.off); }
+    state.charts.level = new Chart(ctx, {
+      type: "doughnut",
+      data: { labels: labels, datasets: [{ data: data, backgroundColor: colors }] },
+      options: { plugins: { legend: { position: "bottom" } } }
+    });
   }
 
   function stat(n, k) { return '<div class="stat"><div class="n">' + esc(n) + '</div><div class="k">' + esc(k) + "</div></div>"; }

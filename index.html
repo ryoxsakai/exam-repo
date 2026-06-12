@@ -76,6 +76,10 @@
             <span class="field-label"><i class="fa-solid fa-list-check"></i> 語彙リスト（カバー率）</span>
             <select id="corpus-vocab"></select>
           </label>
+          <label class="field">
+            <span class="field-label"><i class="fa-solid fa-layer-group"></i> レベル別語彙リスト（CEFR分析）</span>
+            <select id="corpus-level"></select>
+          </label>
         </div>
         <p class="hint" style="margin-top:10px"><i class="fa-solid fa-circle-info"></i> 対象は登録済み入試問題の英文テキスト（問題・解答・解説）です。記法は自動で除去されます。</p>
         <p class="hint" id="corpus-filter-summary" style="margin-top:6px"><i class="fa-solid fa-filter"></i> 対象: すべての入試問題</p>
@@ -143,6 +147,19 @@
     </div>
   </div>
 
+  <!-- ===== レベル別語彙 詳細モーダル ===== -->
+  <div class="modal-overlay" id="level-detail-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <i class="fa-solid fa-layer-group ic"></i>
+        <h3 id="level-detail-title">レベル別語彙</h3>
+        <span class="spacer"></span>
+        <button class="icon-btn" data-close title="閉じる"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" id="level-detail-body"></div>
+    </div>
+  </div>
+
   <!-- ===== 入試問題 表示モーダル ===== -->
   <div class="modal-overlay" id="exam-modal">
     <div class="modal wide">
@@ -167,11 +184,12 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="assets/js/store.js?v=20260612ab"></script>
-  <script src="assets/js/api.js?v=20260612ae"></script>
+  <script src="assets/data/oxford5000.js?v=20260612a"></script>
+  <script src="assets/js/store.js?v=20260612ao"></script>
+  <script src="assets/js/api.js?v=20260612ao"></script>
   <script src="assets/js/ui.js?v=20260612z"></script>
   <script src="assets/js/markup.js?v=20260612ai"></script>
-  <script src="assets/js/corpus.js?v=20260612z"></script>
-  <script src="assets/js/viewer.js?v=20260612an"></script>
+  <script src="assets/js/corpus.js?v=20260612ao"></script>
+  <script src="assets/js/viewer.js?v=20260612ao"></script>
 </body>
 </html>

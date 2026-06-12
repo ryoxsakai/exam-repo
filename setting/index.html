@@ -186,12 +186,23 @@
           <span class="spacer"></span>
           <button class="btn primary sm" id="sw-add"><i class="fa-solid fa-plus"></i> 新規リスト</button>
         </div>
+        <p class="hint" style="margin-bottom:10px"><i class="fa-solid fa-cloud"></i> リストは Worker(D1) に保存され全端末で共有されます。「内蔵」は編集できません。</p>
         <div id="sw-lists"></div>
       </div>
 
       <div class="card">
         <div class="card-head">
-          <h3><i class="fa-solid fa-list-check ic"></i> 語彙リスト（Target1900 等）</h3>
+          <h3><i class="fa-solid fa-layer-group ic"></i> レベル別語彙リスト（CEFR分析）</h3>
+          <span class="spacer"></span>
+          <button class="btn primary sm" id="lv-add"><i class="fa-solid fa-plus"></i> 新規リスト</button>
+        </div>
+        <p class="hint" style="margin-bottom:10px"><i class="fa-solid fa-circle-info"></i> 各行に「語 レベル」（例: <code>abandon B2</code>）を記入。レベルは A1/A2/B1/B2/C1/C2。Worker に保存され全端末で共有されます。既定で Oxford Word List 5000 を内蔵。</p>
+        <div id="lv-lists"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3><i class="fa-solid fa-list-check ic"></i> 語彙リスト（カバー率・Target1900 等）</h3>
           <span class="spacer"></span>
           <button class="btn primary sm" id="vc-add"><i class="fa-solid fa-plus"></i> 新規リスト</button>
         </div>
@@ -323,10 +334,11 @@
 
   <div id="print-area"></div>
 
-  <script src="../assets/js/store.js?v=20260612ab"></script>
-  <script src="../assets/js/api.js?v=20260612ae"></script>
+  <script src="../assets/data/oxford5000.js?v=20260612a"></script>
+  <script src="../assets/js/store.js?v=20260612ao"></script>
+  <script src="../assets/js/api.js?v=20260612ao"></script>
   <script src="../assets/js/ui.js?v=20260612z"></script>
   <script src="../assets/js/markup.js?v=20260612ai"></script>
-  <script src="../assets/js/settings.js?v=20260612ak"></script>
+  <script src="../assets/js/settings.js?v=20260612ao"></script>
 </body>
 </html>

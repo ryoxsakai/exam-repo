@@ -396,6 +396,64 @@ export default {
         return json({ results: enriched }, 200, origin);
       }
 
+      // ── /api/wordlists（ストップワード・レベル別語彙リストの保存） ──
+      if (path.startsWith("/api/wordlists")) {
+        await env.DB.exec(
+          "CREATE TABLE IF NOT EXISTS word_lists (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, name TEXT NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))"
+        );
+
+        // GET /api/wordlists?type=stop|level
+        if (path === "/api/wordlists" && request.method === "GET") {
+          const type = url.searchParams.get("type") || "";
+          const stmt = type
+            ? env.DB.prepare("SELECT id, type, name, data FROM word_lists WHERE type = ? ORDER BY id ASC").bind(type)
+            : env.DB.prepare("SELECT id, type, name, data FROM word_lists ORDER BY id ASC");
+          const { results } = await stmt.all<{ id: number; type: string; name: string; data: string }>();
+          const lists = results.map((r) => {
+            let data: unknown = null;
+            try { data = JSON.parse(r.data); } catch { /* 壊れた行は null として返す */ }
+            return { id: r.id, type: r.type, name: r.name, data };
+          });
+          return json({ lists }, 200, origin);
+        }
+
+        // POST /api/wordlists
+        if (path === "/api/wordlists" && request.method === "POST") {
+          type WLBody = { type: string; name: string; data?: unknown };
+          const body = await request.json<WLBody>();
+          if (!body.type || !body.name) {
+            return json({ error: "type と name は必須です" }, 400, origin);
+          }
+          const created = await env.DB.prepare(
+            "INSERT INTO word_lists (type, name, data) VALUES (?, ?, ?) RETURNING id, type, name"
+          ).bind(body.type, body.name, JSON.stringify(body.data ?? null)).first();
+          return json({ list: created }, 201, origin);
+        }
+
+        const wlMatch = path.match(/^\/api\/wordlists\/(\d+)$/);
+        // PUT /api/wordlists/:id
+        if (wlMatch && request.method === "PUT") {
+          const id = Number(wlMatch[1]);
+          type WLPut = { name?: string; data?: unknown };
+          const body = await request.json<WLPut>();
+          if (body.name !== undefined) {
+            await env.DB.prepare("UPDATE word_lists SET name = ?, updated_at = datetime('now') WHERE id = ?")
+              .bind(body.name, id).run();
+          }
+          if (body.data !== undefined) {
+            await env.DB.prepare("UPDATE word_lists SET data = ?, updated_at = datetime('now') WHERE id = ?")
+              .bind(JSON.stringify(body.data), id).run();
+          }
+          return json({ success: true }, 200, origin);
+        }
+
+        // DELETE /api/wordlists/:id
+        if (wlMatch && request.method === "DELETE") {
+          await env.DB.prepare("DELETE FROM word_lists WHERE id = ?").bind(Number(wlMatch[1])).run();
+          return json({ success: true }, 200, origin);
+        }
+      }
+
       return json({ error: "Not found" }, 404, origin);
     } catch (err) {
       console.error("Worker error:", err);

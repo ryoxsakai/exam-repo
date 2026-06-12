@@ -281,6 +281,12 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 .modal .tabs { margin: 0 0 18px; }
 
 #corpus-results { margin-top: 20px; }
+.level-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 2.6em; padding: 2px 8px; border-radius: 6px; color: #fff;
+  font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: .02em;
+}
+.level-row:hover { background: var(--grad-soft); }
 
 /* ---------- コーパス対象絞り込み（チェックボックスグループ） ---------- */
 .cf-group { margin-bottom: 18px; }

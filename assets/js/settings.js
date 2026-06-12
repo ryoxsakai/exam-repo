@@ -64,7 +64,7 @@
   function onTab(id) {
     if (id === "list") loadList();
     if (id === "register") renderReg();
-    if (id === "corpus") renderWordLists();
+    if (id === "corpus") loadWordLists();
   }
 
   /* ================= タブ1: メイン設定 ================= */
@@ -818,39 +818,67 @@
   }
 
   /* ================= タブ5: コーパス検索設定 ================= */
-  var wlCtx = null; // {type:'sw'|'vc', index, isNew}
+  // type: 'sw'=ストップワード(Worker) / 'lv'=レベル別語彙(Worker) / 'vc'=語彙カバー率(localStorage)
+  var wlCtx = null; // { type, index, id, isNew }
+  var WL_LABEL = { sw: "（ストップワード）", lv: "（レベル別語彙）", vc: "（語彙リスト）" };
+  var WL_ICON  = { sw: "fa-ban", lv: "fa-layer-group", vc: "fa-list-check" };
+  var LEVEL_ORDER = { A1: 1, A2: 2, B1: 3, B2: 4, C1: 5, C2: 6 };
+
   function wireCorpusSettings() {
-    el("sw-add").addEventListener("click", function () { openWordList("sw", -1); });
-    el("vc-add").addEventListener("click", function () { openWordList("vc", -1); });
+    el("sw-add").addEventListener("click", function () { openWordList("sw", -1, []); });
+    el("lv-add").addEventListener("click", function () { openWordList("lv", -1, []); });
+    el("vc-add").addEventListener("click", function () { openWordList("vc", -1, []); });
     el("wordlist-save").addEventListener("click", saveWordList);
     el("wordlist-delete").addEventListener("click", deleteWordList);
     el("wordlist-words").addEventListener("input", updateWordCount);
   }
+  // コーパス設定タブ表示時：Worker から共有リストを取り込んでから描画
+  function loadWordLists() {
+    Store.hydrateWordLists().then(renderWordLists, renderWordLists);
+  }
   function renderWordLists() {
-    renderWLContainer("sw", el("sw-lists"), Store.getStopwordLists());
+    renderWLContainer("sw", el("sw-lists"), Store.getStopLists());
+    renderWLContainer("lv", el("lv-lists"), Store.getLevelLists());
     renderWLContainer("vc", el("vc-lists"), Store.getVocabLists());
+  }
+  function wlCount(type, l) {
+    return type === "lv" ? Object.keys(l.levels || {}).length : (l.words || []).length;
   }
   function renderWLContainer(type, container, lists) {
     container.innerHTML = "";
     if (!lists.length) { container.innerHTML = '<p class="hint">まだリストがありません。「新規リスト」から作成してください。</p>'; return; }
     var grid = create("div", { class: "tag-list", style: "display:flex;flex-direction:column;gap:8px" });
     lists.forEach(function (l, i) {
+      var badge = l.builtin ? ' <span class="pill em" style="font-size:11px">内蔵</span>' : "";
+      var editBtn = l.builtin ? "" : '<button class="icon-btn sm" data-wledit="' + i + '"><i class="fa-solid fa-pen"></i></button>';
       var row = create("div", { class: "sort-item" },
-        '<i class="fa-solid ' + (type === "sw" ? "fa-ban" : "fa-list-check") + '" style="color:var(--emerald-dark)"></i>' +
-        '<span class="label"><strong>' + esc(l.name) + '</strong> <span class="hint">（' + l.words.length + " 語）</span></span>" +
-        '<span class="move"><button class="icon-btn sm" data-wledit="' + i + '"><i class="fa-solid fa-pen"></i></button></span>');
+        '<i class="fa-solid ' + WL_ICON[type] + '" style="color:var(--emerald-dark)"></i>' +
+        '<span class="label"><strong>' + esc(l.name) + "</strong>" + badge + ' <span class="hint">（' + wlCount(type, l) + " 語）</span></span>" +
+        '<span class="move">' + editBtn + "</span>");
       grid.appendChild(row);
     });
     container.appendChild(grid);
-    $all("[data-wledit]", container).forEach(function (b) { b.addEventListener("click", function () { openWordList(type, Number(b.getAttribute("data-wledit"))); }); });
+    $all("[data-wledit]", container).forEach(function (b) {
+      b.addEventListener("click", function () { openWordList(type, Number(b.getAttribute("data-wledit")), lists); });
+    });
   }
-  function openWordList(type, index) {
-    wlCtx = { type: type, index: index, isNew: index < 0 };
-    var lists = type === "sw" ? Store.getStopwordLists() : Store.getVocabLists();
-    var l = index >= 0 ? lists[index] : { name: "", words: [] };
-    el("wordlist-title").textContent = (index >= 0 ? "リストを編集" : "新規リスト") + (type === "sw" ? "（ストップワード）" : "（語彙リスト）");
-    el("wordlist-name").value = l.name;
-    el("wordlist-words").value = l.words.join("\n");
+  function wlSerialize(type, l) {
+    if (type === "lv") {
+      var lv = l.levels || {};
+      return Object.keys(lv).sort(function (a, b) {
+        var d = (LEVEL_ORDER[lv[a]] || 9) - (LEVEL_ORDER[lv[b]] || 9);
+        return d || (a < b ? -1 : 1);
+      }).map(function (w) { return w + " " + lv[w]; }).join("\n");
+    }
+    return (l.words || []).join("\n");
+  }
+  function openWordList(type, index, lists) {
+    var l = index >= 0 ? lists[index] : null;
+    wlCtx = { type: type, index: index, id: (l && l.id) || null, isNew: index < 0 };
+    el("wordlist-title").textContent = (index >= 0 ? "リストを編集" : "新規リスト") + WL_LABEL[type];
+    el("wordlist-name").value = l ? l.name : "";
+    el("wordlist-words").value = l ? wlSerialize(type, l) : "";
+    el("wordlist-words").placeholder = type === "lv" ? "abandon B2\nability A2\nabout A1\n…" : "apple\nbanana\n…";
     el("wordlist-delete").style.display = index >= 0 ? "" : "none";
     updateWordCount();
     UI.openModal(el("wordlist-modal"));
@@ -858,27 +886,67 @@
   function parseWords(raw) {
     return String(raw || "").split(/[\s,，、]+/).map(function (w) { return w.trim(); }).filter(function (w) { return w.length > 0; });
   }
-  function updateWordCount() { el("wordlist-count").textContent = parseWords(el("wordlist-words").value).length + " 語"; }
+  // 「語 レベル」形式の各行を { word: LEVEL } へ。レベルは A1〜C2 のみ採用。
+  function parseLevelPairs(raw) {
+    var map = {};
+    String(raw || "").split(/\r?\n/).forEach(function (line) {
+      var m = line.trim().match(/^(.+?)[\s,，、\t]+([A-Ca-c][12])\s*$/);
+      if (!m) return;
+      var w = m[1].toLowerCase().trim(), lv = m[2].toUpperCase();
+      if (w && LEVEL_ORDER[lv]) map[w] = lv;
+    });
+    return map;
+  }
+  function updateWordCount() {
+    var raw = el("wordlist-words").value;
+    var n = (wlCtx && wlCtx.type === "lv") ? Object.keys(parseLevelPairs(raw)).length : parseWords(raw).length;
+    el("wordlist-count").textContent = n + " 語";
+  }
   function saveWordList() {
     var name = el("wordlist-name").value.trim();
     if (!name) { toast("リスト名を入力してください", "err"); return; }
-    var words = parseWords(el("wordlist-words").value);
-    var lists = wlCtx.type === "sw" ? Store.getStopwordLists() : Store.getVocabLists();
-    if (wlCtx.isNew) lists.push({ name: name, words: words });
-    else lists[wlCtx.index] = { name: name, words: words };
-    if (wlCtx.type === "sw") Store.setStopwordLists(lists); else Store.setVocabLists(lists);
-    UI.closeModal(el("wordlist-modal"));
-    renderWordLists();
-    toast("保存しました", "ok");
+    var raw = el("wordlist-words").value;
+
+    // 語彙カバー率リストは localStorage（従来通り）
+    if (wlCtx.type === "vc") {
+      var words = parseWords(raw);
+      var lists = Store.getVocabLists();
+      if (wlCtx.isNew) lists.push({ name: name, words: words });
+      else lists[wlCtx.index] = { name: name, words: words };
+      Store.setVocabLists(lists);
+      UI.closeModal(el("wordlist-modal"));
+      renderWordLists();
+      toast("保存しました", "ok");
+      return;
+    }
+
+    // ストップワード / レベル別語彙は Worker(D1) に保存
+    if (!Store.getWorkerUrl()) { toast("Worker URL が未設定です。接続設定で登録してください。", "err"); return; }
+    var wtype = wlCtx.type === "sw" ? "stop" : "level";
+    var data = wlCtx.type === "sw" ? parseWords(raw) : parseLevelPairs(raw);
+    var p = wlCtx.isNew
+      ? Api.createWordList({ type: wtype, name: name, data: data })
+      : Api.updateWordList(wlCtx.id, { name: name, data: data });
+    p.then(function () { return Store.hydrateWordLists(); })
+      .then(function () { UI.closeModal(el("wordlist-modal")); renderWordLists(); toast("保存しました", "ok"); })
+      .catch(function (e) { toast(e.message, "err"); });
   }
   function deleteWordList() {
     if (!confirm("このリストを削除しますか？")) return;
-    var lists = wlCtx.type === "sw" ? Store.getStopwordLists() : Store.getVocabLists();
-    lists.splice(wlCtx.index, 1);
-    if (wlCtx.type === "sw") Store.setStopwordLists(lists); else Store.setVocabLists(lists);
-    UI.closeModal(el("wordlist-modal"));
-    renderWordLists();
-    toast("削除しました", "ok");
+    if (wlCtx.type === "vc") {
+      var lists = Store.getVocabLists();
+      lists.splice(wlCtx.index, 1);
+      Store.setVocabLists(lists);
+      UI.closeModal(el("wordlist-modal"));
+      renderWordLists();
+      toast("削除しました", "ok");
+      return;
+    }
+    if (!wlCtx.id) { UI.closeModal(el("wordlist-modal")); return; }
+    Api.deleteWordList(wlCtx.id)
+      .then(function () { return Store.hydrateWordLists(); })
+      .then(function () { UI.closeModal(el("wordlist-modal")); renderWordLists(); toast("削除しました", "ok"); })
+      .catch(function (e) { toast(e.message, "err"); });
   }
 
   function noWorker() {
