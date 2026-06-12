@@ -93,15 +93,22 @@ body {
 }
 
 .question-badge {
-  display: inline-block;
-  padding: 0.2rem 0.85rem;
-  background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
-  color: white;
-  border-radius: 0.35rem;
-  font-size: 0.8rem;
+  /* Same box metrics as .blank-badge, with a light blue gradient background */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 1.35em;
+  padding: 0 1.35em;
+  margin: 0 0.4em;
+  background: linear-gradient(135deg, #dbeafe 0%, #93c5fd 100%);
+  color: #1e3a5f;
+  border: 1.5px solid #93c5fd;
+  border-radius: 2px;
+  font-size: 0.85em;
   font-family: sans-serif;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: 600;
+  vertical-align: 0.02em;
   line-height: 1;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
@@ -153,6 +160,29 @@ body {
   min-width: 0;
   word-break: break-word;
   line-height: 1.6;
+}
+
+/*
+ * Inline answer-choice reference, e.g. "((1))〜((5))より選びなさい。".
+ * Renders as a compact circled label that sits on the text baseline without
+ * introducing line breaks or extra margins.
+ */
+.choice-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5em;
+  height: 1.5em;
+  padding: 0 0.15em;
+  border: 1.5px solid #94a3b8;
+  border-radius: 50%;
+  font-size: 0.8em;
+  font-weight: 700;
+  line-height: 1;
+  color: #475569;
+  vertical-align: -0.3em;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
 /* Highlight variants */
@@ -287,12 +317,23 @@ body {
     visibility: visible !important;
   }
 
-  .exam-card {
-    break-inside: avoid;
-    page-break-inside: avoid;
+  /*
+   * Let large 大問 / section blocks flow across pages so their content is
+   * never clipped, but keep each individual paragraph intact so a single
+   * paragraph is never split across a page boundary.
+   */
+  .exam-card,
+  .question-block,
+  .print-section {
+    break-inside: auto;
+    page-break-inside: auto;
   }
 
-  .question-block {
+  .parsed-text > span,
+  .parsed-text > div,
+  .parsed-text .answer-choice,
+  .parsed-text .question-block-header,
+  .parsed-text .footnote-section {
     break-inside: avoid;
     page-break-inside: avoid;
   }

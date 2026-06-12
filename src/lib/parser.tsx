@@ -15,6 +15,28 @@ interface FootnoteEntry {
 }
 
 // ----------------------------------------------------------------
+// Abbreviation spacing fix
+// ----------------------------------------------------------------
+// Titles/abbreviations like "Dr.", "Mr.", "Mt." are often followed by a
+// full-width space (U+3000) or multiple spaces in the source data, which
+// renders as an unwanted wide gap after the period. Collapse that gap into a
+// single non-breaking space so the abbreviation stays attached to the
+// following word with normal half-width spacing.
+const ABBREVIATIONS = [
+  "Dr", "Mr", "Mrs", "Ms", "Mt", "St", "Prof", "Fig", "No", "Jr", "Sr",
+  "Co", "Inc", "Ltd", "Rev", "Hon", "Gen", "Capt", "Sgt", "Col",
+];
+const ABBREV_RE = new RegExp(
+  `\\b(${ABBREVIATIONS.join("|")})\\.[\\s\\u3000]+`,
+  "g"
+);
+function normalizeAbbreviationSpaces(line: string): string {
+  // Replace with the abbreviation period + a single non-breaking space so the
+  // title stays attached to the following word at normal half-width spacing.
+  return line.replace(ABBREV_RE, "$1. ");
+}
+
+// ----------------------------------------------------------------
 // Main parser function
 // ----------------------------------------------------------------
 export function parseText(text: string): ParsedResult {
@@ -27,7 +49,7 @@ export function parseText(text: string): ParsedResult {
 
   let lineIdx = 0;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = normalizeAbbreviationSpaces(lines[i]);
 
     // Blank line → paragraph break
     if (line.trim() === "") {
@@ -169,14 +191,13 @@ function parseInline(
       continue;
     }
 
-    // ── ((a)) or ((1)) → answer choice ───────────────────────────
+    // ── ((a)) or ((1)) → inline answer-choice reference ──────────
     const choiceMatch = remaining.match(/^\(\(([^)]+)\)\)/);
     if (choiceMatch) {
       const label = choiceMatch[1];
       result.push(
-        <span key={key()} className="answer-choice">
-          <span className="answer-choice-label">{label}</span>
-          <span className="answer-choice-text" />
+        <span key={key()} className="choice-inline">
+          {label}
         </span>
       );
       remaining = remaining.slice(choiceMatch[0].length);
@@ -271,7 +292,7 @@ export function parseTextFull(text: string): ParsedResult {
 
   let lineIdx = 0;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = normalizeAbbreviationSpaces(lines[i]);
     const k = `l${lineIdx++}`;
 
     // Blank line → spacer
@@ -301,11 +322,15 @@ export function parseTextFull(text: string): ParsedResult {
       }
     }
 
-    // ((A)) text... → answer choice line
-    const choiceMatch = line.match(/^(\s*)\(\(([^)]+)\)\)\s*([\s\S]*)/);
+    // ((A)) text... → block answer-choice line.
+    // Only treat the line as a block choice when the "((...))" at the start is
+    // followed by whitespace or is the whole line. If it is immediately
+    // followed by other content (e.g. "((1))〜((5))より選びなさい。"), fall
+    // through so the "(())" tokens render as compact inline references.
+    const choiceMatch = line.match(/^(\s*)\(\(([^)]+)\)\)(\s[\s\S]*|\s*)$/);
     if (choiceMatch) {
       const label = choiceMatch[2];
-      const rest = choiceMatch[3];
+      const rest = choiceMatch[3].trimStart();
       elements.push(
         <span key={k} className="answer-choice">
           <span className="answer-choice-label">{label}</span>
