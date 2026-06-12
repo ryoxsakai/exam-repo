@@ -351,9 +351,8 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
   flex: 0 0 auto; min-width: 1.5em; height: 1.5em; border: 1.5px solid var(--muted);
   border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
   font-family: var(--sans); font-size: .65em; font-weight: 700; color: var(--muted);
-  padding-top: 2px;
   /* 折り返し時もラベルは上側（1行目）に揃える */
-  align-self: flex-start; margin-top: .42em;
+  align-self: flex-start; margin-top: 2px;
 }
 .answer-choice-text {
   flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; word-break: normal; hyphens: auto;
@@ -418,3 +417,23 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 
 .inline-add { display: flex; gap: 8px; align-items: center; }
 .inline-add input { flex: 1; }
+
+/* ---------- Print: 本文のみ印刷（#print-area 経由） ---------- */
+#print-area { display: none; }
+@media print {
+  body > *:not(#print-area) { display: none !important; }
+  #print-area {
+    display: block !important;
+    font-family: var(--serif); font-size: 12pt; line-height: 1.9; color: #000;
+  }
+  #print-area .print-title {
+    font-family: var(--sans); font-size: 14pt; font-weight: 700;
+    margin: 0 0 12pt; padding-bottom: 6pt; border-bottom: 1px solid #000;
+  }
+  #print-area .exam-section { break-inside: avoid-page; }
+  #print-area .question-badge, #print-area .blank-badge,
+  #print-area mark.hl {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  @page { margin: 15mm 18mm; size: A4; }
+}
