@@ -7,6 +7,7 @@
   var KEYS = {
     workerUrl:     "cf_worker_url",          // Worker API のベースURL
     siteTitle:     "exam_site_title",        // サイトタイトル
+    customDomain:  "exam_custom_domain",     // 独自ドメイン（リンク生成用）
     tabOrderMain:  "exam_taborder_main",     // 閲覧ページのタブ順
     tabOrderSet:   "exam_taborder_setting",  // 設定ページのタブ順
     lastTabSet:    "exam_lasttab_setting",   // 設定ページで最後に開いたタブ
@@ -60,6 +61,18 @@
     /* サイトタイトル */
     getSiteTitle: function (fallback) { return readRaw(KEYS.siteTitle, fallback || "入試問題データベース"); },
     setSiteTitle: function (t) { localStorage.setItem(KEYS.siteTitle, t || ""); },
+
+    /* 独自ドメイン */
+    getCustomDomain: function () { return (readRaw(KEYS.customDomain, "") || "").trim(); },
+    setCustomDomain: function (d) { localStorage.setItem(KEYS.customDomain, (d || "").trim()); },
+    // リンク生成用ベースURL（"https://domain"）。未設定なら空文字。
+    getBaseUrl: function () {
+      var d = this.getCustomDomain();
+      if (!d) return "";
+      d = d.replace(/\/$/, "");
+      if (!/^https?:\/\//.test(d)) d = "https://" + d;
+      return d;
+    },
 
     /* タブ順 */
     getTabOrder: function (page, defOrder) {

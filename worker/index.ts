@@ -54,6 +54,9 @@ export default {
         const cssRow = await env.DB.prepare(
           "SELECT value FROM config WHERE key = 'markup_css'"
         ).first<{ value: string }>();
+        const domainRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'custom_domain'"
+        ).first<{ value: string }>();
         const curYear = new Date().getFullYear();
         const defaultSchedules = ["前期","後期","一般前期","一般後期","推薦","AO","その他"];
         const defaultYears = Array.from({ length: 8 }, (_, i) => String(curYear - i));
@@ -62,6 +65,7 @@ export default {
           year_presets: yearRow  ? JSON.parse(yearRow.value)   : defaultYears,
           site_title:   titleRow ? JSON.parse(titleRow.value)  : undefined,
           markup_css:   cssRow   ? JSON.parse(cssRow.value)    : undefined,
+          custom_domain: domainRow ? JSON.parse(domainRow.value) : undefined,
         }, 200, origin);
       }
 
@@ -70,17 +74,18 @@ export default {
         await env.DB.exec(
           "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         );
-        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string };
+        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string };
         const body = await request.json<ConfigBody>();
         const upsert = async (key: string, val: unknown) => {
           await env.DB.prepare(
             "INSERT INTO config (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
           ).bind(key, JSON.stringify(val)).run();
         };
-        if (body.schedules    !== undefined) await upsert("schedules",    body.schedules);
-        if (body.year_presets !== undefined) await upsert("year_presets", body.year_presets);
-        if (body.site_title   !== undefined) await upsert("site_title",   body.site_title);
-        if (body.markup_css   !== undefined) await upsert("markup_css",   body.markup_css);
+        if (body.schedules     !== undefined) await upsert("schedules",     body.schedules);
+        if (body.year_presets  !== undefined) await upsert("year_presets",  body.year_presets);
+        if (body.site_title    !== undefined) await upsert("site_title",    body.site_title);
+        if (body.markup_css    !== undefined) await upsert("markup_css",    body.markup_css);
+        if (body.custom_domain !== undefined) await upsert("custom_domain", body.custom_domain);
         return json({ success: true }, 200, origin);
       }
 

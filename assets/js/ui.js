@@ -78,9 +78,18 @@
     if (b) b.textContent = value;
   }
 
+  /* ---- ナビリンクを独自ドメイン基準の絶対URLに（未設定なら相対のまま） ---- */
+  function applyDomainLinks() {
+    var base = (global.Store && Store.getBaseUrl) ? Store.getBaseUrl() : "";
+    var home = el("nav-home"), settings = el("nav-settings");
+    if (home) home.setAttribute("href", base ? base + "/" : "../");
+    if (settings) settings.setAttribute("href", base ? base + "/setting/" : "setting/");
+  }
+
   global.UI = {
     el: el, $: $, $all: $all, create: create, escapeHtml: escapeHtml,
     toast: toast, openModal: openModal, closeModal: closeModal, wireModal: wireModal,
-    buildTabs: buildTabs, setActiveTab: setActiveTab, setTabBadge: setTabBadge
+    buildTabs: buildTabs, setActiveTab: setActiveTab, setTabBadge: setTabBadge,
+    applyDomainLinks: applyDomainLinks
   };
 })(window);
