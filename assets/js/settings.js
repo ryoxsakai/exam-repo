@@ -17,10 +17,10 @@
   var MAIN_ORDER = ["search", "corpus"];
 
   var state = {
-    config: { schedules: [], year_presets: [] },
+    config: { schedules: [], year_presets: [], question_categories: [] },
     universities: [],
     list: { filter: { word: "", universityName: "", year: "", schedule: "", qnum: "" }, rows: [], sort: { key: "year", dir: "desc" } },
-    reg: { sections: [], editingExamId: null },
+    reg: { sections: [], editingExamId: null, meta: { year: "", university: "", schedule: "", qnum: "1", category: "" } },
     editCtx: null  // 汎用編集モーダルの対象
   };
 
@@ -193,6 +193,7 @@
       state.config = res[0] || { schedules: [], year_presets: [] };
       if (!Array.isArray(state.config.schedules)) state.config.schedules = [];
       if (!Array.isArray(state.config.year_presets)) state.config.year_presets = [];
+      if (!Array.isArray(state.config.question_categories)) state.config.question_categories = [];
       state.universities = (res[1] && res[1].universities) || [];
       // サブタイトル（Worker 側にあれば反映）
       if (state.config.site_subtitle) {
@@ -260,6 +261,14 @@
       el("list-area").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div></div>";
     });
   }
+  // 大問番号の表示（GROUP_CONCAT された番号を整列・重複除去して整形）
+  function fmtQNums(matching, count) {
+    var nums = String(matching || "").split(",").map(function (x) { return Number(x.trim()); })
+      .filter(function (n) { return !isNaN(n); });
+    var uniq = [];
+    nums.sort(function (a, b) { return a - b; }).forEach(function (n) { if (uniq.indexOf(n) < 0) uniq.push(n); });
+    return uniq.length ? uniq.join(", ") : String(count || 0);
+  }
   function renderListTable() {
     var rows = state.list.rows.slice();
     var key = state.list.sort.key, dir = state.list.sort.dir === "asc" ? 1 : -1;
@@ -270,7 +279,7 @@
       return av < bv ? -dir : av > bv ? dir : 0;
     });
     if (!rows.length) { el("list-area").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>該当する入試問題がありません。</div></div>'; return; }
-    var cols = [{ key: "year", label: "年度" }, { key: "university_name", label: "大学名" }, { key: "schedule", label: "方式" }, { key: "question_count", label: "大問数" }];
+    var cols = [{ key: "year", label: "年度" }, { key: "university_name", label: "大学名" }, { key: "schedule", label: "方式" }, { key: "question_count", label: "大問番号" }];
     var html = '<div class="table-wrap"><table class="data"><thead><tr>';
     cols.forEach(function (c) {
       var sorted = state.list.sort.key === c.key;
@@ -280,7 +289,7 @@
     html += '<th style="text-align:right">操作</th></tr></thead><tbody>';
     rows.forEach(function (r) {
       html += "<tr>" +
-        '<td><span class="pill em">' + esc(r.year) + "</span></td><td><strong>" + esc(r.university_name) + "</strong></td><td>" + esc(r.schedule) + "</td><td>" + esc(r.question_count) + "</td>" +
+        '<td><span class="pill em">' + esc(r.year) + "</span></td><td><strong>" + esc(r.university_name) + "</strong></td><td>" + esc(r.schedule) + "</td><td>" + esc(fmtQNums(r.matching, r.question_count)) + "</td>" +
         '<td class="row-actions">' +
         '<button class="icon-btn" data-view="' + r.exam_id + '" title="表示"><i class="fa-solid fa-file-lines"></i></button>' +
         '<button class="icon-btn" data-edit="' + r.exam_id + '" title="編集"><i class="fa-solid fa-pen"></i></button>' +
@@ -358,7 +367,7 @@
   var SECTION_ICONS = { "問題": "fa-circle-question", "解答": "fa-circle-check", "解説": "fa-comment-dots" };
 
   function wireRegister() {
-    el("reg-add-section").addEventListener("click", function () { addSection(); renderReg(); });
+    el("reg-add-section").addEventListener("click", function () { addSection(); renderReg(); saveDraft(); });
     el("reg-reset").addEventListener("click", resetReg);
     el("reg-new").addEventListener("click", resetReg);
     el("reg-save").addEventListener("click", saveReg);
@@ -366,7 +375,15 @@
     el("reg-year-edit").addEventListener("click", function () { openYearEdit(); });
     el("reg-sched-edit").addEventListener("click", function () { openScheduleEdit(); });
     el("reg-uni-edit").addEventListener("click", function () { openUniversityEdit(); });
+    el("reg-cat-edit").addEventListener("click", function () { openCategoryEdit(); });
     el("reg-types-edit").addEventListener("click", function () { openTypesEdit(); });
+    // メタ情報の変更を下書きへ反映
+    ["reg-year", "reg-university", "reg-schedule", "reg-qnum", "reg-category"].forEach(function (id) {
+      el(id).addEventListener("change", syncMeta);
+      el(id).addEventListener("input", syncMeta);
+    });
+    // 下書き（前回の編集内容）を復元
+    restoreDraft();
     if (!state.reg.sections.length) addSection("問題");
   }
   function addSection(type) {
@@ -377,6 +394,36 @@
     fillSelect(el("reg-year"), state.config.year_presets, "—");
     fillSelect(el("reg-schedule"), state.config.schedules, "—");
     fillSelect(el("reg-university"), state.universities.map(function (u) { return u.name; }), "—");
+    fillSelect(el("reg-category"), state.config.question_categories || [], "—");
+    applyMetaToDom();
+  }
+
+  /* ---- 問題登録フォームのメタ情報 + 下書き保存 ---- */
+  function defaultMeta() { return { year: "", university: "", schedule: "", qnum: "1", category: "" }; }
+  function readMetaFromDom() {
+    return {
+      year: el("reg-year").value, university: el("reg-university").value,
+      schedule: el("reg-schedule").value, qnum: el("reg-qnum").value, category: el("reg-category").value
+    };
+  }
+  function applyMetaToDom() {
+    var m = state.reg.meta || defaultMeta();
+    el("reg-year").value = m.year || "";
+    el("reg-university").value = m.university || "";
+    el("reg-schedule").value = m.schedule || "";
+    el("reg-qnum").value = m.qnum || "1";
+    el("reg-category").value = m.category || "";
+  }
+  function syncMeta() { state.reg.meta = readMetaFromDom(); saveDraft(); }
+  function saveDraft() {
+    Store.setRegDraft({ editingExamId: state.reg.editingExamId, sections: state.reg.sections, meta: state.reg.meta });
+  }
+  function restoreDraft() {
+    var d = Store.getRegDraft();
+    if (!d) { state.reg.meta = defaultMeta(); return; }
+    state.reg.editingExamId = d.editingExamId || null;
+    state.reg.sections = (Array.isArray(d.sections) && d.sections.length) ? d.sections : [];
+    state.reg.meta = d.meta || defaultMeta();
   }
   function renderReg() {
     fillRegSelects();
@@ -427,8 +474,8 @@
   }
   function wireRegSection() {
     var c = el("reg-sections");
-    $all("[data-sectype]", c).forEach(function (s) { s.addEventListener("change", function () { state.reg.sections[Number(s.getAttribute("data-sectype"))].type = s.value; }); });
-    $all("[data-sectext]", c).forEach(function (t) { t.addEventListener("input", function () { state.reg.sections[Number(t.getAttribute("data-sectext"))].text = t.value; }); });
+    $all("[data-sectype]", c).forEach(function (s) { s.addEventListener("change", function () { state.reg.sections[Number(s.getAttribute("data-sectype"))].type = s.value; saveDraft(); }); });
+    $all("[data-sectext]", c).forEach(function (t) { t.addEventListener("input", function () { state.reg.sections[Number(t.getAttribute("data-sectext"))].text = t.value; saveDraft(); }); });
     $all("[data-secup]", c).forEach(function (b) { b.addEventListener("click", function () { moveSection(Number(b.getAttribute("data-secup")), -1); }); });
     $all("[data-secdown]", c).forEach(function (b) { b.addEventListener("click", function () { moveSection(Number(b.getAttribute("data-secdown")), 1); }); });
     $all("[data-secdel]", c).forEach(function (b) {
@@ -437,6 +484,7 @@
         state.reg.sections.splice(i, 1);
         if (!state.reg.sections.length) addSection("問題");
         renderReg();
+        saveDraft();
       });
     });
     $all("[data-mk]", c).forEach(function (b) {
@@ -446,6 +494,7 @@
         var ta = $('[data-sectext="' + i + '"]', c);
         insertMarkup(ta, MK_DEFS[k].b, MK_DEFS[k].a);
         state.reg.sections[i].text = ta.value;
+        saveDraft();
       });
     });
     $all("[data-syntax]", c).forEach(function (b) { b.addEventListener("click", openSyntaxModal); });
@@ -488,6 +537,7 @@
     var j = i + delta; if (j < 0 || j >= state.reg.sections.length) return;
     var tmp = state.reg.sections[i]; state.reg.sections[i] = state.reg.sections[j]; state.reg.sections[j] = tmp;
     renderReg();
+    saveDraft();
   }
   // テキストエリアにマークアップ挿入。選択範囲を before/after で囲む。
   // 選択なしの場合は before|after の中央にカーソルを置く（例: 空所 [[ | ]]）。
@@ -503,6 +553,7 @@
   function collectReg() {
     var year = el("reg-year").value, uni = el("reg-university").value, sched = el("reg-schedule").value;
     var qnum = Number(el("reg-qnum").value) || 1;
+    var category = el("reg-category").value || "";
     var problem = [], answer = [], commentary = [];
     state.reg.sections.forEach(function (sec) {
       var t = sec.text || "";
@@ -512,7 +563,7 @@
     });
     return {
       universityName: uni, year: Number(year), schedule: sched,
-      questions: [{ questionNumber: qnum, problemText: problem.join("\n\n"), answerText: answer.join("\n\n"), commentaryText: commentary.join("\n\n") }]
+      questions: [{ questionNumber: qnum, category: category, problemText: problem.join("\n\n"), answerText: answer.join("\n\n"), commentaryText: commentary.join("\n\n") }]
     };
   }
   function saveReg() {
@@ -527,6 +578,7 @@
         state.reg.editingExamId = res.exam.id;
         renderReg();
       }
+      saveDraft();
       loadServerConfig();
     }).catch(function (e) { toast(e.message, "err"); });
   }
@@ -534,7 +586,8 @@
     state.reg.editingExamId = null;
     state.reg.sections = [];
     addSection("問題");
-    el("reg-qnum").value = "1";
+    state.reg.meta = defaultMeta();
+    Store.clearRegDraft();
     renderReg();
   }
   function previewReg() {
@@ -557,10 +610,13 @@
       if (q.answer_text) state.reg.sections.push({ type: "解答", text: q.answer_text });
       if (q.commentary_text) state.reg.sections.push({ type: "解説", text: q.commentary_text });
       if (!state.reg.sections.length) addSection("問題");
+      state.reg.meta = {
+        year: String(ex.year), university: ex.university_name, schedule: ex.schedule,
+        qnum: String(q.question_number || 1), category: q.category || ""
+      };
       UI.setActiveTab(el("set-tabs"), "register"); Store.setLastTab("setting", "register");
       renderReg();
-      el("reg-year").value = ex.year; el("reg-university").value = ex.university_name; el("reg-schedule").value = ex.schedule;
-      el("reg-qnum").value = q.question_number || 1;
+      saveDraft();
       toast("編集モードで読み込みました", "ok");
     }).catch(function (e) { toast(e.message, "err"); });
   }
@@ -599,6 +655,9 @@
   }); }
   function openTypesEdit() { openEditModal("セクション種別の編集", Store.getSectionTypes(), function (items) {
     Store.setSectionTypes(items); renderReg(); return Promise.resolve();
+  }); }
+  function openCategoryEdit() { openEditModal("問題種別の編集", state.config.question_categories || [], function (items) {
+    return Api.updateConfig({ question_categories: items }).then(function () { state.config.question_categories = items; fillRegSelects(); });
   }); }
   function openUniversityEdit() {
     // 大学は API 由来。追加はローカルに保持（登録時に自動作成）、削除は API。並び替えはローカル表示。
