@@ -17,7 +17,8 @@
     stopwords:     "exam_stopword_lists",    // ストップワードリスト [{name,words[]}]
     vocab:         "exam_vocab_lists",       // 語彙リスト [{name,words[]}]
     sectionTypes:  "exam_section_types",     // 問題登録のプルダウン候補（問題/解答/解説…）
-    fontSize:      "exam_fontsize"           // 問題閲覧モーダルの文字サイズ (sm/md/lg)
+    fontSize:      "exam_fontsize",          // 問題閲覧モーダルの文字サイズ (sm/md/lg)
+    regDraft:      "exam_reg_draft"          // 問題登録フォームの下書き（リロードしても保持）
   };
 
   function read(key, fallback) {
@@ -145,7 +146,12 @@
       var v = readRaw(KEYS.fontSize, "md");
       return (v === "sm" || v === "lg") ? v : "md";
     },
-    setFontSize: function (v) { localStorage.setItem(KEYS.fontSize, v); }
+    setFontSize: function (v) { localStorage.setItem(KEYS.fontSize, v); },
+
+    /* 問題登録フォームの下書き（リロード後も同じ編集画面を復元） */
+    getRegDraft: function () { return read(KEYS.regDraft, null); },
+    setRegDraft: function (d) { write(KEYS.regDraft, d); },
+    clearRegDraft: function () { try { localStorage.removeItem(KEYS.regDraft); } catch (e) {} }
   };
 
   global.Store = Store;

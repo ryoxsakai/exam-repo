@@ -18,6 +18,15 @@ function json(data: unknown, status = 200, origin?: string | null) {
   });
 }
 
+// questions テーブルに category 列が無い既存DBへの後方互換マイグレーション
+async function ensureCategoryColumn(env: Env) {
+  try {
+    await env.DB.exec("ALTER TABLE questions ADD COLUMN category TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // 既に列が存在する場合は無視
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const origin = request.headers.get("Origin");
@@ -60,9 +69,13 @@ export default {
         const subtitleRow = await env.DB.prepare(
           "SELECT value FROM config WHERE key = 'site_subtitle'"
         ).first<{ value: string }>();
+        const categoryRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'question_categories'"
+        ).first<{ value: string }>();
         const curYear = new Date().getFullYear();
         const defaultSchedules = ["前期","後期","一般前期","一般後期","推薦","AO","その他"];
         const defaultYears = Array.from({ length: 8 }, (_, i) => String(curYear - i));
+        const defaultCategories = ["長文","文法","語彙","英作文","会話","リスニング","その他"];
         return json({
           schedules:    schedRow ? JSON.parse(schedRow.value)  : defaultSchedules,
           year_presets: yearRow  ? JSON.parse(yearRow.value)   : defaultYears,
@@ -70,6 +83,7 @@ export default {
           markup_css:   cssRow   ? JSON.parse(cssRow.value)    : undefined,
           custom_domain: domainRow ? JSON.parse(domainRow.value) : undefined,
           site_subtitle: subtitleRow ? JSON.parse(subtitleRow.value) : undefined,
+          question_categories: categoryRow ? JSON.parse(categoryRow.value) : defaultCategories,
         }, 200, origin);
       }
 
@@ -78,7 +92,7 @@ export default {
         await env.DB.exec(
           "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         );
-        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string; site_subtitle?: string };
+        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string; site_subtitle?: string; question_categories?: string[] };
         const body = await request.json<ConfigBody>();
         const upsert = async (key: string, val: unknown) => {
           await env.DB.prepare(
@@ -91,6 +105,7 @@ export default {
         if (body.markup_css    !== undefined) await upsert("markup_css",    body.markup_css);
         if (body.custom_domain !== undefined) await upsert("custom_domain", body.custom_domain);
         if (body.site_subtitle !== undefined) await upsert("site_subtitle", body.site_subtitle);
+        if (body.question_categories !== undefined) await upsert("question_categories", body.question_categories);
         return json({ success: true }, 200, origin);
       }
 
@@ -136,7 +151,8 @@ export default {
 
       // ── POST /api/exams ────────────────────────────────────────────
       if (path === "/api/exams" && request.method === "POST") {
-        type QBody = { questionNumber: number; problemText: string; answerText: string; commentaryText: string };
+        await ensureCategoryColumn(env);
+        type QBody = { questionNumber: number; category?: string; problemText: string; answerText: string; commentaryText: string };
         type Body = { universityName: string; year: number; schedule: string; questions?: QBody[] };
         const body = await request.json<Body>();
         const { universityName, year, schedule, questions = [] } = body;
@@ -164,9 +180,9 @@ export default {
         const createdQuestions = [];
         for (const q of questions) {
           const created = await env.DB.prepare(`
-            INSERT INTO questions (exam_id, question_number, problem_text, answer_text, commentary_text)
-            VALUES (?, ?, ?, ?, ?) RETURNING *
-          `).bind(exam.id, q.questionNumber, q.problemText || "", q.answerText || "", q.commentaryText || "").first();
+            INSERT INTO questions (exam_id, question_number, category, problem_text, answer_text, commentary_text)
+            VALUES (?, ?, ?, ?, ?, ?) RETURNING *
+          `).bind(exam.id, q.questionNumber, q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").first();
           if (created) createdQuestions.push(created);
         }
 
@@ -185,8 +201,9 @@ export default {
       // ── PUT /api/exams/:id ────────────────────────────────────────
       const putExamMatch = examIdMatch;
       if (putExamMatch && request.method === "PUT") {
+        await ensureCategoryColumn(env);
         const examId = Number(putExamMatch[1]);
-        type QBody = { questionNumber: number; problemText: string; answerText: string; commentaryText: string };
+        type QBody = { questionNumber: number; category?: string; problemText: string; answerText: string; commentaryText: string };
         type PutBody = { universityName?: string; year?: number; schedule?: string; questions?: QBody[] };
         const body = await request.json<PutBody>();
 
@@ -212,8 +229,8 @@ export default {
           await env.DB.prepare("DELETE FROM questions WHERE exam_id = ?").bind(examId).run();
           for (const q of body.questions) {
             await env.DB.prepare(
-              "INSERT INTO questions (exam_id, question_number, problem_text, answer_text, commentary_text) VALUES (?, ?, ?, ?, ?)"
-            ).bind(examId, q.questionNumber, q.problemText || "", q.answerText || "", q.commentaryText || "").run();
+              "INSERT INTO questions (exam_id, question_number, category, problem_text, answer_text, commentary_text) VALUES (?, ?, ?, ?, ?, ?)"
+            ).bind(examId, q.questionNumber, q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").run();
           }
         }
 
@@ -225,6 +242,7 @@ export default {
 
       // ── GET /api/exams/:id ─────────────────────────────────────────
       if (examIdMatch && request.method === "GET") {
+        await ensureCategoryColumn(env);
         const examId = Number(examIdMatch[1]);
 
         const examRow = await env.DB.prepare(`
@@ -275,7 +293,7 @@ export default {
             SELECT e.id AS exam_id, u.name AS university_name, e.year, e.schedule,
                    COUNT(q.id) AS question_count,
                    0 AS total_occurrences,
-                   '' AS matching_questions
+                   GROUP_CONCAT(q.question_number) AS matching_questions
             FROM exams e
             JOIN universities u ON e.university_id = u.id
             LEFT JOIN questions q ON q.exam_id = e.id

@@ -171,6 +171,15 @@
     });
   }
 
+  // 大問番号の表示（GROUP_CONCAT された番号を整列・重複除去して整形）
+  function fmtQNums(matching, count) {
+    var nums = String(matching || "").split(",").map(function (x) { return Number(x.trim()); })
+      .filter(function (n) { return !isNaN(n); });
+    var uniq = [];
+    nums.sort(function (a, b) { return a - b; }).forEach(function (n) { if (uniq.indexOf(n) < 0) uniq.push(n); });
+    return uniq.length ? uniq.join(", ") : String(count || 0);
+  }
+
   function updateFilterSummary() {
     var f = state.filter, parts = [];
     if (f.word) parts.push('キーワード「' + f.word + '」');
@@ -201,7 +210,7 @@
       { key: "year", label: "年度" },
       { key: "university_name", label: "大学名" },
       { key: "schedule", label: "方式" },
-      { key: "question_count", label: "大問数" }
+      { key: "question_count", label: "大問番号" }
     ];
     if (showOcc) cols.push({ key: "occurrences", label: "出現回数" });
 
@@ -218,7 +227,7 @@
         '<td><span class="pill em">' + esc(r.year) + "</span></td>" +
         "<td><strong>" + esc(r.university_name) + "</strong></td>" +
         "<td>" + esc(r.schedule) + "</td>" +
-        '<td>' + esc(r.question_count) + (r.matching ? ' <span class="hint">(' + esc(r.matching) + ")</span>" : "") + "</td>" +
+        '<td>' + esc(fmtQNums(r.matching, r.question_count)) + "</td>" +
         (showOcc ? '<td><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
         '<td class="row-actions"><button class="icon-btn" data-view="' + r.exam_id + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
         "</tr>";
