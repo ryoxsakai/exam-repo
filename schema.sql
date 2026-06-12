@@ -15,8 +15,7 @@ CREATE TABLE IF NOT EXISTS exams (
   year INTEGER NOT NULL,
   schedule TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY (university_id) REFERENCES universities(id) ON DELETE CASCADE,
-  UNIQUE(university_id, year, schedule)
+  FOREIGN KEY (university_id) REFERENCES universities(id) ON DELETE CASCADE
 );
 
 -- Questions table (大問 = major questions within an exam)

@@ -178,9 +178,17 @@ export default {
         }
         if (!uni) return json({ error: "Failed to create university" }, 500, origin);
 
-        const exam = await env.DB.prepare(
-          "INSERT INTO exams (university_id, year, schedule) VALUES (?, ?, ?) RETURNING *"
+        // 既存の試験を探す（大学・年度・方式が同じ）
+        let exam = await env.DB.prepare(
+          "SELECT id FROM exams WHERE university_id = ? AND year = ? AND schedule = ?"
         ).bind(uni.id, year, schedule).first<{ id: number }>();
+
+        // 見つからなければ新規作成
+        if (!exam) {
+          exam = await env.DB.prepare(
+            "INSERT INTO exams (university_id, year, schedule) VALUES (?, ?, ?) RETURNING *"
+          ).bind(uni.id, year, schedule).first<{ id: number }>();
+        }
         if (!exam) return json({ error: "Failed to create exam" }, 500, origin);
 
         const createdQuestions = [];
