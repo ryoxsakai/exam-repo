@@ -171,5 +171,26 @@
     return t;
   }
 
-  global.Markup = { render: render, strip: strip, escape: esc };
+  // problem_text を section 境界で分割。collectReg が追加した {{セクション名}} 行を検出。
+  // ASCII 英数字を含むバッジ（{{問1}} など）は問題番号として無視する。
+  function parseSections(text) {
+    var sections = [];
+    var lines = (text || "").split("\n");
+    var curType = "問題", curLines = [];
+    for (var i = 0; i < lines.length; i++) {
+      var m = lines[i].trim().match(/^\{\{([^0-9A-Za-z}]+)\}\}$/);
+      if (m) {
+        var t = curLines.join("\n").trim();
+        if (t) sections.push({ type: curType, text: t });
+        curType = m[1]; curLines = [];
+      } else {
+        curLines.push(lines[i]);
+      }
+    }
+    var last = curLines.join("\n").trim();
+    if (last || !sections.length) sections.push({ type: curType, text: last });
+    return sections;
+  }
+
+  global.Markup = { render: render, strip: strip, escape: esc, parseSections: parseSections };
 })(window);
