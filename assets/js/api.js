@@ -47,6 +47,7 @@
     createExam:       function (d) { return call("/api/exams", { method: "POST", body: JSON.stringify(d) }); },
     updateExam:       function (id, d) { return call("/api/exams/" + id, { method: "PUT", body: JSON.stringify(d) }); },
     deleteExam:       function (id) { return call("/api/exams/" + id, { method: "DELETE" }); },
+    deleteQuestion:   function (examId, qnum) { return call("/api/questions/" + examId + "/" + qnum, { method: "DELETE" }); },
     search:           function (p) { return call("/api/search" + qs(p)); },
     getCorpus:        function () { return call("/api/corpus"); },
     testConnection:   function () { return call("/api/universities"); }

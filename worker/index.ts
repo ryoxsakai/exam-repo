@@ -203,6 +203,22 @@ export default {
         return json({ exam: { ...exam, university_name: universityName }, questions: createdQuestions }, 201, origin);
       }
 
+      // ── DELETE /api/questions/:examId/:questionNumber ──────────────
+      const delQMatch = path.match(/^\/api\/questions\/(\d+)\/(\d+)$/);
+      if (delQMatch && request.method === "DELETE") {
+        const examId = Number(delQMatch[1]);
+        const questionNumber = Number(delQMatch[2]);
+        await env.DB.prepare("DELETE FROM questions WHERE exam_id = ? AND question_number = ?")
+          .bind(examId, questionNumber).run();
+        // 試験に大問が0件になったら試験ごと削除
+        const remaining = await env.DB.prepare("SELECT COUNT(*) AS cnt FROM questions WHERE exam_id = ?")
+          .bind(examId).first<{ cnt: number }>();
+        if (remaining && remaining.cnt === 0) {
+          await env.DB.prepare("DELETE FROM exams WHERE id = ?").bind(examId).run();
+        }
+        return json({ success: true }, 200, origin);
+      }
+
       // ── DELETE /api/exams/:id ─────────────────────────────────────
       const examIdMatch = path.match(/^\/api\/exams\/(\d+)$/);
       if (examIdMatch && request.method === "DELETE") {
@@ -299,28 +315,11 @@ export default {
         const year     = url.searchParams.get("year") || "";
         const schedule = url.searchParams.get("schedule") || "";
 
-        const hasFilter = word || uname || year || schedule;
-
-        if (!hasFilter) {
-          // Return all exams with question counts
-          const { results } = await env.DB.prepare(`
-            SELECT e.id AS exam_id, u.name AS university_name, e.year, e.schedule,
-                   COUNT(q.id) AS question_count,
-                   0 AS total_occurrences,
-                   GROUP_CONCAT(q.question_number) AS matching_questions
-            FROM exams e
-            JOIN universities u ON e.university_id = u.id
-            LEFT JOIN questions q ON q.exam_id = e.id
-            GROUP BY e.id
-            ORDER BY e.year DESC, u.name ASC
-          `).all();
-          return json({ results }, 200, origin);
-        }
-
+        // 大問ごとに1行返す（exam_id + question_number で一意）
         let sql = `
-          SELECT e.id AS exam_id, u.name AS university_name, e.year, e.schedule,
-                 COUNT(q.id) AS question_count,
-                 GROUP_CONCAT(q.question_number) AS matching_questions
+          SELECT q.id AS question_id, q.question_number,
+                 e.id AS exam_id, u.name AS university_name, e.year, e.schedule,
+                 0 AS total_occurrences
           FROM questions q
           JOIN exams e ON q.exam_id = e.id
           JOIN universities u ON e.university_id = u.id
@@ -332,34 +331,32 @@ export default {
           sql += " AND (q.problem_text LIKE ? OR q.answer_text LIKE ? OR q.commentary_text LIKE ?)";
           params.push(p, p, p);
         }
-        if (uname) { sql += " AND u.name LIKE ?"; params.push(`%${uname}%`); }
-        if (year)  { sql += " AND e.year = ?";    params.push(Number(year)); }
-        if (schedule) { sql += " AND e.schedule = ?"; params.push(schedule); }
+        if (uname)    { sql += " AND u.name LIKE ?";    params.push(`%${uname}%`); }
+        if (year)     { sql += " AND e.year = ?";       params.push(Number(year)); }
+        if (schedule) { sql += " AND e.schedule = ?";   params.push(schedule); }
 
-        sql += " GROUP BY e.id ORDER BY question_count DESC, e.year DESC";
+        sql += " ORDER BY e.year DESC, u.name ASC, q.question_number ASC";
 
-        const { results: rows } = await env.DB.prepare(sql).bind(...params).all();
+        const { results: rows } = await env.DB.prepare(sql).bind(...params).all<Record<string, unknown>>();
 
-        // Count exact word occurrences per result
-        const enriched = await Promise.all(
-          rows.map(async (row: Record<string, unknown>) => {
-            if (!word) return { ...row, total_occurrences: row.question_count };
-
-            const { results: qs } = await env.DB.prepare(
-              "SELECT problem_text, answer_text, commentary_text FROM questions WHERE exam_id = ?"
-            ).bind(row.exam_id).all<{ problem_text: string; answer_text: string; commentary_text: string }>();
-
-            const combined = qs.map(q =>
-              `${q.problem_text || ""} ${q.answer_text || ""} ${q.commentary_text || ""}`
-            ).join(" ");
-
-            const regex = new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
-            const total_occurrences = (combined.match(regex) || []).length;
-            return { ...row, total_occurrences };
-          })
-        );
-
-        enriched.sort((a, b) => (b.total_occurrences as number) - (a.total_occurrences as number));
+        // キーワード検索時のみ大問ごとの出現回数を計算
+        let enriched: Record<string, unknown>[] = rows;
+        if (word) {
+          const regex = new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+          enriched = await Promise.all(
+            rows.map(async (row) => {
+              const q = await env.DB.prepare(
+                "SELECT problem_text, answer_text, commentary_text FROM questions WHERE id = ?"
+              ).bind(row.question_id).first<{ problem_text: string; answer_text: string; commentary_text: string }>();
+              const combined = q
+                ? `${q.problem_text || ""} ${q.answer_text || ""} ${q.commentary_text || ""}`
+                : "";
+              const total_occurrences = (combined.match(regex) || []).length;
+              return { ...row, total_occurrences };
+            })
+          );
+          enriched.sort((a, b) => (b.total_occurrences as number) - (a.total_occurrences as number));
+        }
 
         return json({ results: enriched }, 200, origin);
       }

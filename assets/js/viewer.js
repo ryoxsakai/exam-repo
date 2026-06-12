@@ -7,9 +7,16 @@
 
   var SECTION_ICONS = { "問題": "fa-circle-question", "解答": "fa-circle-check", "解説": "fa-comment-dots" };
 
-  function saveOpenExam(id) { try { sessionStorage.setItem("exam_open_id", String(id)); } catch (e) {} }
+  function saveOpenExam(examId, qnum) { try { sessionStorage.setItem("exam_open_id", examId + ":" + qnum); } catch (e) {} }
   function clearOpenExam() { try { sessionStorage.removeItem("exam_open_id"); } catch (e) {} }
-  function getOpenExam() { try { var v = sessionStorage.getItem("exam_open_id"); return v ? Number(v) : null; } catch (e) { return null; } }
+  function getOpenExam() {
+    try {
+      var v = sessionStorage.getItem("exam_open_id");
+      if (!v) return null;
+      var parts = v.split(":");
+      return { examId: Number(parts[0]), qnum: parts[1] ? Number(parts[1]) : null };
+    } catch (e) { return null; }
+  }
 
   var TAB_DEFS = {
     search: { id: "search", label: "通常検索", icon: "fa-table-list" },
@@ -80,9 +87,9 @@
       el("results-area").innerHTML = noWorkerHtml();
       return;
     }
-    var _savedExamId = getOpenExam();
+    var _saved = getOpenExam();
     loadConfig().then(loadResults);
-    if (_savedExamId) openExam(_savedExamId);
+    if (_saved) openExam(_saved.examId, _saved.qnum);
   }
 
   function noWorkerHtml() {
@@ -163,18 +170,16 @@
     }).then(function (data) {
       var rows = (data.results || []).map(function (r) {
         return {
-          exam_id: r.exam_id, university_name: r.university_name, year: r.year,
-          schedule: r.schedule, question_count: r.question_count,
-          matching: r.matching_questions || "", occurrences: r.total_occurrences || 0
+          exam_id: r.exam_id, question_id: r.question_id,
+          question_number: r.question_number,
+          university_name: r.university_name, year: r.year,
+          schedule: r.schedule, occurrences: r.total_occurrences || 0
         };
       });
       // 大問番号フィルタ（クライアント側）
       if (state.filter.qnum) {
-        var qn = state.filter.qnum;
-        rows = rows.filter(function (r) {
-          var list = String(r.matching || "").split(",").map(function (s) { return s.trim(); });
-          return list.indexOf(qn) >= 0 || r.question_count >= Number(qn);
-        });
+        var qn = Number(state.filter.qnum);
+        rows = rows.filter(function (r) { return r.question_number === qn; });
       }
       state.rows = rows;
       renderTable();
@@ -207,7 +212,7 @@
     var key = state.sort.key, dir = state.sort.dir === "asc" ? 1 : -1;
     rows.sort(function (a, b) {
       var av = a[key], bv = b[key];
-      if (key === "year" || key === "question_count" || key === "occurrences") { av = Number(av) || 0; bv = Number(bv) || 0; }
+      if (key === "year" || key === "question_number" || key === "occurrences") { av = Number(av) || 0; bv = Number(bv) || 0; }
       else { av = String(av || "").toLowerCase(); bv = String(bv || "").toLowerCase(); }
       return av < bv ? -1 * dir : av > bv ? 1 * dir : 0;
     });
@@ -222,7 +227,7 @@
       { key: "year", label: "年度" },
       { key: "university_name", label: "大学名" },
       { key: "schedule", label: "方式" },
-      { key: "question_count", label: "大問番号" }
+      { key: "question_number", label: "大問" }
     ];
     if (showOcc) cols.push({ key: "occurrences", label: "出現回数" });
 
@@ -239,9 +244,9 @@
         '<td><span class="pill em">' + esc(r.year) + "</span></td>" +
         "<td><strong>" + esc(r.university_name) + "</strong></td>" +
         "<td>" + esc(r.schedule) + "</td>" +
-        '<td>' + esc(fmtQNums(r.matching, r.question_count)) + "</td>" +
+        "<td>問" + esc(r.question_number) + "</td>" +
         (showOcc ? '<td><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
-        '<td class="row-actions"><button class="icon-btn" data-view="' + r.exam_id + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
+        '<td class="row-actions"><button class="icon-btn" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
         "</tr>";
     });
     html += "</tbody></table></div>";
@@ -251,25 +256,36 @@
       th.addEventListener("click", function () {
         var k = th.getAttribute("data-sort");
         if (state.sort.key === k) state.sort.dir = state.sort.dir === "asc" ? "desc" : "asc";
-        else { state.sort.key = k; state.sort.dir = (k === "year" || k === "question_count" || k === "occurrences") ? "desc" : "asc"; }
+        else { state.sort.key = k; state.sort.dir = (k === "year" || k === "question_number" || k === "occurrences") ? "desc" : "asc"; }
         renderTable();
       });
     });
     $all("[data-view]", el("results-area")).forEach(function (b) {
-      b.addEventListener("click", function () { openExam(Number(b.getAttribute("data-view"))); });
+      b.addEventListener("click", function () {
+        var val = b.getAttribute("data-view");
+        var parts = val.split(":");
+        openExam(Number(parts[0]), parts[1] ? Number(parts[1]) : null);
+      });
     });
   }
 
   /* ---------------- 入試問題 表示モーダル ---------------- */
-  function openExam(examId) {
-    saveOpenExam(examId);
+  function openExam(examId, qnum) {
+    saveOpenExam(examId, qnum);
     UI.openModal(el("exam-modal"));
     el("exam-modal-body").innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';
     Api.getExam(examId).then(function (data) {
       var ex = data.exam;
       el("exam-modal-title").textContent = ex.year + "年 " + ex.university_name + " " + ex.schedule;
+
+      // 指定された大問番号のみ表示（未指定の場合はすべて）
+      var questions = ex.questions || [];
+      if (qnum != null) {
+        questions = questions.filter(function (q) { return q.question_number === qnum; });
+      }
+
       var body = "";
-      (ex.questions || []).forEach(function (q) {
+      questions.forEach(function (q) {
         var fields = [];
         var sections = Markup.parseSections(q.problem_text || "");
 

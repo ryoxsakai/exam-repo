@@ -251,37 +251,38 @@
     el("list-area").innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
     Api.search({ word: f.word, universityName: f.universityName, year: f.year, schedule: f.schedule }).then(function (data) {
       var rows = (data.results || []).map(function (r) {
-        return { exam_id: r.exam_id, university_name: r.university_name, year: r.year, schedule: r.schedule, question_count: r.question_count, matching: r.matching_questions || "" };
+        return {
+          exam_id: r.exam_id, question_id: r.question_id,
+          question_number: r.question_number,
+          university_name: r.university_name, year: r.year, schedule: r.schedule
+        };
       });
-      if (f.qnum) rows = rows.filter(function (r) {
-        var list = String(r.matching).split(",").map(function (s) { return s.trim(); });
-        return list.indexOf(f.qnum) >= 0 || r.question_count >= Number(f.qnum);
-      });
+      if (f.qnum) {
+        var qn = Number(f.qnum);
+        rows = rows.filter(function (r) { return r.question_number === qn; });
+      }
       state.list.rows = rows;
       renderListTable();
     }).catch(function (e) {
       el("list-area").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div></div>";
     });
   }
-  // 大問番号の表示（GROUP_CONCAT された番号を整列・重複除去して整形）
-  function fmtQNums(matching, count) {
-    var nums = String(matching || "").split(",").map(function (x) { return Number(x.trim()); })
-      .filter(function (n) { return !isNaN(n); });
-    var uniq = [];
-    nums.sort(function (a, b) { return a - b; }).forEach(function (n) { if (uniq.indexOf(n) < 0) uniq.push(n); });
-    return uniq.length ? uniq.join(", ") : String(count || 0);
-  }
   function renderListTable() {
     var rows = state.list.rows.slice();
     var key = state.list.sort.key, dir = state.list.sort.dir === "asc" ? 1 : -1;
     rows.sort(function (a, b) {
       var av = a[key], bv = b[key];
-      if (key === "year" || key === "question_count") { av = Number(av) || 0; bv = Number(bv) || 0; }
+      if (key === "year" || key === "question_number") { av = Number(av) || 0; bv = Number(bv) || 0; }
       else { av = String(av || "").toLowerCase(); bv = String(bv || "").toLowerCase(); }
       return av < bv ? -dir : av > bv ? dir : 0;
     });
     if (!rows.length) { el("list-area").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>該当する入試問題がありません。</div></div>'; return; }
-    var cols = [{ key: "year", label: "年度" }, { key: "university_name", label: "大学名" }, { key: "schedule", label: "方式" }, { key: "question_count", label: "大問番号" }];
+    var cols = [
+      { key: "year", label: "年度" },
+      { key: "university_name", label: "大学名" },
+      { key: "schedule", label: "方式" },
+      { key: "question_number", label: "大問" }
+    ];
     var html = '<div class="table-wrap"><table class="data"><thead><tr>';
     cols.forEach(function (c) {
       var sorted = state.list.sort.key === c.key;
@@ -290,34 +291,16 @@
     });
     html += '<th style="text-align:right">操作</th></tr></thead><tbody>';
     rows.forEach(function (r) {
-      // 大問番号リストを解析
-      var qnums = String(r.matching || "").split(",").map(function (x) { return Number(x.trim()); })
-        .filter(function (n) { return !isNaN(n); });
-      qnums.sort(function (a, b) { return a - b; });
-      // 重複除去
-      var uniq = [];
-      qnums.forEach(function (n) { if (uniq.indexOf(n) < 0) uniq.push(n); });
-      // 大問がない場合は1個と仮定
-      if (!uniq.length) uniq = [1];
-
-      // 最初の大問は試験情報と共に表示
       html += "<tr>" +
-        "<td><span class=\"pill em\">" + esc(r.year) + "</span></td><td><strong>" + esc(r.university_name) + "</strong></td><td>" + esc(r.schedule) + "</td><td>問" + uniq[0] + "</td>" +
+        "<td><span class=\"pill em\">" + esc(r.year) + "</span></td>" +
+        "<td><strong>" + esc(r.university_name) + "</strong></td>" +
+        "<td>" + esc(r.schedule) + "</td>" +
+        "<td>問" + esc(r.question_number) + "</td>" +
         "<td class=\"row-actions\">" +
-        "<button class=\"icon-btn\" data-view=\"" + r.exam_id + "\" title=\"表示\"><i class=\"fa-solid fa-file-lines\"></i></button>" +
-        "<button class=\"icon-btn\" data-edit=\"" + r.exam_id + ":" + uniq[0] + "\" title=\"編集\"><i class=\"fa-solid fa-pen\"></i></button>" +
-        "<button class=\"icon-btn danger\" data-del=\"" + r.exam_id + "\" title=\"削除\"><i class=\"fa-solid fa-trash\"></i></button>" +
+        "<button class=\"icon-btn\" data-view=\"" + r.exam_id + ":" + r.question_number + "\" title=\"表示\"><i class=\"fa-solid fa-file-lines\"></i></button>" +
+        "<button class=\"icon-btn\" data-edit=\"" + r.exam_id + ":" + r.question_number + "\" title=\"編集\"><i class=\"fa-solid fa-pen\"></i></button>" +
+        "<button class=\"icon-btn danger\" data-del=\"" + r.exam_id + ":" + r.question_number + "\" title=\"削除\"><i class=\"fa-solid fa-trash\"></i></button>" +
         "</td></tr>";
-
-      // 2番目以降の大問をサブ行として表示
-      for (var i = 1; i < uniq.length; i++) {
-        html += "<tr style=\"background:rgba(0,0,0,0.02)\">" +
-          "<td></td><td></td><td></td><td>問" + uniq[i] + "</td>" +
-          "<td class=\"row-actions\">" +
-          "<button class=\"icon-btn\" data-view=\"" + r.exam_id + "\" title=\"表示\"><i class=\"fa-solid fa-file-lines\"></i></button>" +
-          "<button class=\"icon-btn\" data-edit=\"" + r.exam_id + ":" + uniq[i] + "\" title=\"編集\"><i class=\"fa-solid fa-pen\"></i></button>" +
-          "</td></tr>";
-      }
     });
     html += "</tbody></table></div>";
     el("list-area").innerHTML = html;
@@ -325,11 +308,17 @@
       th.addEventListener("click", function () {
         var k = th.getAttribute("data-sort");
         if (state.list.sort.key === k) state.list.sort.dir = state.list.sort.dir === "asc" ? "desc" : "asc";
-        else { state.list.sort.key = k; state.list.sort.dir = (k === "year" || k === "question_count") ? "desc" : "asc"; }
+        else { state.list.sort.key = k; state.list.sort.dir = (k === "year" || k === "question_number") ? "desc" : "asc"; }
         renderListTable();
       });
     });
-    $all("[data-view]", el("list-area")).forEach(function (b) { b.addEventListener("click", function () { openExam(Number(b.getAttribute("data-view"))); }); });
+    $all("[data-view]", el("list-area")).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var val = b.getAttribute("data-view");
+        var parts = val.split(":");
+        openExam(Number(parts[0]), parts[1] ? Number(parts[1]) : null);
+      });
+    });
     $all("[data-edit]", el("list-area")).forEach(function (b) {
       b.addEventListener("click", function () {
         var val = b.getAttribute("data-edit");
@@ -341,8 +330,13 @@
     });
     $all("[data-del]", el("list-area")).forEach(function (b) {
       b.addEventListener("click", function () {
-        if (!confirm("この入試問題を削除しますか？（大問もすべて削除されます）")) return;
-        Api.deleteExam(Number(b.getAttribute("data-del"))).then(function () { toast("削除しました", "ok"); loadList(); })
+        if (!confirm("この大問を削除しますか？")) return;
+        var val = b.getAttribute("data-del");
+        var parts = val.split(":");
+        var examId = Number(parts[0]);
+        var qnum = parts[1] ? Number(parts[1]) : null;
+        var p = qnum ? Api.deleteQuestion(examId, qnum) : Api.deleteExam(examId);
+        p.then(function () { toast("削除しました", "ok"); loadList(); })
           .catch(function (e) { toast(e.message, "err"); });
       });
     });
@@ -372,20 +366,27 @@
   }
 
   /* 入試問題表示モーダル */
-  function openExam(examId) {
+  function openExam(examId, qnum) {
     UI.openModal(el("exam-modal"));
     el("exam-modal-body").innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';
     Api.getExam(examId).then(function (data) {
       var ex = data.exam;
       el("exam-modal-title").textContent = ex.year + "年 " + ex.university_name + " " + ex.schedule;
+      var questions = ex.questions || [];
+      if (qnum != null) {
+        questions = questions.filter(function (q) { return q.question_number === qnum; });
+      }
       var body = "";
-      (ex.questions || []).forEach(function (q) {
+      questions.forEach(function (q) {
         var fields = [];
-        Markup.parseSections(q.problem_text || "").forEach(function (sec) {
+        var sections = Markup.parseSections(q.problem_text || "");
+        var hasAnswer = sections.some(function (s) { return s.type === "解答"; });
+        var hasCommentary = sections.some(function (s) { return s.type === "解説"; });
+        sections.forEach(function (sec) {
           if (sec.text.trim()) fields.push(field(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text));
         });
-        if (q.answer_text && q.answer_text.trim()) fields.push(field("解答", "fa-circle-check", q.answer_text));
-        if (q.commentary_text && q.commentary_text.trim()) fields.push(field("解説", "fa-comment-dots", q.commentary_text));
+        if (q.answer_text && q.answer_text.trim() && !hasAnswer) fields.push(field("解答", "fa-circle-check", q.answer_text));
+        if (q.commentary_text && q.commentary_text.trim() && !hasCommentary) fields.push(field("解説", "fa-comment-dots", q.commentary_text));
         body += '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
       });
       el("exam-modal-body").innerHTML = body || '<div class="empty">大問が登録されていません。</div>';
