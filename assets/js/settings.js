@@ -366,7 +366,7 @@
     el("reg-sched-edit").addEventListener("click", function () { openScheduleEdit(); });
     el("reg-uni-edit").addEventListener("click", function () { openUniversityEdit(); });
     el("reg-types-edit").addEventListener("click", function () { openTypesEdit(); });
-    if (!state.reg.sections.length) { addSection("問題"); addSection("解答"); }
+    if (!state.reg.sections.length) addSection("問題");
   }
   function addSection(type) {
     var types = Store.getSectionTypes();
@@ -527,7 +527,7 @@
   function resetReg() {
     state.reg.editingExamId = null;
     state.reg.sections = [];
-    addSection("問題"); addSection("解答");
+    addSection("問題");
     el("reg-qnum").value = "1";
     renderReg();
   }
