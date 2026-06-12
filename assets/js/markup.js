@@ -22,6 +22,15 @@
 
   var VALID_COLORS = ["yellow", "blue", "red", "purple", "pink", "green", "aqua"];
 
+  // ストレートクォート → スマートクォート変換
+  function smartQuotes(s) {
+    s = s.replace(/(^|[\s(\[{—])"/g, "$1“");  // opening "
+    s = s.replace(/"/g, "”");                       // closing "
+    s = s.replace(/(^|[\s(\[{—])'/g, "$1‘");  // opening '
+    s = s.replace(/'/g, "’");                       // closing ' / apostrophe
+    return s;
+  }
+
   // インライン記法をHTMLへ。footnotes は配列で受け取り副作用で追加。
   function inline(text, footnotes) {
     var out = "";
@@ -82,9 +91,11 @@
             ch === "~" || ch === "^" || ch === "{") break;
         end++;
       }
-      var plain = esc(rem.slice(0, end));
+      var plain = esc(smartQuotes(rem.slice(0, end)));
       // ピリオドの直後に大文字が来る場合、スペースを2つ分に広げる
       plain = plain.replace(/\. ([A-Z])/g, ".&emsp;$1");
+      // em dash → 2em幅（隙間なし）
+      plain = plain.replace(/—/g, '<span class="em-dash">——</span>');
       out += plain;
       rem = rem.slice(end);
     }
