@@ -296,7 +296,7 @@
         "<td><span class=\"pill em\">" + esc(r.year) + "</span></td>" +
         "<td><strong>" + esc(r.university_name) + "</strong></td>" +
         "<td>" + esc(r.schedule) + "</td>" +
-        "<td>問" + esc(r.question_number) + "</td>" +
+        "<td>大問" + esc(r.question_number) + "</td>" +
         "<td>" + esc(r.category) + "</td>" +
         "<td class=\"row-actions\">" +
         "<button class=\"icon-btn\" data-view=\"" + r.exam_id + ":" + r.question_number + "\" title=\"表示\"><i class=\"fa-solid fa-file-lines\"></i></button>" +
@@ -376,7 +376,7 @@
       var title = ex.year + "年 " + ex.university_name + " " + ex.schedule;
       var questions = ex.questions || [];
       if (qnum != null) {
-        title += " 問" + qnum;
+        title += " 大問" + qnum;
         questions = questions.filter(function (q) { return q.question_number === qnum; });
       }
       el("exam-modal-title").textContent = title;

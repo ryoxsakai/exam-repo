@@ -279,7 +279,7 @@
     Api.getExam(examId).then(function (data) {
       var ex = data.exam;
       var title = ex.year + "年 " + ex.university_name + " " + ex.schedule;
-      if (qnum != null) title += " 問" + qnum;
+      if (qnum != null) title += " 大問" + qnum;
       el("exam-modal-title").textContent = title;
 
       // 指定された大問番号のみ表示（未指定の場合はすべて）
