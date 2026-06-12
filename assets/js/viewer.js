@@ -514,8 +514,8 @@
     CF_GROUPS.forEach(function (g) {
       var vals = [];
       qs.forEach(function (q) {
-        var v = String(q[g.field]);
-        if (vals.indexOf(v) < 0) vals.push(v);
+        var v = (q[g.field] != null && q[g.field] !== "") ? String(q[g.field]) : null;
+        if (v !== null && vals.indexOf(v) < 0) vals.push(v);
       });
       if (g.field === "year") vals.sort(function (a, b) { return Number(b) - Number(a); });
       else if (g.field === "question_number") vals.sort(function (a, b) { return Number(a) - Number(b); });
