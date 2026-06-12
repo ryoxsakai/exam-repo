@@ -296,7 +296,7 @@
   function renderField(label, icon, text) {
     var r = Markup.render(text);
     return '<div style="margin-bottom:14px">' +
-      '<div class="exam-section-title"><i class="fa-solid ' + icon + '"></i> ' + esc(label) + "</div>" +
+      '<div class="exam-section-title">' + esc(label) + "</div>" +
       '<div class="exam-doc">' + r.html + "</div></div>";
   }
 

@@ -351,8 +351,10 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
   flex: 0 0 auto; min-width: 1.5em; height: 1.5em; border: 1.5px solid var(--muted);
   border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
   font-family: var(--sans); font-size: .65em; font-weight: 700; color: var(--muted);
-  /* 折り返し時もラベルは上側（1行目）に揃える */
-  align-self: flex-start; margin-top: 2px;
+  /* 折り返し時もラベルは1行目に固定しつつ、1行目と縦中央で揃える。
+     親の行高1.95em = ラベル基準で 1.95/.65 = 3em。円は1.5em。
+     margin-top = (3em − 1.5em) / 2 = .75em（ラベル自身のem基準） */
+  align-self: flex-start; margin-top: .75em;
 }
 .answer-choice-text {
   flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; word-break: normal; hyphens: auto;
@@ -369,7 +371,6 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   text-transform: uppercase; color: var(--muted); margin: 0 0 8px;
   display: flex; align-items: center; gap: 8px;
 }
-.exam-section-title::before { content: ""; width: 14px; height: 2px; border-radius: 2px; background: var(--grad-emerald); }
 .exam-section + .exam-section { margin-top: 22px; padding-top: 20px; border-top: 1px dashed var(--line); }
 
 /* ---------- Corpus ---------- */
