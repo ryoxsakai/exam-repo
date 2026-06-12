@@ -340,7 +340,9 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 .fs-xl .exam-doc { font-size: 22px; }
 .question-block-header { display: flex; align-items: baseline; flex-wrap: nowrap; gap: 3px; margin: 18px 0 8px; }
 @media (max-width: 600px) {
-  .question-block-header { display: inline-flex; margin: 4px 0; }
+  /* スマホ: バッジとテキストを通常のインライン流し込みに（折り返しがバッジの下に回り込む） */
+  .question-block-header { display: block; margin: 10px 0 6px; }
+  .question-block-header .qtext { display: inline; }
 }
 .question-badge {
   /* [[]]（blank-badge）と同サイズ。薄いブルーのグラデーション背景 */
