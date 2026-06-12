@@ -26,7 +26,6 @@
     // サイトタイトル
     var title = Store.getSiteTitle();
     el("site-title").textContent = title;
-    el("page-title-text").textContent = title;
     el("site-subtitle").textContent = Store.getSiteSubtitle();
     document.title = title;
 
@@ -87,7 +86,6 @@
       // タイトルは Worker 側設定があれば優先（未保存ならローカル）
       if (cfg.site_title) {
         el("site-title").textContent = cfg.site_title;
-        el("page-title-text").textContent = cfg.site_title;
         document.title = cfg.site_title;
       }
       if (cfg.site_subtitle) {
@@ -219,7 +217,7 @@
         "<td>" + esc(r.schedule) + "</td>" +
         '<td>' + esc(r.question_count) + (r.matching ? ' <span class="hint">(' + esc(r.matching) + ")</span>" : "") + "</td>" +
         (showOcc ? '<td><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
-        '<td class="row-actions"><button class="icon-btn" data-view="' + r.exam_id + '" title="表示"><i class="fa-solid fa-eye"></i></button></td>' +
+        '<td class="row-actions"><button class="icon-btn" data-view="' + r.exam_id + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
         "</tr>";
     });
     html += "</tbody></table></div>";

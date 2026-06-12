@@ -282,7 +282,7 @@
       html += "<tr>" +
         '<td><span class="pill em">' + esc(r.year) + "</span></td><td><strong>" + esc(r.university_name) + "</strong></td><td>" + esc(r.schedule) + "</td><td>" + esc(r.question_count) + "</td>" +
         '<td class="row-actions">' +
-        '<button class="icon-btn" data-view="' + r.exam_id + '" title="表示"><i class="fa-solid fa-eye"></i></button>' +
+        '<button class="icon-btn" data-view="' + r.exam_id + '" title="表示"><i class="fa-solid fa-file-lines"></i></button>' +
         '<button class="icon-btn" data-edit="' + r.exam_id + '" title="編集"><i class="fa-solid fa-pen"></i></button>' +
         '<button class="icon-btn danger" data-del="' + r.exam_id + '" title="削除"><i class="fa-solid fa-trash"></i></button>' +
         "</td></tr>";

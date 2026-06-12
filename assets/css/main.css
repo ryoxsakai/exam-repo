@@ -333,7 +333,7 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 }
 .blank-badge {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 2.2em; height: 1.4em; padding: 0 1.4em; margin: 0 .3em;
+  min-width: 2.2em; padding: calc(.2em + 1px) 1.4em; margin: 0 calc(.3em + 2px);
   background: #fff; color: #000; border: 1.5px solid #000; border-radius: 3px;
   font-size: .82em; font-family: var(--sans); font-weight: 600; vertical-align: .04em; line-height: 1;
 }
@@ -350,7 +350,8 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
 .answer-choice-label {
   flex: 0 0 auto; min-width: 1.5em; height: 1.5em; border: 1.5px solid var(--muted);
   border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
-  font-family: var(--sans); font-size: .72em; font-weight: 700; color: var(--muted);
+  font-family: var(--sans); font-size: .65em; font-weight: 700; color: var(--muted);
+  padding-top: 2px;
   /* 折り返し時もラベルは上側（1行目）に揃える */
   align-self: flex-start; margin-top: .42em;
 }
