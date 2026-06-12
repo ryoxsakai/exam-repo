@@ -191,14 +191,13 @@ function parseInline(
       continue;
     }
 
-    // ── ((a)) or ((1)) → answer choice ───────────────────────────
+    // ── ((a)) or ((1)) → inline answer-choice reference ──────────
     const choiceMatch = remaining.match(/^\(\(([^)]+)\)\)/);
     if (choiceMatch) {
       const label = choiceMatch[1];
       result.push(
-        <span key={key()} className="answer-choice">
-          <span className="answer-choice-label">{label}</span>
-          <span className="answer-choice-text" />
+        <span key={key()} className="choice-inline">
+          {label}
         </span>
       );
       remaining = remaining.slice(choiceMatch[0].length);
@@ -323,11 +322,15 @@ export function parseTextFull(text: string): ParsedResult {
       }
     }
 
-    // ((A)) text... → answer choice line
-    const choiceMatch = line.match(/^(\s*)\(\(([^)]+)\)\)\s*([\s\S]*)/);
+    // ((A)) text... → block answer-choice line.
+    // Only treat the line as a block choice when the "((...))" at the start is
+    // followed by whitespace or is the whole line. If it is immediately
+    // followed by other content (e.g. "((1))〜((5))より選びなさい。"), fall
+    // through so the "(())" tokens render as compact inline references.
+    const choiceMatch = line.match(/^(\s*)\(\(([^)]+)\)\)(\s[\s\S]*|\s*)$/);
     if (choiceMatch) {
       const label = choiceMatch[2];
-      const rest = choiceMatch[3];
+      const rest = choiceMatch[3].trimStart();
       elements.push(
         <span key={k} className="answer-choice">
           <span className="answer-choice-label">{label}</span>
