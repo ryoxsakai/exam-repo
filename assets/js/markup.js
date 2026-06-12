@@ -22,6 +22,9 @@
 
   var VALID_COLORS = ["yellow", "blue", "red", "purple", "pink", "green", "aqua"];
 
+  // 「. 」の後を広げない略語（+ 単独の大文字イニシャル: J. K. Rowling など）
+  var ABBREV = /^(?:Mr|Mrs|Ms|Dr|Prof|St|Mt|Jr|Sr|vs|etc|No|Vol|Fig|cf|ca|pp|[A-Z])$/;
+
   // ストレートクォート → スマートクォート変換
   function smartQuotes(s) {
     s = s.replace(/(^|[\s(\[{—])"/g, "$1“");  // opening "
@@ -82,18 +85,26 @@
         out += '<span class="question-badge">' + esc(m[1]) + "</span>";
         rem = rem.slice(m[0].length); continue;
       }
+      // ((A)) 選択肢ラベル（行中・インライン。丸囲みラベルのみ表示）
+      if ((m = rem.match(/^\(\(([^)]+)\)\)/))) {
+        out += '<span class="choice-inline">' + esc(m[1]) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
 
       // プレーンテキスト（次の記法開始まで）
       var end = 1;
       while (end < rem.length) {
         var ch = rem[end];
         if (ch === "[" || ch === "#" || ch === "=" || ch === "_" ||
-            ch === "~" || ch === "^" || ch === "{") break;
+            ch === "~" || ch === "^" || ch === "{" || ch === "(") break;
         end++;
       }
       var plain = esc(smartQuotes(rem.slice(0, end)));
       // ピリオドの直後に大文字が来る場合、スペースを2つ分に広げる
-      plain = plain.replace(/\. ([A-Z])/g, ".&emsp;$1");
+      // （Dr. / Mr. / Mt. などの略語・イニシャルの後は除外）
+      plain = plain.replace(/([A-Za-z]*)\. (?=[A-Z])/g, function (full, w) {
+        return ABBREV.test(w) ? full : w + ".&emsp;";
+      });
       // em dash → 2em幅（隙間なし）
       plain = plain.replace(/—/g, '<span class="em-dash">——</span>');
       out += plain;

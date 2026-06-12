@@ -270,15 +270,17 @@
       el("exam-modal-title").textContent = ex.year + "年 " + ex.university_name + " " + ex.schedule;
       var body = "";
       (ex.questions || []).forEach(function (q) {
-        body += '<div class="exam-section">';
+        var fields = [];
         Markup.parseSections(q.problem_text || "").forEach(function (sec) {
-          if (sec.text.trim()) body += renderField(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text);
+          if (sec.text.trim()) fields.push(renderField(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text));
         });
-        if (q.answer_text && q.answer_text.trim()) body += renderField("解答", "fa-circle-check", q.answer_text);
-        if (q.commentary_text && q.commentary_text.trim()) body += renderField("解説", "fa-comment-dots", q.commentary_text);
-        body += "</div>";
+        if (q.answer_text && q.answer_text.trim()) fields.push(renderField("解答", "fa-circle-check", q.answer_text));
+        if (q.commentary_text && q.commentary_text.trim()) fields.push(renderField("解説", "fa-comment-dots", q.commentary_text));
+        // セクション間に区切り線を自動挿入
+        body += '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
       });
       el("exam-modal-body").innerHTML = body || '<div class="empty">大問が登録されていません。</div>';
+      wirePrintChecks();
     }).catch(function (e) {
       el("exam-modal-body").innerHTML = '<div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div>";
     });
@@ -300,7 +302,22 @@
     UI.toast("文字サイズ: " + FS_LABEL[next], "ok");
   }
 
+  // セクションタイトル横の「印刷」チェックを配線（種別ごとに localStorage 共有）
+  function wirePrintChecks() {
+    $all("[data-printsec]", el("exam-modal-body")).forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        var type = cb.getAttribute("data-printsec");
+        Store.setPrintSection(type, cb.checked);
+        // 同じ種別のチェックを同期（複数大問で同種セクションがある場合）
+        $all("[data-printsec]", el("exam-modal-body")).forEach(function (o) {
+          if (o.getAttribute("data-printsec") === type) o.checked = cb.checked;
+        });
+      });
+    });
+  }
+
   // 印刷: モーダルUIは出さず、本文のみを #print-area 経由で印刷
+  // チェックを外したセクションは印刷から除外する
   function printExam() {
     var area = el("print-area");
     if (!area) {
@@ -308,8 +325,27 @@
       document.body.appendChild(area);
     }
     area.className = "fs-" + Store.getFontSize();
+    var clone = el("exam-modal-body").cloneNode(true);
+    $all(".print-check", clone).forEach(function (n) { n.remove(); });
+    $all(".exam-section", clone).forEach(function (sec) {
+      $all(".exam-field-sep", sec).forEach(function (h) { h.remove(); });
+      var kept = [];
+      $all(".exam-field", sec).forEach(function (f) {
+        if (Store.isPrintSection(f.getAttribute("data-sectype"))) kept.push(f);
+        else f.remove();
+      });
+      // 残ったセクション間に区切り線を入れ直す
+      kept.forEach(function (f, i) {
+        if (i > 0) {
+          var hr = document.createElement("hr");
+          hr.className = "exam-hr exam-field-sep";
+          f.parentNode.insertBefore(hr, f);
+        }
+      });
+      if (!kept.length) sec.remove();
+    });
     area.innerHTML = '<h1 class="print-title">' + esc(el("exam-modal-title").textContent) + "</h1>" +
-      el("exam-modal-body").innerHTML;
+      clone.innerHTML;
     window.print();
   }
 
@@ -339,8 +375,12 @@
 
   function renderField(label, icon, text) {
     var r = Markup.render(text);
-    return '<div style="margin-bottom:14px">' +
-      '<div class="exam-section-title">' + esc(label) + "</div>" +
+    var checked = Store.isPrintSection(label) ? " checked" : "";
+    return '<div class="exam-field" data-sectype="' + esc(label) + '" style="margin-bottom:14px">' +
+      '<div class="exam-section-title">' + esc(label) +
+      '<label class="print-check" title="チェックした項目のみ印刷されます">' +
+      '<input type="checkbox" data-printsec="' + esc(label) + '"' + checked + '><span>印刷</span></label>' +
+      "</div>" +
       '<div class="exam-doc">' + r.html + "</div></div>";
   }
 

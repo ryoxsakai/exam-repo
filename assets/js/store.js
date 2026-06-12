@@ -18,7 +18,8 @@
     vocab:         "exam_vocab_lists",       // 語彙リスト [{name,words[]}]
     sectionTypes:  "exam_section_types",     // 問題登録のプルダウン候補（問題/解答/解説…）
     fontSize:      "exam_fontsize",          // 問題閲覧モーダルの文字サイズ (sm/md/lg)
-    regDraft:      "exam_reg_draft"          // 問題登録フォームの下書き（リロードしても保持）
+    regDraft:      "exam_reg_draft",         // 問題登録フォームの下書き（リロードしても保持）
+    printSections: "exam_print_sections"     // 印刷対象セクション {種別: bool}（全問題で共有）
   };
 
   function read(key, fallback) {
@@ -151,7 +152,18 @@
     /* 問題登録フォームの下書き（リロード後も同じ編集画面を復元） */
     getRegDraft: function () { return read(KEYS.regDraft, null); },
     setRegDraft: function (d) { write(KEYS.regDraft, d); },
-    clearRegDraft: function () { try { localStorage.removeItem(KEYS.regDraft); } catch (e) {} }
+    clearRegDraft: function () { try { localStorage.removeItem(KEYS.regDraft); } catch (e) {} },
+
+    /* 印刷対象セクション（種別ごと。未設定はチェックあり = 印刷する） */
+    isPrintSection: function (type) {
+      var m = read(KEYS.printSections, {}) || {};
+      return m[type] !== false;
+    },
+    setPrintSection: function (type, on) {
+      var m = read(KEYS.printSections, {}) || {};
+      m[type] = !!on;
+      write(KEYS.printSections, m);
+    }
   };
 
   global.Store = Store;
