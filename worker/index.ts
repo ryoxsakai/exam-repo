@@ -234,6 +234,22 @@ export default {
         return json({ exam: { ...examRow, questions } }, 200, origin);
       }
 
+      // ── GET /api/corpus ────────────────────────────────────────────
+      // 全入試問題の英文テキストを一括返却（クライアント側コーパス分析用）
+      if (path === "/api/corpus" && request.method === "GET") {
+        const { results } = await env.DB.prepare(`
+          SELECT q.id AS question_id, q.question_number,
+                 q.problem_text, q.answer_text, q.commentary_text,
+                 e.id AS exam_id, e.year, e.schedule,
+                 u.name AS university_name
+          FROM questions q
+          JOIN exams e ON q.exam_id = e.id
+          JOIN universities u ON e.university_id = u.id
+          ORDER BY e.year DESC, u.name ASC, q.question_number ASC
+        `).all();
+        return json({ questions: results }, 200, origin);
+      }
+
       // ── GET /api/search ────────────────────────────────────────────
       if (path === "/api/search" && request.method === "GET") {
         const word     = url.searchParams.get("word") || "";

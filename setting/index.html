@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- キャッシュクリア -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>設定 — 入試問題データベース</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <link rel="stylesheet" href="../assets/css/main.css?v=20260612" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-mark"><i class="fa-solid fa-graduation-cap"></i></div>
+        <div>
+          <div class="brand-title" id="site-title">入試問題データベース</div>
+          <div class="brand-sub">Entrance Exam Database</div>
+        </div>
+      </div>
+      <div class="topbar-spacer"></div>
+      <a class="icon-btn" href="../" title="閲覧ページへ"><i class="fa-solid fa-house"></i></a>
+    </div>
+  </header>
+
+  <main class="shell">
+    <div class="page-head">
+      <h1 class="page-title"><span class="ic"><i class="fa-solid fa-gear"></i></span><span>設定</span></h1>
+      <p class="page-desc">サイトの基本設定、Worker 接続、入試問題の管理・登録、コーパス分析の設定を行います。</p>
+    </div>
+
+    <nav class="tabs" id="set-tabs"></nav>
+
+    <!-- ===== タブ1: メイン設定 ===== -->
+    <section data-panel="main" class="panel active">
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-heading ic"></i> サイトタイトル</h3></div>
+        <div class="inline-add">
+          <input type="text" id="cfg-title" placeholder="入試問題データベース" />
+          <button class="btn primary" id="cfg-title-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+        </div>
+        <p class="hint" style="margin-top:8px">閲覧ページ・設定ページのタイトルに反映されます（Worker にも保存し全端末で共有）。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-arrow-up-wide-short ic"></i> タブの並び順</h3></div>
+        <div class="grid-2">
+          <div>
+            <span class="field-label"><i class="fa-solid fa-book-open"></i> 閲覧ページのタブ</span>
+            <ul class="sort-list" id="order-main"></ul>
+          </div>
+          <div>
+            <span class="field-label"><i class="fa-solid fa-gear"></i> 設定ページのタブ</span>
+            <ul class="sort-list" id="order-setting"></ul>
+          </div>
+        </div>
+        <p class="hint" style="margin-top:10px">並び順は端末ごとに保存されます（localStorage）。</p>
+      </div>
+    </section>
+
+    <!-- ===== タブ2: 接続設定 ===== -->
+    <section data-panel="conn" class="panel">
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-plug ic"></i> Worker 接続</h3></div>
+        <label class="field">
+          <span class="field-label">Worker URL</span>
+          <input type="url" id="cfg-worker" placeholder="https://medical-exam-worker.xxxx.workers.dev" />
+        </label>
+        <div class="toolbar" style="margin-top:14px">
+          <button class="btn primary" id="cfg-worker-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+          <button class="btn blue" id="cfg-worker-test"><i class="fa-solid fa-satellite-dish"></i> 接続テスト</button>
+          <span class="spacer"></span>
+          <span class="hint" id="conn-status"></span>
+        </div>
+        <p class="hint" style="margin-top:8px">Cloudflare Worker の公開URLを入力してください。末尾スラッシュは不要です。</p>
+      </div>
+    </section>
+
+    <!-- ===== タブ3: 入試問題一覧 ===== -->
+    <section data-panel="list" class="panel">
+      <div class="toolbar">
+        <button class="btn primary" id="list-search"><i class="fa-solid fa-magnifying-glass"></i> 検索</button>
+        <span class="hint" id="list-summary">すべての入試問題</span>
+        <span class="spacer"></span>
+        <button class="btn ghost sm" id="list-clear"><i class="fa-solid fa-rotate-left"></i> 条件クリア</button>
+      </div>
+      <div id="list-area"></div>
+    </section>
+
+    <!-- ===== タブ4: 問題登録 ===== -->
+    <section data-panel="register" class="panel">
+      <div class="card">
+        <div class="card-head">
+          <h3><i class="fa-solid fa-pen-to-square ic"></i> <span id="reg-mode-label">新規 問題登録</span></h3>
+          <span class="spacer"></span>
+          <button class="btn ghost sm" id="reg-reset"><i class="fa-solid fa-eraser"></i> クリア</button>
+        </div>
+        <div class="grid-3">
+          <div>
+            <span class="field-label">年度</span>
+            <div class="inline-add">
+              <select id="reg-year"></select>
+              <button class="icon-btn" id="reg-year-edit" title="年度を編集"><i class="fa-solid fa-pen"></i></button>
+            </div>
+          </div>
+          <div>
+            <span class="field-label">大学名</span>
+            <div class="inline-add">
+              <select id="reg-university"></select>
+              <button class="icon-btn" id="reg-uni-edit" title="大学を編集"><i class="fa-solid fa-pen"></i></button>
+            </div>
+          </div>
+          <div>
+            <span class="field-label">方式</span>
+            <div class="inline-add">
+              <select id="reg-schedule"></select>
+              <button class="icon-btn" id="reg-sched-edit" title="方式を編集"><i class="fa-solid fa-pen"></i></button>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:14px;max-width:220px">
+          <span class="field-label">大問番号</span>
+          <input type="number" id="reg-qnum" min="1" value="1" />
+        </div>
+      </div>
+
+      <div class="card-head" style="margin:18px 4px 10px">
+        <h3 style="font-size:14px"><i class="fa-solid fa-layer-group ic"></i> セクション</h3>
+        <span class="spacer"></span>
+        <button class="btn ghost sm" id="reg-types-edit"><i class="fa-solid fa-sliders"></i> 種別を編集</button>
+      </div>
+      <div id="reg-sections"></div>
+
+      <div class="toolbar" style="margin-top:18px">
+        <button class="btn primary" id="reg-save"><i class="fa-solid fa-floppy-disk"></i> 登録する</button>
+        <button class="btn" id="reg-preview"><i class="fa-solid fa-eye"></i> プレビュー</button>
+      </div>
+
+      <button class="fab" id="reg-add-section" title="セクションを追加"><i class="fa-solid fa-plus"></i></button>
+    </section>
+
+    <!-- ===== タブ5: コーパス検索設定 ===== -->
+    <section data-panel="corpus" class="panel">
+      <div class="card">
+        <div class="card-head">
+          <h3><i class="fa-solid fa-ban ic"></i> ストップワードリスト</h3>
+          <span class="spacer"></span>
+          <button class="btn primary sm" id="sw-add"><i class="fa-solid fa-plus"></i> 新規リスト</button>
+        </div>
+        <div id="sw-lists"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3><i class="fa-solid fa-list-check ic"></i> 語彙リスト（Target1900 等）</h3>
+          <span class="spacer"></span>
+          <button class="btn primary sm" id="vc-add"><i class="fa-solid fa-plus"></i> 新規リスト</button>
+        </div>
+        <div id="vc-lists"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== 汎用編集モーダル（年度/大学/方式/種別の追加・並び替え） ===== -->
+  <div class="modal-overlay" id="edit-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <i class="fa-solid fa-sliders ic"></i>
+        <h3 id="edit-modal-title">編集</h3>
+        <span class="spacer"></span>
+        <button class="icon-btn" data-close title="閉じる"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="inline-add" style="margin-bottom:14px">
+          <input type="text" id="edit-new" placeholder="新しい項目を入力" />
+          <button class="btn primary" id="edit-add"><i class="fa-solid fa-plus"></i> 追加</button>
+        </div>
+        <ul class="sort-list" id="edit-list"></ul>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-close>閉じる</button>
+        <button class="btn primary" id="edit-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 検索モーダル（一覧タブ用） ===== -->
+  <div class="modal-overlay" id="search-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <i class="fa-solid fa-magnifying-glass ic"></i><h3>入試問題を検索</h3><span class="spacer"></span>
+        <button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <nav class="tabs" id="search-modal-tabs">
+          <button class="tab active" data-mtab="normal"><i class="fa-solid fa-sliders"></i><span>条件で検索</span></button>
+          <button class="tab" data-mtab="keyword"><i class="fa-solid fa-key"></i><span>キーワード検索</span></button>
+        </nav>
+        <div data-mpanel="normal">
+          <div class="grid-2">
+            <label class="field"><span class="field-label">年度</span><select id="sm-year"><option value="">指定なし</option></select></label>
+            <label class="field"><span class="field-label">大学名</span><select id="sm-university"><option value="">指定なし</option></select></label>
+            <label class="field"><span class="field-label">方式</span><select id="sm-schedule"><option value="">指定なし</option></select></label>
+            <label class="field"><span class="field-label">大問番号</span><input type="number" id="sm-qnum" min="1" /></label>
+          </div>
+        </div>
+        <div data-mpanel="keyword" style="display:none">
+          <label class="field"><span class="field-label">キーワード</span><input type="text" id="sm-word" placeholder="例: immune system" /></label>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-close>キャンセル</button>
+        <button class="btn primary" id="sm-run"><i class="fa-solid fa-magnifying-glass"></i> 検索</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 入試問題 表示モーダル ===== -->
+  <div class="modal-overlay" id="exam-modal">
+    <div class="modal wide">
+      <div class="modal-head">
+        <i class="fa-solid fa-file-lines ic"></i><h3 id="exam-modal-title">入試問題</h3><span class="spacer"></span>
+        <button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" id="exam-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ===== リスト編集モーダル（ストップワード/語彙） ===== -->
+  <div class="modal-overlay" id="wordlist-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <i class="fa-solid fa-pen ic"></i><h3 id="wordlist-title">リストを編集</h3><span class="spacer"></span>
+        <button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <label class="field" style="margin-bottom:12px"><span class="field-label">リスト名</span><input type="text" id="wordlist-name" /></label>
+        <label class="field"><span class="field-label">単語（改行・カンマ・空白区切り）</span>
+          <textarea id="wordlist-words" rows="10" placeholder="apple&#10;banana&#10;..."></textarea></label>
+        <p class="hint" id="wordlist-count" style="margin-top:8px"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" id="wordlist-delete"><i class="fa-solid fa-trash"></i> 削除</button>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn ghost" data-close>キャンセル</button>
+        <button class="btn primary" id="wordlist-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== プレビューモーダル ===== -->
+  <div class="modal-overlay" id="preview-modal">
+    <div class="modal wide">
+      <div class="modal-head">
+        <i class="fa-solid fa-eye ic"></i><h3>プレビュー</h3><span class="spacer"></span>
+        <button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" id="preview-body"></div>
+    </div>
+  </div>
+
+  <script src="../assets/js/store.js?v=20260612"></script>
+  <script src="../assets/js/api.js?v=20260612"></script>
+  <script src="../assets/js/ui.js?v=20260612"></script>
+  <script src="../assets/js/markup.js?v=20260612"></script>
+  <script src="../assets/js/settings.js?v=20260612"></script>
+</body>
+</html>
