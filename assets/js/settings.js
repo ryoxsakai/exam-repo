@@ -393,13 +393,11 @@
           '<span class="spacer"></span>' +
           '<button class="icon-btn sm" data-secup="' + i + '" title="上へ"' + (i === 0 ? " disabled" : "") + '><i class="fa-solid fa-arrow-up"></i></button>' +
           '<button class="icon-btn sm" data-secdown="' + i + '" title="下へ"' + (i === state.reg.sections.length - 1 ? " disabled" : "") + '><i class="fa-solid fa-arrow-down"></i></button>' +
+          '<button class="icon-btn sm" data-secpv="' + i + '" title="見え方を確認"><i class="fa-solid fa-file-lines"></i></button>' +
           '<button class="icon-btn sm danger" data-secdel="' + i + '" title="削除"><i class="fa-solid fa-trash"></i></button>' +
         "</div>" +
         markupBar(i) +
-        '<textarea data-sectext="' + i + '" rows="6" placeholder="入試問題記法で入力…">' + esc(sec.text) + "</textarea>" +
-        '<div class="sec-tools">' +
-          '<button class="icon-btn sm" data-secpv="' + i + '" title="見え方を確認"><i class="fa-solid fa-eye"></i></button>' +
-        "</div>";
+        '<textarea data-sectext="' + i + '" rows="6" placeholder="入試問題記法で入力…">' + esc(sec.text) + "</textarea>";
       c.appendChild(box);
     });
     wireRegSection();
