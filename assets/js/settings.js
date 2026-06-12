@@ -422,7 +422,7 @@
     if (!state.reg.sections.length) addSection("問題");
   }
   function addSection(type) {
-    var types = state.config.section_types || Store.getSectionTypes();
+    var types = (state.config.section_types && state.config.section_types.length) ? state.config.section_types : Store.getSectionTypes();
     state.reg.sections.push({ type: type || types[0], text: "" });
   }
   function fillRegSelects() {
@@ -463,7 +463,7 @@
   function renderReg() {
     fillRegSelects();
     el("reg-mode-label").textContent = state.reg.editingExamId ? "問題を編集" : "新規 問題登録";
-    var types = state.config.section_types || Store.getSectionTypes();
+    var types = (state.config.section_types && state.config.section_types.length) ? state.config.section_types : Store.getSectionTypes();
     var c = el("reg-sections");
     c.innerHTML = "";
     state.reg.sections.forEach(function (sec, i) {
