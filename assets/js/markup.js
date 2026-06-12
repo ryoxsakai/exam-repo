@@ -127,8 +127,8 @@
         continue;
       }
 
-      // 段落先頭の通常行は字下げ（行頭が空所バッジの場合は除く）
-      var indent = paraStart && !/^\[\[/.test(trimmed);
+      // 段落先頭かつ英語大文字で始まる行のみ字下げ
+      var indent = paraStart && /^[A-Z]/.test(trimmed);
       html += '<span class="blk' + (indent ? " indent" : "") + '">' + inline(line, footnotes) + "</span>";
       paraStart = false;
     }
