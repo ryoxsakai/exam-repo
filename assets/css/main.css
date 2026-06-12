@@ -341,13 +341,13 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 .question-block-header { display: flex; align-items: baseline; flex-wrap: nowrap; gap: 3px; margin: 18px 0 8px; }
 @media (max-width: 600px) {
   /* スマホ: バッジとテキストを通常のインライン流し込みに（折り返しがバッジの下に回り込む） */
-  .question-block-header { display: block; margin: 10px 0 6px; }
+  .question-block-header { display: block; margin: 10px 0 6px; text-align: justify; }
   .question-block-header .qtext { display: inline; }
 }
 .question-badge {
   /* [[]]（blank-badge）と同サイズ。薄いブルーのグラデーション背景 */
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 2.2em; padding: calc(.1em + 0.5px) 0.7em; margin: 0 calc(.3em + 2px);
+  min-width: 2.2em; padding: calc(.1em + 0.5px) 0.7em; margin: 0;
   background: linear-gradient(135deg, #F0FAFD, #CAF0F8);
   color: var(--navy); border: 1.5px solid var(--sky); border-radius: 3px;
   font-size: .82em; font-family: var(--sans); font-weight: 700; vertical-align: .04em; line-height: 1;
