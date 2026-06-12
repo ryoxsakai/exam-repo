@@ -93,13 +93,14 @@
     var footnotes = [];
     var lines = String(text == null ? "" : text).split("\n");
     var html = "";
+    var paraStart = true; // 段落先頭か（空行・見出し・選択肢・区切りの直後）
 
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
       var trimmed = line.trim();
 
-      if (trimmed === "") { html += '<div style="height:.6em"></div>'; continue; }
-      if (trimmed === "----") { html += '<hr class="exam-hr">'; continue; }
+      if (trimmed === "") { html += '<div style="height:.6em"></div>'; paraStart = true; continue; }
+      if (trimmed === "----") { html += '<hr class="exam-hr">'; paraStart = true; continue; }
 
       // {{問N}} 行頭 → 見出し
       var qm = trimmed.match(/^\{\{([^}]+)\}\}/);
@@ -109,6 +110,7 @@
                 esc(qm[1]) + "</span>" +
                 (rest ? '<span class="qtext">' + inline(rest, footnotes) + "</span>" : "") +
                 "</div>";
+        paraStart = true;
         continue;
       }
 
@@ -118,10 +120,14 @@
         html += '<div class="answer-choice"><span class="answer-choice-label">' + esc(cm[1]) +
                 '</span><span class="answer-choice-text">' +
                 (cm[2] ? inline(cm[2], footnotes) : "") + "</span></div>";
+        paraStart = true;
         continue;
       }
 
-      html += '<span class="blk">' + inline(line, footnotes) + "</span>";
+      // 段落先頭の通常行は字下げ（行頭が空所バッジの場合は除く）
+      var indent = paraStart && !/^\[\[/.test(trimmed);
+      html += '<span class="blk' + (indent ? " indent" : "") + '">' + inline(line, footnotes) + "</span>";
+      paraStart = false;
     }
 
     if (footnotes.length) {

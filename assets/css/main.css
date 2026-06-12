@@ -325,6 +325,7 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 /* ---------- Exam display (markup output) ---------- */
 .exam-doc { font-family: var(--serif); font-size: 16px; line-height: 1.95; color: var(--ink); }
 .exam-doc .blk { display: block; }
+.exam-doc .blk.indent { text-indent: 1em; }
 /* 文字サイズ切替（問題閲覧モーダル） */
 .fs-sm .exam-doc { font-size: 14px; }
 .fs-md .exam-doc { font-size: 16px; }

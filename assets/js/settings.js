@@ -360,6 +360,7 @@
   function wireRegister() {
     el("reg-add-section").addEventListener("click", function () { addSection(); renderReg(); });
     el("reg-reset").addEventListener("click", resetReg);
+    el("reg-new").addEventListener("click", resetReg);
     el("reg-save").addEventListener("click", saveReg);
     el("reg-preview").addEventListener("click", previewReg);
     el("reg-year-edit").addEventListener("click", function () { openYearEdit(); });
@@ -379,7 +380,7 @@
   }
   function renderReg() {
     fillRegSelects();
-    el("reg-mode-label").textContent = state.reg.editingExamId ? "問題を編集（ID:" + state.reg.editingExamId + "）" : "新規 問題登録";
+    el("reg-mode-label").textContent = state.reg.editingExamId ? "問題を編集" : "新規 問題登録";
     var types = Store.getSectionTypes();
     var c = el("reg-sections");
     c.innerHTML = "";
@@ -518,9 +519,14 @@
     var data = collectReg();
     if (!data.year || !data.universityName || !data.schedule) { toast("年度・大学名・方式を選択してください", "err"); return; }
     var p = state.reg.editingExamId ? Api.updateExam(state.reg.editingExamId, data) : Api.createExam(data);
-    p.then(function () {
+    p.then(function (res) {
       toast(state.reg.editingExamId ? "更新しました" : "登録しました", "ok");
-      resetReg();
+      // 編集画面はクリアしない（「新規作成」を押すまで保持）。
+      // 新規登録時は以降の保存が二重登録にならないよう編集モードへ移行。
+      if (!state.reg.editingExamId && res && res.exam && res.exam.id) {
+        state.reg.editingExamId = res.exam.id;
+        renderReg();
+      }
       loadServerConfig();
     }).catch(function (e) { toast(e.message, "err"); });
   }
