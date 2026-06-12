@@ -15,6 +15,28 @@ interface FootnoteEntry {
 }
 
 // ----------------------------------------------------------------
+// Abbreviation spacing fix
+// ----------------------------------------------------------------
+// Titles/abbreviations like "Dr.", "Mr.", "Mt." are often followed by a
+// full-width space (U+3000) or multiple spaces in the source data, which
+// renders as an unwanted wide gap after the period. Collapse that gap into a
+// single non-breaking space so the abbreviation stays attached to the
+// following word with normal half-width spacing.
+const ABBREVIATIONS = [
+  "Dr", "Mr", "Mrs", "Ms", "Mt", "St", "Prof", "Fig", "No", "Jr", "Sr",
+  "Co", "Inc", "Ltd", "Rev", "Hon", "Gen", "Capt", "Sgt", "Col",
+];
+const ABBREV_RE = new RegExp(
+  `\\b(${ABBREVIATIONS.join("|")})\\.[\\s\\u3000]+`,
+  "g"
+);
+function normalizeAbbreviationSpaces(line: string): string {
+  // Replace with the abbreviation period + a single non-breaking space so the
+  // title stays attached to the following word at normal half-width spacing.
+  return line.replace(ABBREV_RE, "$1. ");
+}
+
+// ----------------------------------------------------------------
 // Main parser function
 // ----------------------------------------------------------------
 export function parseText(text: string): ParsedResult {
@@ -27,7 +49,7 @@ export function parseText(text: string): ParsedResult {
 
   let lineIdx = 0;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = normalizeAbbreviationSpaces(lines[i]);
 
     // Blank line → paragraph break
     if (line.trim() === "") {
@@ -271,7 +293,7 @@ export function parseTextFull(text: string): ParsedResult {
 
   let lineIdx = 0;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = normalizeAbbreviationSpaces(lines[i]);
     const k = `l${lineIdx++}`;
 
     // Blank line → spacer

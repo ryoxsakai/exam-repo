@@ -287,12 +287,23 @@ body {
     visibility: visible !important;
   }
 
-  .exam-card {
-    break-inside: avoid;
-    page-break-inside: avoid;
+  /*
+   * Let large 大問 / section blocks flow across pages so their content is
+   * never clipped, but keep each individual paragraph intact so a single
+   * paragraph is never split across a page boundary.
+   */
+  .exam-card,
+  .question-block,
+  .print-section {
+    break-inside: auto;
+    page-break-inside: auto;
   }
 
-  .question-block {
+  .parsed-text > span,
+  .parsed-text > div,
+  .parsed-text .answer-choice,
+  .parsed-text .question-block-header,
+  .parsed-text .footnote-section {
     break-inside: avoid;
     page-break-inside: avoid;
   }
