@@ -350,7 +350,7 @@
     }).catch(function (e) { el("exam-modal-body").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
   }
   function field(label, icon, text) {
-    return '<div style="margin-bottom:14px"><div class="exam-section-title"><i class="fa-solid ' + icon + '"></i> ' + esc(label) +
+    return '<div style="margin-bottom:14px"><div class="exam-section-title">' + esc(label) +
       '</div><div class="exam-doc">' + Markup.render(text).html + "</div></div>";
   }
 
