@@ -398,7 +398,7 @@
         markupBar(i) +
         '<textarea data-sectext="' + i + '" rows="6" placeholder="入試問題記法で入力…">' + esc(sec.text) + "</textarea>" +
         '<div class="sec-tools">' +
-          '<button class="btn sm" data-secpv="' + i + '"><i class="fa-solid fa-eye"></i> 見え方を確認</button>' +
+          '<button class="icon-btn sm" data-secpv="' + i + '" title="見え方を確認"><i class="fa-solid fa-eye"></i></button>' +
         "</div>";
       c.appendChild(box);
     });
