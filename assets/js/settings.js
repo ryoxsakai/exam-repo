@@ -27,20 +27,18 @@
   /* ---------------- 初期化 ---------------- */
   function init() {
     el("site-title").textContent = Store.getSiteTitle();
+    el("site-subtitle").textContent = Store.getSiteSubtitle();
     document.title = "設定 — " + Store.getSiteTitle();
     UI.applyDomainLinks();
 
     var order = Store.getTabOrder("setting", SET_ORDER);
     var active = Store.getLastTab("setting");
     if (SET_ORDER.indexOf(active) < 0) active = order[0];
-    UI.buildTabs({
-      tabsEl: el("set-tabs"), order: order, defs: SET_TABS, active: active,
-      onChange: function (id) { Store.setLastTab("setting", id); onTab(id); }
-    });
+    rebuildSetTabs(order, active);
     UI.setActiveTab(el("set-tabs"), active);
 
     // モーダル配線
-    ["edit-modal", "search-modal", "exam-modal", "wordlist-modal", "preview-modal"].forEach(function (id) { UI.wireModal(el(id)); });
+    ["edit-modal", "search-modal", "exam-modal", "wordlist-modal", "preview-modal", "syntax-modal"].forEach(function (id) { UI.wireModal(el(id)); });
 
     wireMain();
     wireConn();
@@ -52,6 +50,15 @@
     el("cfg-worker").value = Store.getWorkerUrl();
     if (Store.getWorkerUrl()) loadServerConfig();
     onTab(active);
+  }
+
+  // 設定ページのタブはアイコンのみ表示（名前はツールチップ）
+  function rebuildSetTabs(order, active) {
+    UI.buildTabs({
+      tabsEl: el("set-tabs"), order: order, defs: SET_TABS, active: active,
+      page: "setting", iconOnly: true,
+      onChange: function (id) { Store.setLastTab("setting", id); onTab(id); }
+    });
   }
 
   function onTab(id) {
@@ -70,6 +77,18 @@
       // Worker にも保存（全端末共有）
       if (Store.getWorkerUrl()) {
         Api.updateConfig({ site_title: t }).then(function () { toast("タイトルを保存しました", "ok"); })
+          .catch(function () { toast("ローカルに保存しました（Worker未接続）", "ok"); });
+      } else toast("ローカルに保存しました", "ok");
+    });
+
+    // サブタイトル
+    el("cfg-subtitle").value = Store.getSiteSubtitle();
+    el("cfg-subtitle-save").addEventListener("click", function () {
+      var t = el("cfg-subtitle").value.trim();
+      Store.setSiteSubtitle(t);
+      el("site-subtitle").textContent = t || "Entrance Exam Database";
+      if (Store.getWorkerUrl()) {
+        Api.updateConfig({ site_subtitle: t }).then(function () { toast("サブタイトルを保存しました", "ok"); })
           .catch(function () { toast("ローカルに保存しました（Worker未接続）", "ok"); });
       } else toast("ローカルに保存しました", "ok");
     });
@@ -104,9 +123,11 @@
     container.innerHTML = "";
     order.forEach(function (id, i) {
       var def = defs[id]; if (!def) return;
+      var label = Store.getTabLabel(page, id, def.label);
       var li = create("li", { class: "sort-item" },
-        '<i class="fa-solid ' + def.icon + '" style="color:var(--emerald-dark)"></i>' +
-        '<span class="label">' + esc(def.label) + "</span>" +
+        '<i class="fa-solid ' + def.icon + '" style="color:var(--blue)"></i>' +
+        '<input type="text" class="label" data-rename="' + esc(id) + '" value="' + esc(label) +
+          '" placeholder="' + esc(def.label) + '" style="border:0;background:transparent;padding:4px 6px;font-size:14px" />' +
         '<span class="move">' +
         '<button class="icon-btn sm" data-up="' + i + '" title="上へ"' + (i === 0 ? " disabled" : "") + '><i class="fa-solid fa-arrow-up"></i></button>' +
         '<button class="icon-btn sm" data-down="' + i + '" title="下へ"' + (i === order.length - 1 ? " disabled" : "") + '><i class="fa-solid fa-arrow-down"></i></button>' +
@@ -119,6 +140,17 @@
     $all("[data-down]", container).forEach(function (b) {
       b.addEventListener("click", function () { moveOrder(page, defOrder, Number(b.getAttribute("data-down")), 1, defs, container); });
     });
+    // タブ名の変更（input/change 両対応でクロスブラウザに）
+    $all("[data-rename]", container).forEach(function (inp) {
+      var save = function () {
+        var id = inp.getAttribute("data-rename");
+        Store.setTabLabel(page, id, inp.value);
+        if (page === "setting") rebuildSetTabs(Store.getTabOrder(page, defOrder), Store.getLastTab("setting") || defOrder[0]);
+      };
+      inp.addEventListener("change", save);
+      inp.addEventListener("blur", save);
+      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } });
+    });
   }
   function moveOrder(page, defOrder, idx, delta, defs, container) {
     var order = Store.getTabOrder(page, defOrder);
@@ -128,7 +160,7 @@
     Store.setTabOrder(page, order);
     renderOrderList(page, defs, defOrder, container);
     // 設定ページ自身のタブは即時反映
-    if (page === "setting") UI.buildTabs({ tabsEl: el("set-tabs"), order: order, defs: SET_TABS, active: Store.getLastTab("setting") || order[0], onChange: function (id) { Store.setLastTab("setting", id); onTab(id); } });
+    if (page === "setting") rebuildSetTabs(order, Store.getLastTab("setting") || order[0]);
     toast("並び順を更新しました", "ok");
   }
 
@@ -162,6 +194,12 @@
       if (!Array.isArray(state.config.schedules)) state.config.schedules = [];
       if (!Array.isArray(state.config.year_presets)) state.config.year_presets = [];
       state.universities = (res[1] && res[1].universities) || [];
+      // サブタイトル（Worker 側にあれば反映）
+      if (state.config.site_subtitle) {
+        Store.setSiteSubtitle(state.config.site_subtitle);
+        el("site-subtitle").textContent = state.config.site_subtitle;
+        el("cfg-subtitle").value = state.config.site_subtitle;
+      }
       // 独自ドメイン（Worker 側にあればローカル未設定時に取り込む）
       if (state.config.custom_domain && !Store.getCustomDomain()) {
         Store.setCustomDomain(state.config.custom_domain);
@@ -358,36 +396,36 @@
           '<button class="icon-btn sm danger" data-secdel="' + i + '" title="削除"><i class="fa-solid fa-trash"></i></button>' +
         "</div>" +
         markupBar(i) +
-        '<textarea data-sectext="' + i + '" rows="6" placeholder="入試問題記法で入力…">' + esc(sec.text) + "</textarea>";
+        '<textarea data-sectext="' + i + '" rows="6" placeholder="入試問題記法で入力…">' + esc(sec.text) + "</textarea>" +
+        '<div class="sec-tools">' +
+          '<button class="btn sm" data-secpv="' + i + '"><i class="fa-solid fa-eye"></i> 見え方を確認</button>' +
+        "</div>";
       c.appendChild(box);
     });
     wireRegSection();
   }
+  // 記法ボタン定義（ラベルは最小限の表記）
+  var MK_DEFS = [
+    { l: "問",   t: "問見出し {{問1}}",        b: "{{問", a: "}}" },
+    { l: "空所", t: "空所 [[1]]",              b: "[[", a: "]]" },
+    { l: "選択", t: "選択肢 ((A)) 本文",        b: "((", a: "))" },
+    { l: "蛍光", t: "ハイライト ==語==",        b: "==", a: "==" },
+    { l: "色",   t: "色付きハイライト ==語==:色", b: "==", a: "==:yellow" },
+    { l: "下線", t: "下線 __語__",              b: "__", a: "__" },
+    { l: "語注", t: "語注 ##語::訳##",          b: "##", a: "::訳##" },
+    { l: "下付", t: "下付き ~~x~~",             b: "~~", a: "~~" },
+    { l: "上付", t: "上付き ^^x^^",             b: "^^", a: "^^" },
+    { l: "区切", t: "区切り線 ----",            b: "\n----\n", a: "" }
+  ];
   function markupBar(i) {
-    var btns = [
-      { l: '{{問}}', t: "問見出し", b: "{{問", a: "}}" },
-      { l: "空所 [[ ]]", t: "空所", b: "[[", a: "]]" },
-      { l: "選択肢 (( ))", t: "選択肢", b: "((", a: "))" },
-      { l: "ハイライト", t: "ハイライト", b: "==", a: "==" },
-      { l: "色ハイライト", t: "色付きハイライト", b: "==", a: "==:yellow" },
-      { l: "下線", t: "下線", b: "__", a: "__" },
-      { l: "語注", t: "語注", b: "##", a: "::訳##" },
-      { l: "下付き", t: "下付き", b: "~~", a: "~~" },
-      { l: "上付き", t: "上付き", b: "^^", a: "^^" },
-      { l: "区切り", t: "区切り線", b: "\n----\n", a: "" }
-    ];
     var h = '<div class="markup-bar">';
-    btns.forEach(function (bn, k) {
+    MK_DEFS.forEach(function (bn, k) {
       h += '<button class="btn sm" data-mk="' + i + ":" + k + '" title="' + esc(bn.t) + '">' + esc(bn.l) + "</button>";
     });
+    h += '<button class="btn sm link" data-syntax="1" title="記法の一覧と見え方"><i class="fa-solid fa-circle-question"></i> 記法一覧</button>';
     h += "</div>";
     return h;
   }
-  var MK_DEFS = [
-    { b: "{{問", a: "}}" }, { b: "[[", a: "]]" }, { b: "((", a: "))" }, { b: "==", a: "==" },
-    { b: "==", a: "==:yellow" }, { b: "__", a: "__" }, { b: "##", a: "::訳##" }, { b: "~~", a: "~~" },
-    { b: "^^", a: "^^" }, { b: "\n----\n", a: "" }
-  ];
   function wireRegSection() {
     var c = el("reg-sections");
     $all("[data-sectype]", c).forEach(function (s) { s.addEventListener("change", function () { state.reg.sections[Number(s.getAttribute("data-sectype"))].type = s.value; }); });
@@ -411,6 +449,41 @@
         state.reg.sections[i].text = ta.value;
       });
     });
+    $all("[data-syntax]", c).forEach(function (b) { b.addEventListener("click", openSyntaxModal); });
+    // セクション単位の見え方確認
+    $all("[data-secpv]", c).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var i = Number(b.getAttribute("data-secpv"));
+        var sec = state.reg.sections[i];
+        el("preview-body").innerHTML = field(sec.type, SECTION_ICONS[sec.type] || "fa-file-lines", sec.text || "（未入力）");
+        UI.openModal(el("preview-modal"));
+      });
+    });
+  }
+
+  /* ---- 記法一覧モーダル（記法と見え方を並べて表示） ---- */
+  var SYNTAX_EXAMPLES = [
+    { code: "{{問1}} 次の文を読みなさい。", desc: "大問見出し（行頭）" },
+    { code: "Fill in [[1]] and [[A]].", desc: "空所バッジ" },
+    { code: "The ##immune::免疫## system.", desc: "語注（末尾に訳一覧）" },
+    { code: "This is ==important==.", desc: "ハイライト（黄）" },
+    { code: "A ==keyword==:blue here.", desc: "色付きハイライト（yellow/blue/red/purple/pink/green/aqua）" },
+    { code: "An __underlined__ word.", desc: "下線" },
+    { code: "H~~2~~O and 1^^st^^.", desc: "下付き・上付き" },
+    { code: "((A)) apple\n((B)) a very long choice that wraps neatly onto the next line", desc: "選択肢（行頭。折り返しも整形）" },
+    { code: "----", desc: "区切り線" }
+  ];
+  function openSyntaxModal() {
+    var h = "";
+    SYNTAX_EXAMPLES.forEach(function (ex) {
+      h += '<div style="margin-bottom:16px">' +
+        '<div class="exam-section-title">' + esc(ex.desc) + "</div>" +
+        '<pre style="margin:0 0 6px;background:var(--grad-chip);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12.5px;white-space:pre-wrap;overflow-x:auto">' + esc(ex.code) + "</pre>" +
+        '<div class="exam-doc" style="border:1px dashed var(--line);border-radius:8px;padding:8px 12px">' + Markup.render(ex.code).html + "</div>" +
+      "</div>";
+    });
+    el("syntax-body").innerHTML = h;
+    UI.openModal(el("syntax-modal"));
   }
   function moveSection(i, delta) {
     var j = i + delta; if (j < 0 || j >= state.reg.sections.length) return;

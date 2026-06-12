@@ -2,39 +2,46 @@
    入試問題データベース — 共通スタイル
    - UI: Noto Sans JP (サンセリフ / ゴシック)
    - 入試問題の英語: Source Serif 4 (Century Schoolbook 系セリフ)
-   - 配色: エメラルドグリーン / ブルー中心、薄いグラデーション
+   - 配色: ブルー系パレット (#03045E / #0077B6 / #00B4D8 / #90E0EF / #CAF0F8)
+   - デザイン: フラット・ミニマル（UI8風）
    ===================================================================== */
 
 :root {
-  /* Brand palette */
-  --emerald:      #059669;
-  --emerald-dark: #047857;
-  --emerald-soft: #d1fae5;
-  --blue:         #2563eb;
-  --blue-dark:    #1e3a8a;
-  --blue-soft:    #dbeafe;
-  --aqua:         #0891b2;
+  /* Brand palette (coolors: 03045e-0077b6-00b4d8-90e0ef-caf0f8) */
+  --navy:       #03045E;
+  --blue:       #0077B6;
+  --cyan:       #00B4D8;
+  --sky:        #90E0EF;
+  --frost:      #CAF0F8;
+
+  /* 旧変数名は新パレットへマップ（コンポーネント側の変更を最小化） */
+  --emerald:      #00B4D8;
+  --emerald-dark: #0077B6;
+  --emerald-soft: #CAF0F8;
+  --blue-dark:    #03045E;
+  --blue-soft:    #CAF0F8;
+  --aqua:         #00B4D8;
 
   /* Neutrals */
-  --ink:        #0f172a;
-  --ink-soft:   #334155;
-  --muted:      #64748b;
-  --line:       #e2e8f0;
-  --line-soft:  #eef2f7;
+  --ink:        #0f1222;
+  --ink-soft:   #3a3f55;
+  --muted:      #80869d;
+  --line:       #e9ecf2;
+  --line-soft:  #f2f4f8;
   --surface:    #ffffff;
-  --bg:         #f7fafc;
+  --bg:         #fafbfc;
 
-  /* Gradients (subtle) */
-  --grad-brand:  linear-gradient(135deg, #059669 0%, #0891b2 50%, #2563eb 100%);
-  --grad-emerald:linear-gradient(135deg, #059669 0%, #0d9488 100%);
-  --grad-blue:   linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%);
-  --grad-soft:   linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  --grad-chip:   linear-gradient(135deg, #ecfdf5 0%, #eff6ff 100%);
+  /* フラット化: グラデーション変数は単色に */
+  --grad-brand:  #0077B6;
+  --grad-emerald:#0077B6;
+  --grad-blue:   #03045E;
+  --grad-soft:   #ffffff;
+  --grad-chip:   #F2FAFD;
 
-  --radius:    14px;
-  --radius-sm: 9px;
-  --shadow:    0 1px 2px rgba(15,23,42,.04), 0 8px 24px -12px rgba(15,23,42,.18);
-  --shadow-lg: 0 24px 60px -24px rgba(15,23,42,.35);
+  --radius:    16px;
+  --radius-sm: 10px;
+  --shadow:    0 1px 2px rgba(3,4,94,.04);
+  --shadow-lg: 0 16px 48px -16px rgba(3,4,94,.22);
 
   --serif: "Century Schoolbook", "Century Schoolbook L", "Source Serif 4", Georgia, "Times New Roman", serif;
   --sans:  "Noto Sans JP", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -47,10 +54,7 @@ html, body { margin: 0; padding: 0; }
 body {
   font-family: var(--sans);
   color: var(--ink);
-  background:
-    radial-gradient(1200px 480px at 100% -10%, rgba(8,145,178,.06), transparent 60%),
-    radial-gradient(900px 420px at -10% 0%, rgba(37,99,235,.05), transparent 55%),
-    var(--bg);
+  background: var(--bg);
   min-height: 100vh;
   font-size: 15px;
   line-height: 1.7;
@@ -77,9 +81,8 @@ a { color: var(--blue); text-decoration: none; }
 .brand-mark {
   width: 40px; height: 40px; border-radius: 12px;
   display: grid; place-items: center;
-  background: var(--grad-brand);
+  background: var(--navy);
   color: #fff; font-size: 18px;
-  box-shadow: 0 8px 20px -8px rgba(5,150,105,.6);
   flex-shrink: 0;
 }
 .brand-title {
@@ -99,10 +102,9 @@ a { color: var(--blue); text-decoration: none; }
   font-size: 16px; cursor: pointer;
   transition: .18s ease; box-shadow: var(--shadow);
 }
-.icon-btn:hover { color: var(--emerald-dark); border-color: var(--emerald); transform: translateY(-1px); }
+.icon-btn:hover { color: var(--blue); border-color: var(--sky); transform: translateY(-1px); }
 .icon-btn.primary {
-  background: var(--grad-emerald); color: #fff; border-color: transparent;
-  box-shadow: 0 10px 22px -10px rgba(5,150,105,.7);
+  background: var(--blue); color: #fff; border-color: transparent;
 }
 .icon-btn.primary:hover { color: #fff; filter: brightness(1.05); }
 .icon-btn.danger:hover { color: #dc2626; border-color: #fca5a5; }
@@ -135,26 +137,34 @@ a { color: var(--blue); text-decoration: none; }
 }
 .page-desc { color: var(--muted); margin: 8px 0 0; font-size: 13.5px; }
 
-/* ---------- Tabs (horizontal scroll) ---------- */
+/* ---------- Tabs (horizontal scroll / 縦方向は固定) ---------- */
 .tabs {
   display: flex; gap: 4px; margin: 22px 0 24px;
-  overflow-x: auto; scrollbar-width: thin;
+  overflow-x: auto; overflow-y: hidden;       /* 上下に動かない */
+  touch-action: pan-x;                         /* スマホで縦パン抑止 */
+  overscroll-behavior: contain;
+  scrollbar-width: none;                       /* Firefox */
+  -ms-overflow-style: none;                    /* old Edge/IE */
   border-bottom: 1px solid var(--line);
   -webkit-overflow-scrolling: touch;
+  flex-wrap: nowrap;
 }
-.tabs::-webkit-scrollbar { height: 5px; }
+.tabs::-webkit-scrollbar { display: none; height: 0; }
 .tab {
   appearance: none; border: 0; background: transparent; cursor: pointer;
   font-family: inherit; font-size: 14px; font-weight: 600; color: var(--muted);
   padding: 12px 16px; white-space: nowrap; position: relative;
   display: inline-flex; align-items: center; gap: 8px; transition: color .15s;
+  flex-shrink: 0;
 }
 .tab:hover { color: var(--ink-soft); }
-.tab.active { color: var(--blue-dark); }
+.tab.active { color: var(--navy); }
 .tab.active::after {
-  content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 3px;
-  border-radius: 3px 3px 0 0; background: var(--grad-brand);
+  content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2px;
+  border-radius: 2px 2px 0 0; background: var(--cyan);
 }
+.tab.icon-only { padding: 13px 17px; font-size: 16px; }
+.tab.icon-only.active::after { left: 14px; right: 14px; }
 .tab-badge {
   font-size: 11px; font-weight: 700; color: var(--emerald-dark);
   background: var(--emerald-soft); border-radius: 20px; padding: 1px 8px;
@@ -284,14 +294,29 @@ table.data tbody tr:last-child td { border-bottom: 0; }
   border: 1px solid var(--line);
 }
 .reg-section-head .spacer { flex: 1; }
-.markup-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-.markup-bar .btn { padding: 5px 10px; font-size: 12px; }
-.markup-bar .sep { width: 1px; align-self: stretch; background: var(--line); margin: 2px 2px; }
+.markup-bar { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.markup-bar .btn {
+  padding: 4px 9px; font-size: 11.5px; border-radius: 8px;
+  box-shadow: none; flex-shrink: 0;
+}
+.markup-bar .btn.link { border: 0; background: transparent; color: var(--blue); }
+.markup-bar .btn.link:hover { transform: none; text-decoration: underline; }
+@media (max-width: 640px) {
+  /* スマホは1行で横スクロール（縦は固定） */
+  .markup-bar {
+    flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+    touch-action: pan-x; overscroll-behavior: contain;
+    scrollbar-width: none; -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch; padding-bottom: 2px;
+  }
+  .markup-bar::-webkit-scrollbar { display: none; height: 0; }
+}
+.sec-tools { display: flex; gap: 8px; margin-top: 8px; }
 
 .fab {
   position: fixed; right: 26px; bottom: 26px; z-index: 40;
   width: 56px; height: 56px; border-radius: 18px; border: 1px solid var(--line);
-  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); color: var(--ink-soft);
+  background: #f1f5f9; color: var(--ink-soft);
   font-size: 22px; cursor: pointer; box-shadow: var(--shadow-lg);
   display: grid; place-items: center; transition: .18s;
 }

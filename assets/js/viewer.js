@@ -27,6 +27,7 @@
     var title = Store.getSiteTitle();
     el("site-title").textContent = title;
     el("page-title-text").textContent = title;
+    el("site-subtitle").textContent = Store.getSiteSubtitle();
     document.title = title;
 
     // ナビリンクを独自ドメイン基準に（リンク切れ防止）
@@ -37,7 +38,7 @@
     var active = Store.getLastTab("main");
     if (DEFAULT_ORDER.indexOf(active) < 0) active = order[0];
     UI.buildTabs({
-      tabsEl: el("main-tabs"), order: order, defs: TAB_DEFS, active: active,
+      tabsEl: el("main-tabs"), order: order, defs: TAB_DEFS, active: active, page: "main",
       onChange: function (id) { Store.setLastTab("main", id); if (id === "corpus") ensureCorpusControls(); }
     });
     UI.setActiveTab(el("main-tabs"), active);
@@ -88,6 +89,10 @@
         el("site-title").textContent = cfg.site_title;
         el("page-title-text").textContent = cfg.site_title;
         document.title = cfg.site_title;
+      }
+      if (cfg.site_subtitle) {
+        Store.setSiteSubtitle(cfg.site_subtitle);
+        el("site-subtitle").textContent = cfg.site_subtitle;
       }
       // 独自ドメインが Worker 側にあり、ローカル未設定なら取り込んでリンク再適用
       if (cfg.custom_domain && !Store.getCustomDomain()) {

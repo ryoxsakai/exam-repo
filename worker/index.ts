@@ -57,6 +57,9 @@ export default {
         const domainRow = await env.DB.prepare(
           "SELECT value FROM config WHERE key = 'custom_domain'"
         ).first<{ value: string }>();
+        const subtitleRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'site_subtitle'"
+        ).first<{ value: string }>();
         const curYear = new Date().getFullYear();
         const defaultSchedules = ["前期","後期","一般前期","一般後期","推薦","AO","その他"];
         const defaultYears = Array.from({ length: 8 }, (_, i) => String(curYear - i));
@@ -66,6 +69,7 @@ export default {
           site_title:   titleRow ? JSON.parse(titleRow.value)  : undefined,
           markup_css:   cssRow   ? JSON.parse(cssRow.value)    : undefined,
           custom_domain: domainRow ? JSON.parse(domainRow.value) : undefined,
+          site_subtitle: subtitleRow ? JSON.parse(subtitleRow.value) : undefined,
         }, 200, origin);
       }
 
@@ -74,7 +78,7 @@ export default {
         await env.DB.exec(
           "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         );
-        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string };
+        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string; site_subtitle?: string };
         const body = await request.json<ConfigBody>();
         const upsert = async (key: string, val: unknown) => {
           await env.DB.prepare(
@@ -86,6 +90,7 @@ export default {
         if (body.site_title    !== undefined) await upsert("site_title",    body.site_title);
         if (body.markup_css    !== undefined) await upsert("markup_css",    body.markup_css);
         if (body.custom_domain !== undefined) await upsert("custom_domain", body.custom_domain);
+        if (body.site_subtitle !== undefined) await upsert("site_subtitle", body.site_subtitle);
         return json({ success: true }, 200, origin);
       }
 

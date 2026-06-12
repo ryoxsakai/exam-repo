@@ -7,7 +7,9 @@
   var KEYS = {
     workerUrl:     "cf_worker_url",          // Worker API のベースURL
     siteTitle:     "exam_site_title",        // サイトタイトル
+    siteSubtitle:  "exam_site_subtitle",     // サブタイトル
     customDomain:  "exam_custom_domain",     // 独自ドメイン（リンク生成用）
+    tabLabels:     "exam_tab_labels",        // タブ表示名 {main:{id:名}, setting:{id:名}}
     tabOrderMain:  "exam_taborder_main",     // 閲覧ページのタブ順
     tabOrderSet:   "exam_taborder_setting",  // 設定ページのタブ順
     lastTabSet:    "exam_lasttab_setting",   // 設定ページで最後に開いたタブ
@@ -61,6 +63,24 @@
     /* サイトタイトル */
     getSiteTitle: function (fallback) { return readRaw(KEYS.siteTitle, fallback || "入試問題データベース"); },
     setSiteTitle: function (t) { localStorage.setItem(KEYS.siteTitle, t || ""); },
+
+    /* サブタイトル */
+    getSiteSubtitle: function (fallback) { return readRaw(KEYS.siteSubtitle, fallback || "Entrance Exam Database"); },
+    setSiteSubtitle: function (t) { localStorage.setItem(KEYS.siteSubtitle, t || ""); },
+
+    /* タブ表示名（カスタム名。未設定なら既定ラベル） */
+    getTabLabel: function (page, id, fallback) {
+      var all = read(KEYS.tabLabels, {}) || {};
+      var pageMap = all[page] || {};
+      var v = pageMap[id];
+      return (typeof v === "string" && v.trim()) ? v.trim() : fallback;
+    },
+    setTabLabel: function (page, id, name) {
+      var all = read(KEYS.tabLabels, {}) || {};
+      if (!all[page]) all[page] = {};
+      all[page][id] = (name || "").trim();
+      write(KEYS.tabLabels, all);
+    },
 
     /* 独自ドメイン */
     getCustomDomain: function () { return (readRaw(KEYS.customDomain, "") || "").trim(); },

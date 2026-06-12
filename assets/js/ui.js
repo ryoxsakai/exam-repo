@@ -50,18 +50,26 @@
   }
 
   /* ---- タブ群（横スクロール） ----
-     container: .tabs 要素, panels: パネルのコンテナ
-     defs: [{id, label, icon, badge?}]
+     defs: {id: {label, icon, badge?}}
+     opts.page: "main"|"setting" … カスタムタブ名(Store)の解決に使用
+     opts.iconOnly: true でアイコンのみ表示（名前は title 属性に）
      onChange(id) コールバック  */
   function buildTabs(opts) {
     var tabsEl = opts.tabsEl, order = opts.order, defs = opts.defs, active = opts.active, onChange = opts.onChange;
     tabsEl.innerHTML = "";
     order.forEach(function (id) {
       var def = defs[id]; if (!def) return;
-      var btn = create("button", { class: "tab" + (id === active ? " active" : ""), "data-tab": id },
-        (def.icon ? '<i class="fa-solid ' + def.icon + '"></i>' : "") +
-        "<span>" + escapeHtml(def.label) + "</span>" +
-        (def.badge != null ? '<span class="tab-badge" data-badge="' + id + '">' + def.badge + "</span>" : ""));
+      var label = (opts.page && global.Store && Store.getTabLabel)
+        ? Store.getTabLabel(opts.page, id, def.label) : def.label;
+      var inner = opts.iconOnly
+        ? (def.icon ? '<i class="fa-solid ' + def.icon + '"></i>' : "<span>" + escapeHtml(label) + "</span>")
+        : (def.icon ? '<i class="fa-solid ' + def.icon + '"></i>' : "") +
+          "<span>" + escapeHtml(label) + "</span>" +
+          (def.badge != null ? '<span class="tab-badge" data-badge="' + id + '">' + def.badge + "</span>" : "");
+      var btn = create("button", {
+        class: "tab" + (opts.iconOnly ? " icon-only" : "") + (id === active ? " active" : ""),
+        "data-tab": id, title: label
+      }, inner);
       btn.addEventListener("click", function () { setActiveTab(tabsEl, id); if (onChange) onChange(id); });
       tabsEl.appendChild(btn);
     });
