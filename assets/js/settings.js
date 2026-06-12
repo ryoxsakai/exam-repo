@@ -13,8 +13,8 @@
     corpus:   { id: "corpus",   label: "コーパス検索設定", icon: "fa-language" }
   };
   var SET_ORDER = ["main", "conn", "list", "register", "corpus"];
-  var MAIN_TABS = { search: { label: "通常検索", icon: "fa-table-list" }, corpus: { label: "コーパス検索", icon: "fa-language" } };
-  var MAIN_ORDER = ["search", "corpus"];
+  var MAIN_TABS = { search: { label: "通常検索", icon: "fa-table-list" }, corpus: { label: "コーパス検索", icon: "fa-language" }, print: { label: "問題印刷", icon: "fa-print" } };
+  var MAIN_ORDER = ["search", "corpus", "print"];
 
   var state = {
     config: { schedules: [], year_presets: [], question_categories: [], section_types: [] },

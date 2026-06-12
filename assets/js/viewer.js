@@ -20,9 +20,10 @@
 
   var TAB_DEFS = {
     search: { id: "search", label: "通常検索", icon: "fa-table-list" },
-    corpus: { id: "corpus", label: "コーパス検索", icon: "fa-language" }
+    corpus: { id: "corpus", label: "コーパス検索", icon: "fa-language" },
+    print:  { id: "print",  label: "問題印刷",   icon: "fa-print" }
   };
-  var DEFAULT_ORDER = ["search", "corpus"];
+  var DEFAULT_ORDER = ["search", "corpus", "print"];
 
   // 状態
   var state = {
@@ -37,6 +38,7 @@
     corpusFilter: { universities: null, years: null, schedules: null, qnums: null, categories: null },
     levelStats: null,
     levelListName: "",
+    printExam: null,     // 印刷タブで構築した {year,university_name,schedule,questions[]}
     charts: {}
   };
 
@@ -57,10 +59,11 @@
     if (DEFAULT_ORDER.indexOf(active) < 0) active = order[0];
     UI.buildTabs({
       tabsEl: el("main-tabs"), order: order, defs: TAB_DEFS, active: active, page: "main",
-      onChange: function (id) { Store.setLastTab("main", id); if (id === "corpus") refreshCorpusLists(); }
+      onChange: function (id) { Store.setLastTab("main", id); if (id === "corpus") refreshCorpusLists(); if (id === "print") loadPrintPreview(); }
     });
     UI.setActiveTab(el("main-tabs"), active);
     if (active === "corpus") refreshCorpusLists(); else ensureCorpusControls();
+    if (active === "print") loadPrintPreview();
 
     // モーダル配線
     UI.wireModal(el("search-modal"));
@@ -96,6 +99,16 @@
     el("exam-show-all").addEventListener("click", function () {
       if (state.nav.examId != null) openExam(state.nav.examId, null);
     });
+
+    // 問題印刷タブ
+    ["pr-year", "pr-university", "pr-schedule"].forEach(function (id) {
+      el(id).addEventListener("change", loadPrintPreview);
+    });
+    ["pr-cover", "pr-problem", "pr-answer"].forEach(function (id) {
+      el(id).addEventListener("change", renderPrintPreview);
+    });
+    el("btn-print-run").addEventListener("click", runPrint);
+    el("btn-print-run-2").addEventListener("click", runPrint);
 
     // 検索モーダル内タブ
     $all("#search-modal-tabs .tab").forEach(function (t) {
@@ -148,6 +161,9 @@
       fillSelect(el("sm-schedule"), cfg.schedules || [], "指定なし");
       fillSelect(el("sm-university"), unis.map(function (u) { return u.name; }), "指定なし");
       fillSelect(el("sm-category"), cfg.question_categories || [], "指定なし");
+      fillSelect(el("pr-year"), cfg.year_presets || [], "選択してください");
+      fillSelect(el("pr-schedule"), cfg.schedules || [], "選択してください");
+      fillSelect(el("pr-university"), unis.map(function (u) { return u.name; }), "選択してください");
     });
   }
 
@@ -465,6 +481,105 @@
       '<input type="checkbox" data-printsec="' + esc(label) + '"' + checked + '><span>印刷</span></label>' +
       "</div>" +
       '<div class="exam-doc">' + r.html + "</div></div>";
+  }
+
+  /* ---------------- 問題印刷タブ ---------------- */
+  // 解答面に回すセクション種別（それ以外は問題面）
+  function isAnswerSide(type) { return /解答|解説|和訳|訳|答|講評/.test(type); }
+
+  // 1大問のセクション一覧（problem_text の {{セクション}} ＋ 旧カラム互換）
+  function questionSections(q) {
+    var sections = Markup.parseSections(q.problem_text || "");
+    var hasAns = sections.some(function (s) { return s.type === "解答"; });
+    var hasCom = sections.some(function (s) { return s.type === "解説"; });
+    if (q.answer_text && q.answer_text.trim() && !hasAns) sections.push({ type: "解答", text: q.answer_text });
+    if (q.commentary_text && q.commentary_text.trim() && !hasCom) sections.push({ type: "解説", text: q.commentary_text });
+    return sections;
+  }
+
+  function printField(label, text) {
+    return '<div class="print-field"><div class="print-field-label">' + esc(label) + "</div>" +
+      '<div class="exam-doc">' + Markup.render(text).html + "</div></div>";
+  }
+
+  // 印刷ドキュメントの HTML を構築（表紙 → 問題面 → 解答面）
+  function buildPrintHtml(ex, opts) {
+    var html = "";
+    if (opts.cover) {
+      html += '<div class="print-cover">' +
+        '<div class="pc-year">' + esc(ex.year) + "年度</div>" +
+        '<div class="pc-uni">' + esc(ex.university_name) + "</div>" +
+        '<div class="pc-sched">' + esc(ex.schedule) + "</div></div>";
+    }
+    var qs = (ex.questions || []).slice().sort(function (a, b) {
+      return (Number(a.question_number) || 0) - (Number(b.question_number) || 0);
+    });
+    function part(title, answerSide) {
+      var inner = "";
+      qs.forEach(function (q) {
+        var secs = questionSections(q).filter(function (s) {
+          return s.text && s.text.trim() && (isAnswerSide(s.type) === answerSide);
+        });
+        if (!secs.length) return;
+        inner += '<div class="print-q"><div class="print-q-head">大問' + esc(q.question_number) + "</div>";
+        secs.forEach(function (s) { inner += printField(s.type, s.text); });
+        inner += "</div>";
+      });
+      if (!inner) return "";
+      return '<div class="print-part"><div class="print-part-head">' + esc(title) + "</div>" + inner + "</div>";
+    }
+    if (opts.problem) html += part("問題", false);
+    if (opts.answer) html += part("解答・解説", true);
+    return html;
+  }
+
+  function printOptions() {
+    return { cover: el("pr-cover").checked, problem: el("pr-problem").checked, answer: el("pr-answer").checked };
+  }
+
+  function loadPrintPreview() {
+    if (!Store.getWorkerUrl()) { el("print-preview").innerHTML = noWorkerHtml(); return; }
+    var year = el("pr-year").value, uni = el("pr-university").value, sched = el("pr-schedule").value;
+    if (!year || !uni || !sched) {
+      state.printExam = null;
+      el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-print ic"></i>年度・大学・方式をすべて選択してください。</div></div>';
+      return;
+    }
+    el("print-preview").innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
+    Api.getExams({ universityName: uni, year: year, schedule: sched }).then(function (data) {
+      var exams = (data.exams || []).filter(function (e) { return e.university_name === uni && String(e.year) === String(year) && e.schedule === sched; });
+      if (!exams.length) {
+        state.printExam = null;
+        el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>該当する入試問題がありません。</div></div>';
+        return;
+      }
+      return Promise.all(exams.map(function (e) { return Api.getExam(e.id); })).then(function (results) {
+        var questions = [];
+        results.forEach(function (r) { (r.exam.questions || []).forEach(function (q) { questions.push(q); }); });
+        state.printExam = { year: year, university_name: uni, schedule: sched, questions: questions };
+        renderPrintPreview();
+      });
+    }).catch(function (e) {
+      el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div></div>";
+    });
+  }
+
+  function renderPrintPreview() {
+    if (!state.printExam) return;
+    var html = buildPrintHtml(state.printExam, printOptions());
+    if (!html) { el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>印刷対象がありません。チェックや登録内容を確認してください。</div></div>'; return; }
+    el("print-preview").innerHTML = '<div class="print-doc fs-' + Store.getFontSize() + '">' + html + "</div>";
+  }
+
+  function runPrint() {
+    if (!state.printExam) { UI.toast("印刷対象がありません", "err"); return; }
+    var html = buildPrintHtml(state.printExam, printOptions());
+    if (!html) { UI.toast("印刷対象がありません", "err"); return; }
+    var area = el("print-area");
+    if (!area) { area = create("div", { id: "print-area" }); document.body.appendChild(area); }
+    area.className = "print-out fs-" + Store.getFontSize();
+    area.innerHTML = html;
+    window.print();
   }
 
   /* ---------------- コーパス対象絞り込み ---------------- */

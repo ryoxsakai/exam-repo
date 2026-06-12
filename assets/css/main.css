@@ -498,6 +498,29 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 }
 .icon-btn.edit-pen:hover { color: var(--emerald-dark); background: var(--grad-chip); border-color: var(--line); }
 
+/* ---------- 問題印刷タブ（プレビュー＋印刷で共通の見た目） ---------- */
+.check-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; user-select: none; }
+.check-inline input { accent-color: var(--emerald-dark); }
+#print-preview { margin-top: 16px; }
+.print-doc {
+  background: #fff; border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: var(--shadow-sm); padding: 36px 40px; font-family: var(--serif); color: #000; line-height: 1.9;
+}
+.print-cover {
+  text-align: center; padding: 64px 16px; margin-bottom: 24px;
+  border-bottom: 2px dashed var(--line);
+}
+.print-cover .pc-year { font-family: var(--sans); font-size: 26px; font-weight: 700; color: var(--ink-soft); margin-bottom: 22px; letter-spacing: .04em; }
+.print-cover .pc-uni { font-family: var(--sans); font-size: 42px; font-weight: 800; color: var(--ink); margin-bottom: 18px; }
+.print-cover .pc-sched { font-family: var(--sans); font-size: 24px; font-weight: 600; color: var(--muted); }
+.print-part { margin-top: 8px; }
+.print-part + .print-part { margin-top: 40px; }
+.print-part-head { font-family: var(--sans); font-size: 19px; font-weight: 800; color: var(--ink); border-bottom: 2px solid var(--ink); padding-bottom: 6px; margin: 0 0 18px; }
+.print-q { margin-bottom: 24px; }
+.print-q-head { font-family: var(--sans); font-weight: 700; font-size: 16px; color: var(--emerald-dark); margin-bottom: 10px; }
+.print-field { margin-bottom: 14px; }
+.print-field-label { font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+
 /* ---------- Print: 本文のみ印刷（#print-area 経由） ---------- */
 #print-area { display: none; }
 @media print {
@@ -525,5 +548,18 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area mark.hl {
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
+  /* 問題印刷タブの出力: 表紙→問題面→解答面を改ページ */
+  #print-area.print-out .print-cover {
+    height: 92vh; display: flex; flex-direction: column; justify-content: center;
+    page-break-after: always; border: 0;
+  }
+  #print-area.print-out .print-cover .pc-year { font-size: 24pt; margin-bottom: 28pt; }
+  #print-area.print-out .print-cover .pc-uni { font-size: 36pt; margin-bottom: 22pt; }
+  #print-area.print-out .print-cover .pc-sched { font-size: 22pt; }
+  #print-area.print-out .print-part + .print-part { page-break-before: always; }
+  #print-area.print-out .print-part-head { font-size: 16pt; font-weight: 800; border-bottom: 1.5px solid #000; padding-bottom: 4pt; margin-bottom: 12pt; }
+  #print-area.print-out .print-q { page-break-inside: avoid; margin-bottom: 16pt; }
+  #print-area.print-out .print-q-head { font-size: 13pt; font-weight: 700; margin-bottom: 6pt; }
+  #print-area.print-out .print-field-label { font-size: 10pt; font-weight: 600; margin-bottom: 3pt; }
   @page { margin: 15mm 18mm; size: A4; }
 }
