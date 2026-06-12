@@ -17,7 +17,7 @@
   var MAIN_ORDER = ["search", "corpus"];
 
   var state = {
-    config: { schedules: [], year_presets: [], question_categories: [] },
+    config: { schedules: [], year_presets: [], question_categories: [], section_types: [] },
     universities: [],
     list: { filter: { word: "", universityName: "", year: "", schedule: "", qnum: "" }, rows: [], sort: { key: "year", dir: "desc" } },
     reg: { sections: [], editingExamId: null, meta: { year: "", university: "", schedule: "", qnum: "1", category: "" } },
@@ -187,13 +187,15 @@
 
   function loadServerConfig() {
     return Promise.all([
-      Api.getConfig().catch(function () { return { schedules: [], year_presets: [] }; }),
+      Api.getConfig().catch(function () { return { schedules: [], year_presets: [], question_categories: [], section_types: [] }; }),
       Api.getUniversities().catch(function () { return { universities: [] }; })
     ]).then(function (res) {
-      state.config = res[0] || { schedules: [], year_presets: [] };
+      state.config = res[0] || { schedules: [], year_presets: [], question_categories: [], section_types: [] };
       if (!Array.isArray(state.config.schedules)) state.config.schedules = [];
       if (!Array.isArray(state.config.year_presets)) state.config.year_presets = [];
       if (!Array.isArray(state.config.question_categories)) state.config.question_categories = [];
+      if (!Array.isArray(state.config.section_types)) state.config.section_types = ["問題", "解答", "解説"];
+      Store.setSectionTypes(state.config.section_types);
       state.universities = (res[1] && res[1].universities) || [];
       // サブタイトル（Worker 側にあれば反映）
       if (state.config.site_subtitle) {
@@ -420,7 +422,7 @@
     if (!state.reg.sections.length) addSection("問題");
   }
   function addSection(type) {
-    var types = Store.getSectionTypes();
+    var types = state.config.section_types || Store.getSectionTypes();
     state.reg.sections.push({ type: type || types[0], text: "" });
   }
   function fillRegSelects() {
@@ -461,7 +463,7 @@
   function renderReg() {
     fillRegSelects();
     el("reg-mode-label").textContent = state.reg.editingExamId ? "問題を編集" : "新規 問題登録";
-    var types = Store.getSectionTypes();
+    var types = state.config.section_types || Store.getSectionTypes();
     var c = el("reg-sections");
     c.innerHTML = "";
     state.reg.sections.forEach(function (sec, i) {
@@ -695,8 +697,8 @@
   function openScheduleEdit() { openEditModal("方式の編集", state.config.schedules, function (items) {
     return Api.updateConfig({ schedules: items }).then(function () { state.config.schedules = items; fillRegSelects(); fillSelect(el("sm-schedule"), items, "指定なし"); });
   }); }
-  function openTypesEdit() { openEditModal("セクション種別の編集", Store.getSectionTypes(), function (items) {
-    Store.setSectionTypes(items); renderReg(); return Promise.resolve();
+  function openTypesEdit() { openEditModal("セクション種別の編集", state.config.section_types || [], function (items) {
+    return Api.updateConfig({ section_types: items }).then(function () { state.config.section_types = items; Store.setSectionTypes(items); fillRegSelects(); renderReg(); });
   }); }
   function openCategoryEdit() { openEditModal("問題種別の編集", state.config.question_categories || [], function (items) {
     return Api.updateConfig({ question_categories: items }).then(function () { state.config.question_categories = items; fillRegSelects(); });

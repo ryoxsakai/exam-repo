@@ -134,10 +134,10 @@
     },
     setVocabLists: function (lists) { write(KEYS.vocab, lists); },
 
-    /* 問題登録のセクション種別プルダウン候補 */
+    /* 問題登録のセクション種別プルダウン候補（ローカルキャッシュ） */
     getSectionTypes: function () {
       var t = read(KEYS.sectionTypes, null);
-      if (!Array.isArray(t) || !t.length) { t = DEFAULT_SECTION_TYPES.slice(); write(KEYS.sectionTypes, t); }
+      if (!Array.isArray(t) || !t.length) { t = DEFAULT_SECTION_TYPES.slice(); }
       return t;
     },
     setSectionTypes: function (t) { write(KEYS.sectionTypes, t); },

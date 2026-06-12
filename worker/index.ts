@@ -72,10 +72,14 @@ export default {
         const categoryRow = await env.DB.prepare(
           "SELECT value FROM config WHERE key = 'question_categories'"
         ).first<{ value: string }>();
+        const sectionTypesRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'section_types'"
+        ).first<{ value: string }>();
         const curYear = new Date().getFullYear();
         const defaultSchedules = ["前期","後期","一般前期","一般後期","推薦","AO","その他"];
         const defaultYears = Array.from({ length: 8 }, (_, i) => String(curYear - i));
         const defaultCategories = ["長文","文法","語彙","英作文","会話","リスニング","その他"];
+        const defaultSectionTypes = ["問題", "解答", "解説"];
         return json({
           schedules:    schedRow ? JSON.parse(schedRow.value)  : defaultSchedules,
           year_presets: yearRow  ? JSON.parse(yearRow.value)   : defaultYears,
@@ -84,6 +88,7 @@ export default {
           custom_domain: domainRow ? JSON.parse(domainRow.value) : undefined,
           site_subtitle: subtitleRow ? JSON.parse(subtitleRow.value) : undefined,
           question_categories: categoryRow ? JSON.parse(categoryRow.value) : defaultCategories,
+          section_types: sectionTypesRow ? JSON.parse(sectionTypesRow.value) : defaultSectionTypes,
         }, 200, origin);
       }
 
@@ -92,7 +97,7 @@ export default {
         await env.DB.exec(
           "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         );
-        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string; site_subtitle?: string; question_categories?: string[] };
+        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string; site_subtitle?: string; question_categories?: string[]; section_types?: string[] };
         const body = await request.json<ConfigBody>();
         const upsert = async (key: string, val: unknown) => {
           await env.DB.prepare(
@@ -106,6 +111,7 @@ export default {
         if (body.custom_domain !== undefined) await upsert("custom_domain", body.custom_domain);
         if (body.site_subtitle !== undefined) await upsert("site_subtitle", body.site_subtitle);
         if (body.question_categories !== undefined) await upsert("question_categories", body.question_categories);
+        if (body.section_types !== undefined) await upsert("section_types", body.section_types);
         return json({ success: true }, 200, origin);
       }
 
