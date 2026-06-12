@@ -350,7 +350,7 @@ export default {
 
         // 大問ごとに1行返す（exam_id + question_number で一意）
         let sql = `
-          SELECT q.id AS question_id, q.question_number,
+          SELECT q.id AS question_id, q.question_number, q.category,
                  e.id AS exam_id, u.name AS university_name, e.year, e.schedule,
                  0 AS total_occurrences
           FROM questions q

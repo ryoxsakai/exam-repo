@@ -253,7 +253,7 @@
       var rows = (data.results || []).map(function (r) {
         return {
           exam_id: r.exam_id, question_id: r.question_id,
-          question_number: r.question_number,
+          question_number: r.question_number, category: r.category || "",
           university_name: r.university_name, year: r.year, schedule: r.schedule
         };
       });
@@ -281,7 +281,8 @@
       { key: "year", label: "年度" },
       { key: "university_name", label: "大学名" },
       { key: "schedule", label: "方式" },
-      { key: "question_number", label: "大問" }
+      { key: "question_number", label: "大問" },
+      { key: "category", label: "種別" }
     ];
     var html = '<div class="table-wrap"><table class="data"><thead><tr>';
     cols.forEach(function (c) {
@@ -296,6 +297,7 @@
         "<td><strong>" + esc(r.university_name) + "</strong></td>" +
         "<td>" + esc(r.schedule) + "</td>" +
         "<td>問" + esc(r.question_number) + "</td>" +
+        "<td>" + esc(r.category) + "</td>" +
         "<td class=\"row-actions\">" +
         "<button class=\"icon-btn\" data-view=\"" + r.exam_id + ":" + r.question_number + "\" title=\"表示\"><i class=\"fa-solid fa-file-lines\"></i></button>" +
         "<button class=\"icon-btn\" data-edit=\"" + r.exam_id + ":" + r.question_number + "\" title=\"編集\"><i class=\"fa-solid fa-pen\"></i></button>" +

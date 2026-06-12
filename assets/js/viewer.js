@@ -171,7 +171,7 @@
       var rows = (data.results || []).map(function (r) {
         return {
           exam_id: r.exam_id, question_id: r.question_id,
-          question_number: r.question_number,
+          question_number: r.question_number, category: r.category || "",
           university_name: r.university_name, year: r.year,
           schedule: r.schedule, occurrences: r.total_occurrences || 0
         };
@@ -227,7 +227,8 @@
       { key: "year", label: "年度" },
       { key: "university_name", label: "大学名" },
       { key: "schedule", label: "方式" },
-      { key: "question_number", label: "大問" }
+      { key: "question_number", label: "大問" },
+      { key: "category", label: "種別" }
     ];
     if (showOcc) cols.push({ key: "occurrences", label: "出現回数" });
 
@@ -245,6 +246,7 @@
         "<td><strong>" + esc(r.university_name) + "</strong></td>" +
         "<td>" + esc(r.schedule) + "</td>" +
         "<td>問" + esc(r.question_number) + "</td>" +
+        "<td>" + esc(r.category) + "</td>" +
         (showOcc ? '<td><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
         '<td class="row-actions"><button class="icon-btn" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
         "</tr>";
