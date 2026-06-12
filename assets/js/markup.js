@@ -42,7 +42,10 @@
       var m;
 
       // [[N]] 空所
+      // 左の間隔は margin でなくスペース文字で確保（行頭に来たときは
+      // ブラウザが行頭スペースを消すので左端にぴったり揃う）
       if ((m = rem.match(/^\[\[([^\]]+)\]\]/))) {
+        if (out && !/[\s(\[{「『（【]$/.test(out)) out += " ";
         out += '<span class="blank-badge">' + esc(m[1]) + "</span>";
         rem = rem.slice(m[0].length); continue;
       }
