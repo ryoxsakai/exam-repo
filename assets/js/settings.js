@@ -463,6 +463,7 @@
     { l: "語注", t: "語注 ##語::訳##",          b: "##", a: "::訳##" },
     { l: "下付", t: "下付き ~~x~~",             b: "~~", a: "~~" },
     { l: "上付", t: "上付き ^^x^^",             b: "^^", a: "^^" },
+    { l: "詰め", t: "字下げなし @@ （段落先頭のインデント抑制）", b: "@@", a: "" },
     { l: "区切", t: "区切り線 ----",            b: "\n----\n", a: "" }
   ];
   function markupBar(i) {
@@ -521,7 +522,8 @@
     { code: "An __underlined__ word.", desc: "下線" },
     { code: "H~~2~~O and 1^^st^^.", desc: "下付き・上付き" },
     { code: "((A)) apple\n((B)) a very long choice that wraps neatly onto the next line", desc: "選択肢（行頭。折り返しも整形）" },
-    { code: "----", desc: "区切り線" }
+    { code: "----", desc: "区切り線" },
+    { code: "@@The quick brown fox jumps.", desc: "@@ — 行頭に付けると段落インデントを抑制" }
   ];
   function openSyntaxModal() {
     var h = "";

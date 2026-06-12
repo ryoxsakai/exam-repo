@@ -145,7 +145,7 @@
     /* 問題閲覧モーダルの文字サイズ */
     getFontSize: function () {
       var v = readRaw(KEYS.fontSize, "md");
-      return (v === "sm" || v === "lg") ? v : "md";
+      return ["xs", "sm", "md", "lg", "xl"].indexOf(v) >= 0 ? v : "md";
     },
     setFontSize: function (v) { localStorage.setItem(KEYS.fontSize, v); },
 
