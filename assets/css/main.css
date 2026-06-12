@@ -312,7 +312,6 @@ table.data tbody tr:last-child td { border-bottom: 0; }
   }
   .markup-bar::-webkit-scrollbar { display: none; height: 0; }
 }
-.sec-tools { display: flex; gap: 8px; margin-top: 8px; }
 
 .fab {
   position: fixed; right: 26px; bottom: 26px; z-index: 40;
