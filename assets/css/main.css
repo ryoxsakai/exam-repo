@@ -354,7 +354,7 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 /* ---------- Exam display (markup output) ---------- */
 .exam-doc { font-family: var(--serif); font-size: 16px; line-height: 1.95; color: var(--ink); }
 .exam-doc .blk { display: block; text-align: justify; }
-.exam-doc .blk.indent { text-indent: 3em; }
+.exam-doc .blk.indent { text-indent: 1.5em; }
 .em-dash { letter-spacing: -.15em; }
 /* 文字サイズ切替（問題閲覧モーダル） — 5段階 */
 .fs-xs .exam-doc { font-size: 12px; }
