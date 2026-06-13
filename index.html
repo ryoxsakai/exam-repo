@@ -102,6 +102,15 @@
         </div>
         <div class="toolbar" style="margin-top:12px;gap:14px;flex-wrap:wrap">
           <label class="check-inline"><input type="checkbox" id="pr-cover" checked> <span>表紙をつける</span></label>
+          <label class="check-inline"><span><i class="fa-solid fa-text-height"></i> 文字サイズ（表紙以外）</span>
+            <select id="pr-fontsize" style="width:auto;min-width:96px">
+              <option value="xs">極小</option>
+              <option value="sm">小</option>
+              <option value="md" selected>中</option>
+              <option value="lg">大</option>
+              <option value="xl">極大</option>
+            </select>
+          </label>
           <span class="spacer"></span>
           <button class="btn primary" id="btn-print-run-2"><i class="fa-solid fa-print"></i> 印刷</button>
         </div>
@@ -209,11 +218,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="assets/data/oxford5000.js?v=20260612a"></script>
-  <script src="assets/js/store.js?v=20260612ao"></script>
+  <script src="assets/js/store.js?v=20260613a"></script>
   <script src="assets/js/api.js?v=20260612ao"></script>
   <script src="assets/js/ui.js?v=20260612z"></script>
   <script src="assets/js/markup.js?v=20260612ai"></script>
   <script src="assets/js/corpus.js?v=20260612ap"></script>
-  <script src="assets/js/viewer.js?v=20260612ar"></script>
+  <script src="assets/js/viewer.js?v=20260613a"></script>
 </body>
 </html>

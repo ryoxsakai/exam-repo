@@ -19,6 +19,7 @@
     wlCache:       "exam_wordlist_cache",    // Worker 保存リストのキャッシュ {stop:[...],level:[...]}
     sectionTypes:  "exam_section_types",     // 問題登録のプルダウン候補（問題/解答/解説…）
     fontSize:      "exam_fontsize",          // 問題閲覧モーダルの文字サイズ (sm/md/lg)
+    printFontSize: "exam_print_fontsize",    // 問題印刷の文字サイズ（表紙以外。xs/sm/md/lg/xl）
     regDraft:      "exam_reg_draft",         // 問題登録フォームの下書き（リロードしても保持）
     printSections: "exam_print_sections"     // 印刷対象セクション {種別: bool}（全問題で共有）
   };
@@ -198,6 +199,13 @@
       return ["xs", "sm", "md", "lg", "xl"].indexOf(v) >= 0 ? v : "md";
     },
     setFontSize: function (v) { localStorage.setItem(KEYS.fontSize, v); },
+
+    /* 問題印刷の文字サイズ（表紙以外。問題閲覧とは独立して保存） */
+    getPrintFontSize: function () {
+      var v = readRaw(KEYS.printFontSize, "md");
+      return ["xs", "sm", "md", "lg", "xl"].indexOf(v) >= 0 ? v : "md";
+    },
+    setPrintFontSize: function (v) { localStorage.setItem(KEYS.printFontSize, v); },
 
     /* 問題登録フォームの下書き（リロード後も同じ編集画面を復元） */
     getRegDraft: function () { return read(KEYS.regDraft, null); },
