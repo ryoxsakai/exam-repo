@@ -362,6 +362,12 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 .fs-md .exam-doc { font-size: 16px; }
 .fs-lg .exam-doc { font-size: 19px; }
 .fs-xl .exam-doc { font-size: 22px; }
+/* 行間切替（問題印刷） — 5段階（3=標準） */
+.lh-1 .exam-doc { line-height: 1.3; }
+.lh-2 .exam-doc { line-height: 1.6; }
+.lh-3 .exam-doc { line-height: 1.9; }
+.lh-4 .exam-doc { line-height: 2.3; }
+.lh-5 .exam-doc { line-height: 2.8; }
 .question-block-header { display: flex; align-items: baseline; flex-wrap: nowrap; gap: 3px; margin: 18px 0 8px; }
 @media (max-width: 600px) {
   /* スマホ: バッジとテキストを通常のインライン流し込みに（折り返しがバッジの下に回り込む） */
@@ -547,6 +553,11 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area.fs-md .exam-doc { font-size: 12pt; }
   #print-area.fs-lg .exam-doc { font-size: 14pt; }
   #print-area.fs-xl .exam-doc { font-size: 16pt; }
+  #print-area.lh-1 .exam-doc { line-height: 1.3; }
+  #print-area.lh-2 .exam-doc { line-height: 1.6; }
+  #print-area.lh-3 .exam-doc { line-height: 1.9; }
+  #print-area.lh-4 .exam-doc { line-height: 2.3; }
+  #print-area.lh-5 .exam-doc { line-height: 2.8; }
   #print-area .question-badge, #print-area .blank-badge,
   #print-area mark.hl {
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
