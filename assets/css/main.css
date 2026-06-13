@@ -408,9 +408,17 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
   font-family: var(--sans); font-size: .65em; font-weight: 700; color: var(--muted);
   /* 折り返し時もラベルは1行目に固定しつつ、1行目と縦中央で揃える。
      親の行高1.95em = ラベル基準で 1.95/.65 = 3em。円は1.5em。
-     margin-top = (3em − 1.5em) / 2 = .75em（ラベル自身のem基準） */
+     margin-top = (3em − 1.5em) / 2 = .75em（ラベル自身のem基準）。
+     行間変更時は lh-* で上書き（下記）。 */
   align-self: flex-start; margin-top: .75em;
 }
+/* 行間変更時のラベル margin-top 補正（選択肢の丸ラベルが1行目中央に来るよう調整）
+   計算: (line-height / 0.65 - 1.5em) / 2   ※ラベル自身の em 基準 */
+.lh-1 .answer-choice-label { margin-top: .25em; }
+.lh-2 .answer-choice-label { margin-top: .48em; }
+.lh-3 .answer-choice-label { margin-top: .71em; }
+.lh-4 .answer-choice-label { margin-top: 1.02em; }
+.lh-5 .answer-choice-label { margin-top: 1.40em; }
 .answer-choice-text {
   flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; word-break: normal; hyphens: auto;
   text-indent: 0;
