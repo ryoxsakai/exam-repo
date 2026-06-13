@@ -919,10 +919,11 @@
     // 語彙カバー率リストは localStorage（従来通り）
     if (wlCtx.type === "vc") {
       var words = parseWords(raw);
-      var lists = Store.getVocabLists();
+      var lists = Store.getVocabLists(); // 内蔵リストが先頭に含まれる
       if (wlCtx.isNew) lists.push({ name: name, words: words });
       else lists[wlCtx.index] = { name: name, words: words };
-      Store.setVocabLists(lists);
+      // 内蔵リストは localStorage に保存しない
+      Store.setVocabLists(lists.filter(function (l) { return !l.builtin; }));
       UI.closeModal(el("wordlist-modal"));
       renderWordLists();
       toast("保存しました", "ok");
@@ -945,7 +946,8 @@
     if (wlCtx.type === "vc") {
       var lists = Store.getVocabLists();
       lists.splice(wlCtx.index, 1);
-      Store.setVocabLists(lists);
+      // 内蔵リストは localStorage に保存しない
+      Store.setVocabLists(lists.filter(function (l) { return !l.builtin; }));
       UI.closeModal(el("wordlist-modal"));
       renderWordLists();
       toast("削除しました", "ok");
