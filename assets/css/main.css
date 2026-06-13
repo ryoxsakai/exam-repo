@@ -542,6 +542,15 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 #print-area { display: none; }
 @media print {
   body > *:not(#print-area) { display: none !important; }
+  /* 背景・装飾をすべて白紙にリセット（バッジ・ハイライトは下記で個別に保持） */
+  #print-area * {
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    color: #000 !important;
+    border-color: #000 !important;
+  }
   #print-area {
     display: block !important;
     font-family: var(--serif); font-size: 12pt; line-height: 1.9; color: #000;
@@ -566,10 +575,29 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area.lh-3 .exam-doc { line-height: 1.9; }
   #print-area.lh-4 .exam-doc { line-height: 2.3; }
   #print-area.lh-5 .exam-doc { line-height: 2.8; }
-  #print-area .question-badge, #print-area .blank-badge,
+  /* バッジとハイライトは背景・色を保持して印刷 */
+  #print-area .question-badge {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    background: linear-gradient(135deg,#F0FAFD,#CAF0F8) !important;
+    background-image: linear-gradient(135deg,#F0FAFD,#CAF0F8) !important;
+    color: #0f2944 !important; border-color: #7dd3fc !important;
+  }
+  #print-area .blank-badge {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    background: #fff !important; color: #000 !important; border-color: #000 !important;
+  }
   #print-area mark.hl {
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
+  #print-area .hl-yellow { background: #fef08a !important; }
+  #print-area .hl-blue   { background: #bfdbfe !important; }
+  #print-area .hl-red    { background: #fecaca !important; }
+  #print-area .hl-purple { background: #e9d5ff !important; }
+  #print-area .hl-pink   { background: #fbcfe8 !important; }
+  #print-area .hl-green  { background: #bbf7d0 !important; }
+  #print-area .hl-aqua   { background: #a5f3fc !important; }
+  /* ハイライトの文字色は黒に統一（リセットで上書き済みだが明示） */
+  #print-area mark.hl { color: #000 !important; }
   /* 問題印刷タブの出力: 表紙→問題面→解答面を改ページ */
   #print-area.print-out .print-cover {
     height: 92vh; display: flex; flex-direction: column; justify-content: center;
