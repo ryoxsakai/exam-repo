@@ -130,11 +130,19 @@
     },
     setStopwordLists: function (lists) { write(KEYS.stopwords, lists); },
 
-    /* 語彙リスト */
+    /* 語彙リスト（内蔵 Target1900 + localStorage。UI 表示順は内蔵が先頭） */
+    builtinVocabList: function () {
+      var t = global.TARGET1900;
+      if (!t) return null;
+      return { id: "builtin-target1900", name: (t.name || "Target 1900") + "（内蔵）", builtin: true, words: (t.words || []).slice() };
+    },
     getVocabLists: function () {
+      var bl = this.builtinVocabList();
+      var out = bl ? [bl] : [];
       var lists = read(KEYS.vocab, null);
       if (!Array.isArray(lists)) { lists = []; write(KEYS.vocab, lists); }
-      return lists;
+      lists.forEach(function (l) { out.push({ name: l.name, words: Array.isArray(l.words) ? l.words : [] }); });
+      return out;
     },
     setVocabLists: function (lists) { write(KEYS.vocab, lists); },
 
