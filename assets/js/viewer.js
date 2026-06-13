@@ -749,14 +749,14 @@
     });
     if (sw.querySelector('option[value="0"]') && swSel === "") sw.value = "0"; else sw.value = swSel;
 
-    // 語彙リスト（カバー率。localStorage）
+    // 語彙リスト（カバー率。内蔵 Target1900＋localStorage。既定は内蔵）
     var vc = el("corpus-vocab");
     var vcSel = vc.value;
     vc.innerHTML = '<option value="">なし</option>';
     Store.getVocabLists().forEach(function (l, i) {
       var o = create("option"); o.value = String(i); o.textContent = l.name + "（" + l.words.length + "語）"; vc.appendChild(o);
     });
-    vc.value = vcSel;
+    if (vc.querySelector('option[value="0"]') && vcSel === "") vc.value = "0"; else vc.value = vcSel;
 
     // レベル別語彙リスト（CEFR分析。Worker 内蔵＋共有リスト。既定は内蔵）
     var lv = el("corpus-level");
@@ -882,8 +882,10 @@
         '<div class="stat-grid">' +
         stat((cov.tokenCoverage * 100).toFixed(1) + "%", "延べ語カバー率") +
         stat((cov.typeCoverage * 100).toFixed(1) + "%", "異なり語カバー率") +
+        stat(cov.tokenHead, "見出し語 (延べ)") +
+        stat(cov.tokenDerived, "派生語 (延べ)") +
         stat(cov.tokenInList, "リスト内 (延べ)") +
-        stat(cov.offList.length, "リスト外 異なり語") +
+        stat(cov.offList.length, "その他 異なり語") +
         "</div></div>";
       html += '<div class="table-wrap" style="margin-top:14px"><table class="data freq-table"><thead><tr>' +
         "<th>リスト外の語（頻度順）</th><th>頻度</th></tr></thead><tbody>";
@@ -1024,9 +1026,9 @@
     var ctx = el("cov-chart"); if (!ctx || !global.Chart) return;
     state.charts.cov = new Chart(ctx, {
       type: "doughnut",
-      data: { labels: ["リスト内", "リスト外"],
-        datasets: [{ data: [cov.tokenInList, cov.tokenTotal - cov.tokenInList],
-          backgroundColor: ["rgba(5,150,105,.8)", "rgba(37,99,235,.25)"] }] },
+      data: { labels: ["見出し語", "派生語", "その他"],
+        datasets: [{ data: [cov.tokenHead, cov.tokenDerived, cov.tokenTotal - cov.tokenInList],
+          backgroundColor: ["rgba(5,150,105,.85)", "rgba(16,185,129,.45)", "rgba(37,99,235,.2)"] }] },
       options: { plugins: { legend: { position: "bottom" } } }
     });
   }
