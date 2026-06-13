@@ -18,6 +18,37 @@ function json(data: unknown, status = 200, origin?: string | null) {
   });
 }
 
+// questions テーブルに category 列が無い既存DBへの後方互換マイグレーション
+async function ensureCategoryColumn(env: Env) {
+  try {
+    await env.DB.exec("ALTER TABLE questions ADD COLUMN category TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // 既に列が存在する場合は無視
+  }
+}
+
+// question_number = 0 のレコードを修正（各 exam 内で id 順に 1 始まりで採番）
+async function fixZeroQuestionNumbers(env: Env) {
+  const zeros = await env.DB.prepare(
+    "SELECT id, exam_id FROM questions WHERE question_number <= 0 ORDER BY exam_id, id"
+  ).all<{ id: number; exam_id: number }>();
+  if (!zeros.results.length) return;
+
+  // exam_id ごとに既存の最大番号を取得してから採番
+  const examMax: Record<number, number> = {};
+  for (const row of zeros.results) {
+    if (!(row.exam_id in examMax)) {
+      const maxRow = await env.DB.prepare(
+        "SELECT MAX(question_number) AS m FROM questions WHERE exam_id = ? AND question_number > 0"
+      ).bind(row.exam_id).first<{ m: number | null }>();
+      examMax[row.exam_id] = maxRow?.m ?? 0;
+    }
+    examMax[row.exam_id] += 1;
+    await env.DB.prepare("UPDATE questions SET question_number = ? WHERE id = ?")
+      .bind(examMax[row.exam_id], row.id).run();
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const origin = request.headers.get("Origin");
@@ -29,6 +60,8 @@ export default {
     }
 
     try {
+      await fixZeroQuestionNumbers(env);
+
       // ── GET /api/universities ──────────────────────────────────────
       if (path === "/api/universities" && request.method === "GET") {
         const { results } = await env.DB.prepare(
@@ -54,14 +87,32 @@ export default {
         const cssRow = await env.DB.prepare(
           "SELECT value FROM config WHERE key = 'markup_css'"
         ).first<{ value: string }>();
+        const domainRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'custom_domain'"
+        ).first<{ value: string }>();
+        const subtitleRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'site_subtitle'"
+        ).first<{ value: string }>();
+        const categoryRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'question_categories'"
+        ).first<{ value: string }>();
+        const sectionTypesRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'section_types'"
+        ).first<{ value: string }>();
         const curYear = new Date().getFullYear();
         const defaultSchedules = ["前期","後期","一般前期","一般後期","推薦","AO","その他"];
         const defaultYears = Array.from({ length: 8 }, (_, i) => String(curYear - i));
+        const defaultCategories = ["長文","文法","語彙","英作文","会話","リスニング","その他"];
+        const defaultSectionTypes = ["問題", "解答", "解説"];
         return json({
           schedules:    schedRow ? JSON.parse(schedRow.value)  : defaultSchedules,
           year_presets: yearRow  ? JSON.parse(yearRow.value)   : defaultYears,
           site_title:   titleRow ? JSON.parse(titleRow.value)  : undefined,
           markup_css:   cssRow   ? JSON.parse(cssRow.value)    : undefined,
+          custom_domain: domainRow ? JSON.parse(domainRow.value) : undefined,
+          site_subtitle: subtitleRow ? JSON.parse(subtitleRow.value) : undefined,
+          question_categories: categoryRow ? JSON.parse(categoryRow.value) : defaultCategories,
+          section_types: sectionTypesRow ? JSON.parse(sectionTypesRow.value) : defaultSectionTypes,
         }, 200, origin);
       }
 
@@ -70,17 +121,21 @@ export default {
         await env.DB.exec(
           "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         );
-        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string };
+        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string; site_subtitle?: string; question_categories?: string[]; section_types?: string[] };
         const body = await request.json<ConfigBody>();
         const upsert = async (key: string, val: unknown) => {
           await env.DB.prepare(
             "INSERT INTO config (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
           ).bind(key, JSON.stringify(val)).run();
         };
-        if (body.schedules    !== undefined) await upsert("schedules",    body.schedules);
-        if (body.year_presets !== undefined) await upsert("year_presets", body.year_presets);
-        if (body.site_title   !== undefined) await upsert("site_title",   body.site_title);
-        if (body.markup_css   !== undefined) await upsert("markup_css",   body.markup_css);
+        if (body.schedules     !== undefined) await upsert("schedules",     body.schedules);
+        if (body.year_presets  !== undefined) await upsert("year_presets",  body.year_presets);
+        if (body.site_title    !== undefined) await upsert("site_title",    body.site_title);
+        if (body.markup_css    !== undefined) await upsert("markup_css",    body.markup_css);
+        if (body.custom_domain !== undefined) await upsert("custom_domain", body.custom_domain);
+        if (body.site_subtitle !== undefined) await upsert("site_subtitle", body.site_subtitle);
+        if (body.question_categories !== undefined) await upsert("question_categories", body.question_categories);
+        if (body.section_types !== undefined) await upsert("section_types", body.section_types);
         return json({ success: true }, 200, origin);
       }
 
@@ -126,7 +181,8 @@ export default {
 
       // ── POST /api/exams ────────────────────────────────────────────
       if (path === "/api/exams" && request.method === "POST") {
-        type QBody = { questionNumber: number; problemText: string; answerText: string; commentaryText: string };
+        await ensureCategoryColumn(env);
+        type QBody = { questionNumber: number; category?: string; problemText: string; answerText: string; commentaryText: string };
         type Body = { universityName: string; year: number; schedule: string; questions?: QBody[] };
         const body = await request.json<Body>();
         const { universityName, year, schedule, questions = [] } = body;
@@ -146,21 +202,39 @@ export default {
         }
         if (!uni) return json({ error: "Failed to create university" }, 500, origin);
 
-        const exam = await env.DB.prepare(
-          "INSERT INTO exams (university_id, year, schedule) VALUES (?, ?, ?) RETURNING *"
+        // 既存の試験を探すか新規作成（重複時は既存を返す）
+        let exam = await env.DB.prepare(
+          "INSERT INTO exams (university_id, year, schedule) VALUES (?, ?, ?) ON CONFLICT(university_id, year, schedule) DO UPDATE SET id=id RETURNING *"
         ).bind(uni.id, year, schedule).first<{ id: number }>();
+
         if (!exam) return json({ error: "Failed to create exam" }, 500, origin);
 
         const createdQuestions = [];
         for (const q of questions) {
           const created = await env.DB.prepare(`
-            INSERT INTO questions (exam_id, question_number, problem_text, answer_text, commentary_text)
-            VALUES (?, ?, ?, ?, ?) RETURNING *
-          `).bind(exam.id, q.questionNumber, q.problemText || "", q.answerText || "", q.commentaryText || "").first();
+            INSERT INTO questions (exam_id, question_number, category, problem_text, answer_text, commentary_text)
+            VALUES (?, ?, ?, ?, ?, ?) RETURNING *
+          `).bind(exam.id, Math.max(1, Number(q.questionNumber) || 1), q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").first();
           if (created) createdQuestions.push(created);
         }
 
         return json({ exam: { ...exam, university_name: universityName }, questions: createdQuestions }, 201, origin);
+      }
+
+      // ── DELETE /api/questions/:examId/:questionNumber ──────────────
+      const delQMatch = path.match(/^\/api\/questions\/(\d+)\/(\d+)$/);
+      if (delQMatch && request.method === "DELETE") {
+        const examId = Number(delQMatch[1]);
+        const questionNumber = Number(delQMatch[2]);
+        await env.DB.prepare("DELETE FROM questions WHERE exam_id = ? AND question_number = ?")
+          .bind(examId, questionNumber).run();
+        // 試験に大問が0件になったら試験ごと削除
+        const remaining = await env.DB.prepare("SELECT COUNT(*) AS cnt FROM questions WHERE exam_id = ?")
+          .bind(examId).first<{ cnt: number }>();
+        if (remaining && remaining.cnt === 0) {
+          await env.DB.prepare("DELETE FROM exams WHERE id = ?").bind(examId).run();
+        }
+        return json({ success: true }, 200, origin);
       }
 
       // ── DELETE /api/exams/:id ─────────────────────────────────────
@@ -175,46 +249,93 @@ export default {
       // ── PUT /api/exams/:id ────────────────────────────────────────
       const putExamMatch = examIdMatch;
       if (putExamMatch && request.method === "PUT") {
-        const examId = Number(putExamMatch[1]);
-        type QBody = { questionNumber: number; problemText: string; answerText: string; commentaryText: string };
+        await ensureCategoryColumn(env);
+        let examId = Number(putExamMatch[1]);
+        type QBody = { questionNumber: number; category?: string; problemText: string; answerText: string; commentaryText: string };
         type PutBody = { universityName?: string; year?: number; schedule?: string; questions?: QBody[] };
         const body = await request.json<PutBody>();
 
-        const existing = await env.DB.prepare("SELECT university_id FROM exams WHERE id = ?")
-          .bind(examId).first<{ university_id: number }>();
+        const existing = await env.DB.prepare("SELECT university_id, year, schedule FROM exams WHERE id = ?")
+          .bind(examId).first<{ university_id: number; year: number; schedule: string }>();
         if (!existing) return json({ error: "Exam not found" }, 404, origin);
 
+        // 変更後の (大学・年度・方式) を確定（大学名が来ていれば取得 or 新規作成。まだ UPDATE はしない）
+        let targetUniId = existing.university_id;
         if (body.universityName) {
           let uni = await env.DB.prepare("SELECT id FROM universities WHERE name = ?")
             .bind(body.universityName).first<{ id: number }>();
           if (!uni) uni = await env.DB.prepare(
             "INSERT INTO universities (name) VALUES (?) RETURNING id"
           ).bind(body.universityName).first<{ id: number }>();
-          if (uni) await env.DB.prepare("UPDATE exams SET university_id = ? WHERE id = ?")
-            .bind(uni.id, examId).run();
+          if (uni) targetUniId = uni.id;
         }
-        if (body.year !== undefined)
-          await env.DB.prepare("UPDATE exams SET year = ? WHERE id = ?").bind(body.year, examId).run();
-        if (body.schedule !== undefined)
-          await env.DB.prepare("UPDATE exams SET schedule = ? WHERE id = ?").bind(body.schedule, examId).run();
+        const targetYear = body.year !== undefined ? body.year : existing.year;
+        const targetSchedule = body.schedule !== undefined ? body.schedule : existing.schedule;
 
         if (body.questions !== undefined) {
-          await env.DB.prepare("DELETE FROM questions WHERE exam_id = ?").bind(examId).run();
+          // DELETE ALL + INSERT の代わりに UPSERT で各大問を個別更新
+          // （他の大問を消さないようにするため）
           for (const q of body.questions) {
-            await env.DB.prepare(
-              "INSERT INTO questions (exam_id, question_number, problem_text, answer_text, commentary_text) VALUES (?, ?, ?, ?, ?)"
-            ).bind(examId, q.questionNumber, q.problemText || "", q.answerText || "", q.commentaryText || "").run();
+            const qnum = Math.max(1, Number(q.questionNumber) || 1);
+            await env.DB.prepare(`
+              INSERT INTO questions (exam_id, question_number, category, problem_text, answer_text, commentary_text)
+              VALUES (?, ?, ?, ?, ?, ?)
+              ON CONFLICT(exam_id, question_number) DO UPDATE SET
+                category = excluded.category,
+                problem_text = excluded.problem_text,
+                answer_text = excluded.answer_text,
+                commentary_text = excluded.commentary_text,
+                updated_at = datetime('now')
+            `).bind(examId, qnum, q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").run();
           }
+        }
+
+        // 変更後の (大学・年度・方式) が別の試験と重複するか判定
+        const conflict = await env.DB.prepare(
+          "SELECT id FROM exams WHERE university_id = ? AND year = ? AND schedule = ? AND id != ?"
+        ).bind(targetUniId, targetYear, targetSchedule, examId).first<{ id: number }>();
+
+        let merged = false;
+        if (conflict) {
+          // ── 統合（マージ）: 元の試験の大問を既存の試験へ移し、空になった元を削除 ──
+          const targetId = conflict.id;
+          const used = await env.DB.prepare(
+            "SELECT question_number FROM questions WHERE exam_id = ?"
+          ).bind(targetId).all<{ question_number: number }>();
+          const taken = new Set<number>(used.results.map((r) => r.question_number));
+          let maxNum = taken.size ? Math.max(...taken) : 0;
+
+          const srcQs = await env.DB.prepare(
+            "SELECT id, question_number FROM questions WHERE exam_id = ? ORDER BY question_number ASC"
+          ).bind(examId).all<{ id: number; question_number: number }>();
+
+          for (const q of srcQs.results) {
+            let n = q.question_number;
+            if (taken.has(n)) { maxNum += 1; n = maxNum; }   // 番号が衝突したら上書きせず空き番号へずらす
+            else if (n > maxNum) { maxNum = n; }
+            taken.add(n);
+            await env.DB.prepare("UPDATE questions SET exam_id = ?, question_number = ? WHERE id = ?")
+              .bind(targetId, n, q.id).run();
+          }
+          // 空になった元の試験を削除し、以降は統合先を対象にする
+          await env.DB.prepare("DELETE FROM exams WHERE id = ?").bind(examId).run();
+          examId = targetId;
+          merged = true;
+        } else {
+          // 重複なし: メタ情報を通常どおり更新
+          await env.DB.prepare("UPDATE exams SET university_id = ?, year = ?, schedule = ? WHERE id = ?")
+            .bind(targetUniId, targetYear, targetSchedule, examId).run();
         }
 
         const updated = await env.DB.prepare(
           "SELECT e.id, e.year, e.schedule, u.name AS university_name FROM exams e JOIN universities u ON e.university_id = u.id WHERE e.id = ?"
         ).bind(examId).first();
-        return json({ exam: updated }, 200, origin);
+        return json({ exam: updated, merged }, 200, origin);
       }
 
       // ── GET /api/exams/:id ─────────────────────────────────────────
       if (examIdMatch && request.method === "GET") {
+        await ensureCategoryColumn(env);
         const examId = Number(examIdMatch[1]);
 
         const examRow = await env.DB.prepare(`
@@ -234,35 +355,35 @@ export default {
         return json({ exam: { ...examRow, questions } }, 200, origin);
       }
 
+      // ── GET /api/corpus ────────────────────────────────────────────
+      // 全入試問題の英文テキストを一括返却（クライアント側コーパス分析用）
+      if (path === "/api/corpus" && request.method === "GET") {
+        const { results } = await env.DB.prepare(`
+          SELECT q.id AS question_id, q.question_number,
+                 q.problem_text, q.answer_text, q.commentary_text,
+                 e.id AS exam_id, e.year, e.schedule,
+                 u.name AS university_name
+          FROM questions q
+          JOIN exams e ON q.exam_id = e.id
+          JOIN universities u ON e.university_id = u.id
+          ORDER BY e.year DESC, u.name ASC, q.question_number ASC
+        `).all();
+        return json({ questions: results }, 200, origin);
+      }
+
       // ── GET /api/search ────────────────────────────────────────────
       if (path === "/api/search" && request.method === "GET") {
         const word     = url.searchParams.get("word") || "";
         const uname    = url.searchParams.get("universityName") || "";
         const year     = url.searchParams.get("year") || "";
         const schedule = url.searchParams.get("schedule") || "";
+        const category = url.searchParams.get("category") || "";
 
-        const hasFilter = word || uname || year || schedule;
-
-        if (!hasFilter) {
-          // Return all exams with question counts
-          const { results } = await env.DB.prepare(`
-            SELECT e.id AS exam_id, u.name AS university_name, e.year, e.schedule,
-                   COUNT(q.id) AS question_count,
-                   0 AS total_occurrences,
-                   '' AS matching_questions
-            FROM exams e
-            JOIN universities u ON e.university_id = u.id
-            LEFT JOIN questions q ON q.exam_id = e.id
-            GROUP BY e.id
-            ORDER BY e.year DESC, u.name ASC
-          `).all();
-          return json({ results }, 200, origin);
-        }
-
+        // 大問ごとに1行返す（exam_id + question_number で一意）
         let sql = `
-          SELECT e.id AS exam_id, u.name AS university_name, e.year, e.schedule,
-                 COUNT(q.id) AS question_count,
-                 GROUP_CONCAT(q.question_number) AS matching_questions
+          SELECT q.id AS question_id, q.question_number, q.category,
+                 e.id AS exam_id, u.name AS university_name, e.year, e.schedule,
+                 0 AS total_occurrences
           FROM questions q
           JOIN exams e ON q.exam_id = e.id
           JOIN universities u ON e.university_id = u.id
@@ -274,36 +395,93 @@ export default {
           sql += " AND (q.problem_text LIKE ? OR q.answer_text LIKE ? OR q.commentary_text LIKE ?)";
           params.push(p, p, p);
         }
-        if (uname) { sql += " AND u.name LIKE ?"; params.push(`%${uname}%`); }
-        if (year)  { sql += " AND e.year = ?";    params.push(Number(year)); }
-        if (schedule) { sql += " AND e.schedule = ?"; params.push(schedule); }
+        if (uname)    { sql += " AND u.name LIKE ?";    params.push(`%${uname}%`); }
+        if (year)     { sql += " AND e.year = ?";       params.push(Number(year)); }
+        if (schedule) { sql += " AND e.schedule = ?";   params.push(schedule); }
+        if (category) { sql += " AND q.category = ?";   params.push(category); }
 
-        sql += " GROUP BY e.id ORDER BY question_count DESC, e.year DESC";
+        sql += " ORDER BY e.year DESC, u.name ASC, q.question_number ASC";
 
-        const { results: rows } = await env.DB.prepare(sql).bind(...params).all();
+        const { results: rows } = await env.DB.prepare(sql).bind(...params).all<Record<string, unknown>>();
 
-        // Count exact word occurrences per result
-        const enriched = await Promise.all(
-          rows.map(async (row: Record<string, unknown>) => {
-            if (!word) return { ...row, total_occurrences: row.question_count };
-
-            const { results: qs } = await env.DB.prepare(
-              "SELECT problem_text, answer_text, commentary_text FROM questions WHERE exam_id = ?"
-            ).bind(row.exam_id).all<{ problem_text: string; answer_text: string; commentary_text: string }>();
-
-            const combined = qs.map(q =>
-              `${q.problem_text || ""} ${q.answer_text || ""} ${q.commentary_text || ""}`
-            ).join(" ");
-
-            const regex = new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
-            const total_occurrences = (combined.match(regex) || []).length;
-            return { ...row, total_occurrences };
-          })
-        );
-
-        enriched.sort((a, b) => (b.total_occurrences as number) - (a.total_occurrences as number));
+        // キーワード検索時のみ大問ごとの出現回数を計算
+        let enriched: Record<string, unknown>[] = rows;
+        if (word) {
+          const regex = new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+          enriched = await Promise.all(
+            rows.map(async (row) => {
+              const q = await env.DB.prepare(
+                "SELECT problem_text, answer_text, commentary_text FROM questions WHERE id = ?"
+              ).bind(row.question_id).first<{ problem_text: string; answer_text: string; commentary_text: string }>();
+              const combined = q
+                ? `${q.problem_text || ""} ${q.answer_text || ""} ${q.commentary_text || ""}`
+                : "";
+              const total_occurrences = (combined.match(regex) || []).length;
+              return { ...row, total_occurrences };
+            })
+          );
+          enriched.sort((a, b) => (b.total_occurrences as number) - (a.total_occurrences as number));
+        }
 
         return json({ results: enriched }, 200, origin);
+      }
+
+      // ── /api/wordlists（ストップワード・レベル別語彙リストの保存） ──
+      if (path.startsWith("/api/wordlists")) {
+        await env.DB.exec(
+          "CREATE TABLE IF NOT EXISTS word_lists (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, name TEXT NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))"
+        );
+
+        // GET /api/wordlists?type=stop|level
+        if (path === "/api/wordlists" && request.method === "GET") {
+          const type = url.searchParams.get("type") || "";
+          const stmt = type
+            ? env.DB.prepare("SELECT id, type, name, data FROM word_lists WHERE type = ? ORDER BY id ASC").bind(type)
+            : env.DB.prepare("SELECT id, type, name, data FROM word_lists ORDER BY id ASC");
+          const { results } = await stmt.all<{ id: number; type: string; name: string; data: string }>();
+          const lists = results.map((r) => {
+            let data: unknown = null;
+            try { data = JSON.parse(r.data); } catch { /* 壊れた行は null として返す */ }
+            return { id: r.id, type: r.type, name: r.name, data };
+          });
+          return json({ lists }, 200, origin);
+        }
+
+        // POST /api/wordlists
+        if (path === "/api/wordlists" && request.method === "POST") {
+          type WLBody = { type: string; name: string; data?: unknown };
+          const body = await request.json<WLBody>();
+          if (!body.type || !body.name) {
+            return json({ error: "type と name は必須です" }, 400, origin);
+          }
+          const created = await env.DB.prepare(
+            "INSERT INTO word_lists (type, name, data) VALUES (?, ?, ?) RETURNING id, type, name"
+          ).bind(body.type, body.name, JSON.stringify(body.data ?? null)).first();
+          return json({ list: created }, 201, origin);
+        }
+
+        const wlMatch = path.match(/^\/api\/wordlists\/(\d+)$/);
+        // PUT /api/wordlists/:id
+        if (wlMatch && request.method === "PUT") {
+          const id = Number(wlMatch[1]);
+          type WLPut = { name?: string; data?: unknown };
+          const body = await request.json<WLPut>();
+          if (body.name !== undefined) {
+            await env.DB.prepare("UPDATE word_lists SET name = ?, updated_at = datetime('now') WHERE id = ?")
+              .bind(body.name, id).run();
+          }
+          if (body.data !== undefined) {
+            await env.DB.prepare("UPDATE word_lists SET data = ?, updated_at = datetime('now') WHERE id = ?")
+              .bind(JSON.stringify(body.data), id).run();
+          }
+          return json({ success: true }, 200, origin);
+        }
+
+        // DELETE /api/wordlists/:id
+        if (wlMatch && request.method === "DELETE") {
+          await env.DB.prepare("DELETE FROM word_lists WHERE id = ?").bind(Number(wlMatch[1])).run();
+          return json({ success: true }, 200, origin);
+        }
       }
 
       return json({ error: "Not found" }, 404, origin);

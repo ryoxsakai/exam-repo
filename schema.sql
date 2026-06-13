@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS questions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   exam_id INTEGER NOT NULL,
   question_number INTEGER NOT NULL,
+  category TEXT NOT NULL DEFAULT '',
   problem_text TEXT NOT NULL DEFAULT '',
   answer_text TEXT NOT NULL DEFAULT '',
   commentary_text TEXT NOT NULL DEFAULT '',
@@ -31,6 +32,17 @@ CREATE TABLE IF NOT EXISTS questions (
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE,
   UNIQUE(exam_id, question_number)
+);
+
+-- Word lists table (ストップワード・レベル別語彙リストを Worker 側で共有保存)
+--   type: 'stop' = ストップワード, 'level' = レベル別語彙リスト
+--   data: JSON。stop は ["a","the",...]、level は { "word": "A1", ... }
+CREATE TABLE IF NOT EXISTS word_lists (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL,
+  name TEXT NOT NULL,
+  data TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Indexes for performance
