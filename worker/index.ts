@@ -202,17 +202,11 @@ export default {
         }
         if (!uni) return json({ error: "Failed to create university" }, 500, origin);
 
-        // 既存の試験を探す（大学・年度・方式が同じ）
+        // 既存の試験を探すか新規作成（重複時は既存を返す）
         let exam = await env.DB.prepare(
-          "SELECT id FROM exams WHERE university_id = ? AND year = ? AND schedule = ?"
+          "INSERT INTO exams (university_id, year, schedule) VALUES (?, ?, ?) ON CONFLICT(university_id, year, schedule) DO UPDATE SET id=id RETURNING *"
         ).bind(uni.id, year, schedule).first<{ id: number }>();
 
-        // 見つからなければ新規作成
-        if (!exam) {
-          exam = await env.DB.prepare(
-            "INSERT INTO exams (university_id, year, schedule) VALUES (?, ?, ?) RETURNING *"
-          ).bind(uni.id, year, schedule).first<{ id: number }>();
-        }
         if (!exam) return json({ error: "Failed to create exam" }, 500, origin);
 
         const createdQuestions = [];
