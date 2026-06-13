@@ -202,17 +202,11 @@ export default {
         }
         if (!uni) return json({ error: "Failed to create university" }, 500, origin);
 
-        // 既存の試験を探す（大学・年度・方式が同じ）
+        // 既存の試験を探すか新規作成（重複時は既存を返す）
         let exam = await env.DB.prepare(
-          "SELECT id FROM exams WHERE university_id = ? AND year = ? AND schedule = ?"
+          "INSERT INTO exams (university_id, year, schedule) VALUES (?, ?, ?) ON CONFLICT(university_id, year, schedule) DO UPDATE SET id=id RETURNING *"
         ).bind(uni.id, year, schedule).first<{ id: number }>();
 
-        // 見つからなければ新規作成
-        if (!exam) {
-          exam = await env.DB.prepare(
-            "INSERT INTO exams (university_id, year, schedule) VALUES (?, ?, ?) RETURNING *"
-          ).bind(uni.id, year, schedule).first<{ id: number }>();
-        }
         if (!exam) return json({ error: "Failed to create exam" }, 500, origin);
 
         const createdQuestions = [];
@@ -256,28 +250,27 @@ export default {
       const putExamMatch = examIdMatch;
       if (putExamMatch && request.method === "PUT") {
         await ensureCategoryColumn(env);
-        const examId = Number(putExamMatch[1]);
+        let examId = Number(putExamMatch[1]);
         type QBody = { questionNumber: number; category?: string; problemText: string; answerText: string; commentaryText: string };
         type PutBody = { universityName?: string; year?: number; schedule?: string; questions?: QBody[] };
         const body = await request.json<PutBody>();
 
-        const existing = await env.DB.prepare("SELECT university_id FROM exams WHERE id = ?")
-          .bind(examId).first<{ university_id: number }>();
+        const existing = await env.DB.prepare("SELECT university_id, year, schedule FROM exams WHERE id = ?")
+          .bind(examId).first<{ university_id: number; year: number; schedule: string }>();
         if (!existing) return json({ error: "Exam not found" }, 404, origin);
 
+        // 変更後の (大学・年度・方式) を確定（大学名が来ていれば取得 or 新規作成。まだ UPDATE はしない）
+        let targetUniId = existing.university_id;
         if (body.universityName) {
           let uni = await env.DB.prepare("SELECT id FROM universities WHERE name = ?")
             .bind(body.universityName).first<{ id: number }>();
           if (!uni) uni = await env.DB.prepare(
             "INSERT INTO universities (name) VALUES (?) RETURNING id"
           ).bind(body.universityName).first<{ id: number }>();
-          if (uni) await env.DB.prepare("UPDATE exams SET university_id = ? WHERE id = ?")
-            .bind(uni.id, examId).run();
+          if (uni) targetUniId = uni.id;
         }
-        if (body.year !== undefined)
-          await env.DB.prepare("UPDATE exams SET year = ? WHERE id = ?").bind(body.year, examId).run();
-        if (body.schedule !== undefined)
-          await env.DB.prepare("UPDATE exams SET schedule = ? WHERE id = ?").bind(body.schedule, examId).run();
+        const targetYear = body.year !== undefined ? body.year : existing.year;
+        const targetSchedule = body.schedule !== undefined ? body.schedule : existing.schedule;
 
         if (body.questions !== undefined) {
           // DELETE ALL + INSERT の代わりに UPSERT で各大問を個別更新
@@ -297,10 +290,47 @@ export default {
           }
         }
 
+        // 変更後の (大学・年度・方式) が別の試験と重複するか判定
+        const conflict = await env.DB.prepare(
+          "SELECT id FROM exams WHERE university_id = ? AND year = ? AND schedule = ? AND id != ?"
+        ).bind(targetUniId, targetYear, targetSchedule, examId).first<{ id: number }>();
+
+        let merged = false;
+        if (conflict) {
+          // ── 統合（マージ）: 元の試験の大問を既存の試験へ移し、空になった元を削除 ──
+          const targetId = conflict.id;
+          const used = await env.DB.prepare(
+            "SELECT question_number FROM questions WHERE exam_id = ?"
+          ).bind(targetId).all<{ question_number: number }>();
+          const taken = new Set<number>(used.results.map((r) => r.question_number));
+          let maxNum = taken.size ? Math.max(...taken) : 0;
+
+          const srcQs = await env.DB.prepare(
+            "SELECT id, question_number FROM questions WHERE exam_id = ? ORDER BY question_number ASC"
+          ).bind(examId).all<{ id: number; question_number: number }>();
+
+          for (const q of srcQs.results) {
+            let n = q.question_number;
+            if (taken.has(n)) { maxNum += 1; n = maxNum; }   // 番号が衝突したら上書きせず空き番号へずらす
+            else if (n > maxNum) { maxNum = n; }
+            taken.add(n);
+            await env.DB.prepare("UPDATE questions SET exam_id = ?, question_number = ? WHERE id = ?")
+              .bind(targetId, n, q.id).run();
+          }
+          // 空になった元の試験を削除し、以降は統合先を対象にする
+          await env.DB.prepare("DELETE FROM exams WHERE id = ?").bind(examId).run();
+          examId = targetId;
+          merged = true;
+        } else {
+          // 重複なし: メタ情報を通常どおり更新
+          await env.DB.prepare("UPDATE exams SET university_id = ?, year = ?, schedule = ? WHERE id = ?")
+            .bind(targetUniId, targetYear, targetSchedule, examId).run();
+        }
+
         const updated = await env.DB.prepare(
           "SELECT e.id, e.year, e.schedule, u.name AS university_name FROM exams e JOIN universities u ON e.university_id = u.id WHERE e.id = ?"
         ).bind(examId).first();
-        return json({ exam: updated }, 200, origin);
+        return json({ exam: updated, merged }, 200, origin);
       }
 
       // ── GET /api/exams/:id ─────────────────────────────────────────

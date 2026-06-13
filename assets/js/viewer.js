@@ -105,6 +105,11 @@
       el(id).addEventListener("change", loadPrintPreview);
     });
     el("pr-cover").addEventListener("change", renderPrintPreview);
+    el("pr-fontsize").value = Store.getPrintFontSize();
+    el("pr-fontsize").addEventListener("change", function () {
+      Store.setPrintFontSize(el("pr-fontsize").value);
+      renderPrintPreview();
+    });
     el("btn-print-run").addEventListener("click", runPrint);
     el("btn-print-run-2").addEventListener("click", runPrint);
 
@@ -602,7 +607,7 @@
     if (!state.printExam) return;
     var html = buildPrintHtml(state.printExam, printOptions());
     if (!html) { el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>印刷対象がありません。チェックや登録内容を確認してください。</div></div>'; return; }
-    el("print-preview").innerHTML = '<div class="print-doc fs-' + Store.getFontSize() + '">' + html + "</div>";
+    el("print-preview").innerHTML = '<div class="print-doc fs-' + Store.getPrintFontSize() + '">' + html + "</div>";
   }
 
   function runPrint() {
@@ -611,7 +616,7 @@
     if (!html) { UI.toast("印刷対象がありません", "err"); return; }
     var area = el("print-area");
     if (!area) { area = create("div", { id: "print-area" }); document.body.appendChild(area); }
-    area.className = "print-out fs-" + Store.getFontSize();
+    area.className = "print-out fs-" + Store.getPrintFontSize();
     area.innerHTML = html;
     window.print();
   }

@@ -686,12 +686,21 @@
   function saveReg() {
     var data = collectReg();
     if (!data.year || !data.universityName || !data.schedule) { toast("年度・大学名・方式を選択してください", "err"); return; }
-    var p = state.reg.editingExamId ? Api.updateExam(state.reg.editingExamId, data) : Api.createExam(data);
+    var wasEditing = !!state.reg.editingExamId;
+    var p = wasEditing ? Api.updateExam(state.reg.editingExamId, data) : Api.createExam(data);
     p.then(function (res) {
-      toast(state.reg.editingExamId ? "更新しました" : "登録しました", "ok");
+      // 方式・年度・大学を変更した結果、既存の同じ試験に統合された場合は統合先を読み込み直す
+      if (res && res.merged && res.exam && res.exam.id) {
+        toast("既存の同じ試験に統合しました", "ok");
+        loadExamIntoForm(res.exam.id, undefined, true);
+        saveDraft();
+        loadServerConfig();
+        return;
+      }
+      toast(wasEditing ? "更新しました" : "登録しました", "ok");
       // 編集画面はクリアしない（「新規作成」を押すまで保持）。
       // 新規登録時は以降の保存が二重登録にならないよう編集モードへ移行。
-      if (!state.reg.editingExamId && res && res.exam && res.exam.id) {
+      if (res && res.exam && res.exam.id) {
         state.reg.editingExamId = res.exam.id;
         renderReg();
       }
@@ -720,7 +729,7 @@
     var body = '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
     openPreview(title, body);
   }
-  function loadExamIntoForm(examId, questionNumber) {
+  function loadExamIntoForm(examId, questionNumber, silent) {
     Api.getExam(examId).then(function (data) {
       var ex = data.exam;
       // 指定された大問番号を探す（未指定の場合は最初の大問）
@@ -759,7 +768,7 @@
       UI.setActiveTab(el("set-tabs"), "register"); Store.setLastTab("setting", "register");
       renderReg();
       saveDraft();
-      toast("編集モードで読み込みました", "ok");
+      if (!silent) toast("編集モードで読み込みました", "ok");
     }).catch(function (e) { toast(e.message, "err"); });
   }
 
