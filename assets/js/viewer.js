@@ -363,6 +363,7 @@
       }
 
       var body = "";
+      var showQHead = qnum == null && questions.length > 1;
       questions.forEach(function (q) {
         var fields = [];
         var sections = Markup.parseSections(q.problem_text || "");
@@ -383,8 +384,10 @@
           if (sec.text.trim()) fields.push(renderField(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text));
         });
 
+        // 全大問表示時は各大問の先頭に「大問N」見出しを表示
+        var head = showQHead ? '<div class="modal-qhead">大問' + esc(q.question_number) + "</div>" : "";
         // セクション間に区切り線を自動挿入
-        body += '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
+        body += head + '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
       });
       el("exam-modal-body").innerHTML = body || '<div class="empty">大問が登録されていません。</div>';
       wirePrintChecks();

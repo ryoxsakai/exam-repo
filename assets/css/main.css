@@ -533,6 +533,8 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 .print-part { margin-top: 8px; }
 .print-part + .print-part { margin-top: 40px; }
 .print-part-head { font-family: var(--sans); font-size: 19px; font-weight: 800; color: var(--ink); border-bottom: 2px solid var(--ink); padding-bottom: 6px; margin: 0 0 18px; }
+.modal-qhead { font-family: var(--sans); font-weight: 700; font-size: 15px; color: var(--emerald-dark); margin: 28px 0 6px; padding-bottom: 5px; border-bottom: 2px solid var(--emerald-soft); }
+.modal-qhead:first-child { margin-top: 0; }
 .print-q { margin-bottom: 24px; }
 .print-q-head { font-family: var(--sans); font-weight: 700; font-size: 16px; color: var(--emerald-dark); margin-bottom: 10px; }
 .print-field { margin-bottom: 14px; }
