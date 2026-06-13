@@ -110,6 +110,11 @@
       Store.setPrintFontSize(el("pr-fontsize").value);
       renderPrintPreview();
     });
+    el("pr-lineheight").value = Store.getPrintLineHeight();
+    el("pr-lineheight").addEventListener("change", function () {
+      Store.setPrintLineHeight(el("pr-lineheight").value);
+      renderPrintPreview();
+    });
     el("btn-print-run").addEventListener("click", runPrint);
     el("btn-print-run-2").addEventListener("click", runPrint);
 
@@ -607,7 +612,7 @@
     if (!state.printExam) return;
     var html = buildPrintHtml(state.printExam, printOptions());
     if (!html) { el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>印刷対象がありません。チェックや登録内容を確認してください。</div></div>'; return; }
-    el("print-preview").innerHTML = '<div class="print-doc fs-' + Store.getPrintFontSize() + '">' + html + "</div>";
+    el("print-preview").innerHTML = '<div class="print-doc fs-' + Store.getPrintFontSize() + " lh-" + Store.getPrintLineHeight() + '">' + html + "</div>";
   }
 
   function runPrint() {
@@ -616,7 +621,7 @@
     if (!html) { UI.toast("印刷対象がありません", "err"); return; }
     var area = el("print-area");
     if (!area) { area = create("div", { id: "print-area" }); document.body.appendChild(area); }
-    area.className = "print-out fs-" + Store.getPrintFontSize();
+    area.className = "print-out fs-" + Store.getPrintFontSize() + " lh-" + Store.getPrintLineHeight();
     area.innerHTML = html;
     window.print();
   }
