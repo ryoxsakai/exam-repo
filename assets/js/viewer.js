@@ -874,8 +874,10 @@
 
     // --- 語彙カバー率 ---
     if (vocab) {
-      var cov = Corpus.coverage(tokens, Corpus.toSet(vocab.words));
-      html += '<div class="card"><div class="card-head"><h3><i class="fa-solid fa-list-check ic"></i> 語彙カバー率: ' + esc(vocab.name) + "</h3></div>" +
+      var covTokens = stopSet ? tokens.filter(function (w) { return !stopSet[w]; }) : tokens;
+      var cov = Corpus.coverage(covTokens, Corpus.toSet(vocab.words));
+      html += '<div class="card"><div class="card-head"><h3><i class="fa-solid fa-list-check ic"></i> 語彙カバー率: ' + esc(vocab.name) +
+        (stopSet ? "（ストップワード除外）" : "") + "</h3></div>" +
         '<div class="grid-2"><div><canvas id="cov-chart" height="160"></canvas></div>' +
         '<div class="stat-grid">' +
         stat((cov.tokenCoverage * 100).toFixed(1) + "%", "延べ語カバー率") +
@@ -905,7 +907,7 @@
     // チャート描画
     destroyCharts();
     drawFreqChart(top);
-    if (vocab) drawCovChart(Corpus.coverage(tokens, Corpus.toSet(vocab.words)));
+    if (vocab) drawCovChart(Corpus.coverage(covTokens, Corpus.toSet(vocab.words)));
     if (lvStats) drawLevelChart(lvStats);
 
     // レベル詳細モーダルを開く（行タップ）
