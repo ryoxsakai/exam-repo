@@ -38,6 +38,8 @@
     corpusFilter: { universities: null, years: null, schedules: null, qnums: null, categories: null },
     levelStats: null,
     levelListName: "",
+    covOffList: null,
+    covListName: "",
     printExam: null,     // 印刷タブで構築した {year,university_name,schedule,questions[]}
     charts: {}
   };
@@ -876,8 +878,10 @@
     if (vocab) {
       var covTokens = stopSet ? tokens.filter(function (w) { return !stopSet[w]; }) : tokens;
       var cov = Corpus.coverage(covTokens, Corpus.toSet(vocab.words));
+      state.covOffList = cov.offList;
+      state.covListName = vocab.name;
       html += '<div class="card"><div class="card-head"><h3><i class="fa-solid fa-list-check ic"></i> 語彙カバー率: ' + esc(vocab.name) +
-        (stopSet ? "（ストップワード除外）" : "") + "</h3></div>" +
+        (stopSet ? "（ストップワード除外）" : "") + '</h3><span class="spacer"></span><span class="hint">タップでその他の語一覧</span></div>' +
         '<div class="grid-2"><div><canvas id="cov-chart" height="160"></canvas></div>' +
         '<div class="stat-grid">' +
         stat((cov.tokenCoverage * 100).toFixed(1) + "%", "延べ語カバー率") +
@@ -887,12 +891,12 @@
         stat(cov.tokenInList, "リスト内 (延べ)") +
         stat(cov.offList.length, "その他 異なり語") +
         "</div></div>";
-      html += '<div class="table-wrap" style="margin-top:14px"><table class="data freq-table"><thead><tr>' +
-        "<th>リスト外の語（頻度順）</th><th>頻度</th></tr></thead><tbody>";
-      cov.offList.slice(0, 30).forEach(function (o) {
-        html += "<tr><td>" + esc(o.word) + "</td><td class='num'>" + o.count + "</td></tr>";
-      });
-      html += "</tbody></table></div></div>";
+      html += '<div class="table-wrap" style="margin-top:14px"><table class="data freq-table"><tbody>' +
+        '<tr class="level-row" data-covoff="1" style="cursor:pointer">' +
+        '<td><span class="level-badge" style="background:#cbd5e1;color:#334155">その他（リスト外）</span></td>' +
+        "<td class='num'>" + cov.offList.length + " 異なり語</td>" +
+        '<td class="hint"><i class="fa-solid fa-arrow-up-right-from-square"></i> タップで全一覧</td>' +
+        "</tr></tbody></table></div></div>";
     }
 
     // --- 語彙レベル分析（CEFR） ---
@@ -916,6 +920,24 @@
     $all("[data-level]", el("corpus-results")).forEach(function (b) {
       b.addEventListener("click", function () { openLevelDetail(b.getAttribute("data-level")); });
     });
+    // 語彙カバー率「その他（リスト外）」一覧をモーダルで開く
+    $all("[data-covoff]", el("corpus-results")).forEach(function (b) {
+      b.addEventListener("click", openCovOffDetail);
+    });
+  }
+
+  function openCovOffDetail() {
+    var words = state.covOffList || [];
+    el("level-detail-title").innerHTML = '<span class="level-badge" style="background:#cbd5e1;color:#334155">その他（リスト外）</span> ' +
+      words.length + " 語（" + esc(state.covListName || "") + "）";
+    var body = '<div class="table-wrap"><table class="data freq-table"><thead><tr><th>#</th><th>語</th><th>頻度</th></tr></thead><tbody>';
+    if (!words.length) body += '<tr><td colspan="3" class="hint">該当する語はありません。</td></tr>';
+    words.forEach(function (w, i) {
+      body += "<tr><td class='num'>" + (i + 1) + "</td><td><strong>" + esc(w.word) + "</strong></td><td class='num'>" + w.count + "</td></tr>";
+    });
+    body += "</tbody></table></div>";
+    el("level-detail-body").innerHTML = body;
+    UI.openModal(el("level-detail-modal"));
   }
 
   // CEFR レベルごとの色（A1=易→C2=難）
