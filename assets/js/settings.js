@@ -212,6 +212,18 @@
     });
   }
 
+  var ING_PHASE_LABEL = {
+    reading:   "PDFを読み込み中…",
+    uploading: "PDFを送信中…",
+    received:  "PDF受信完了 — AI解析の準備中…",
+    analyzing: "AIが解析中…（大問・セクションに振り分け）",
+    parsing:   "解析結果を整形中…"
+  };
+  function ingFmt(ms) {
+    var s = Math.floor(ms / 1000);
+    return Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2);
+  }
+
   function runIngest() {
     var f = el("ing-file").files[0];
     if (!f) { toast("PDF ファイルを選択してください", "err"); return; }
@@ -225,20 +237,50 @@
       universityName: el("ing-university").value.trim() || undefined,
       schedule: el("ing-schedule").value.trim() || undefined
     };
-    el("ing-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> 解析中…（PDFの量により最大数分かかります）';
     el("ing-run").disabled = true;
     el("ing-result").innerHTML = "";
 
+    var t0 = Date.now();
+    var phase = "reading";
+    var finished = false;
+    var timer = setInterval(renderStatus, 1000);
+    function renderStatus() {
+      var label = ING_PHASE_LABEL[phase] || "処理中…";
+      el("ing-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> ' +
+        esc(label) + ' <span class="hint">（経過 ' + ingFmt(Date.now() - t0) + "）</span>";
+    }
+    function setPhase(p) { phase = p; renderStatus(); }
+    function finishOk(data) {
+      if (finished) return; finished = true;
+      clearInterval(timer);
+      el("ing-status").innerHTML = '<span style="color:var(--emerald-dark)"><i class="fa-solid fa-circle-check"></i> 解析完了（' + ingFmt(Date.now() - t0) + "）</span>";
+      el("ing-run").disabled = false;
+      renderIngestResult(data || {});
+    }
+    function finishErr(e) {
+      if (finished) return; finished = true;
+      clearInterval(timer);
+      el("ing-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message || "解析に失敗しました") + "</span>";
+      el("ing-run").disabled = false;
+      toast(e.message || "解析に失敗しました", "err");
+    }
+
+    renderStatus();
     fileToBase64(f).then(function (b64) {
-      return Api.ingestPdf({ pdfBase64: b64, hint: hint }, key);
-    }).then(function (data) {
-      el("ing-status").innerHTML = '<span style="color:var(--emerald-dark)"><i class="fa-solid fa-circle-check"></i> 解析完了</span>';
-      el("ing-run").disabled = false;
-      renderIngestResult(data);
+      setPhase("uploading");
+      return Api.ingestPdfStream({ pdfBase64: b64, hint: hint }, key, function (ev) {
+        if (!ev || !ev.phase) return;
+        if (ev.phase === "done") { finishOk(ev.result); return; }
+        if (ev.phase === "error") { finishErr(new Error(ev.message)); return; }
+        if (ev.phase === "received") setPhase("received");
+        else if (ev.phase === "analyzing") setPhase("analyzing");
+        else if (ev.phase === "parsing") setPhase("parsing");
+      });
+    }).then(function () {
+      // ストリームが done/error イベント無しで終了した場合
+      if (!finished) finishErr(new Error("解析が途中で終了しました。もう一度お試しください。"));
     }).catch(function (e) {
-      el("ing-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
-      el("ing-run").disabled = false;
-      toast(e.message, "err");
+      finishErr(e);
     });
   }
 

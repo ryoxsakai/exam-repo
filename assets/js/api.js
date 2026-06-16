@@ -50,7 +50,49 @@
     deleteQuestion:   function (examId, qnum) { return call("/api/questions/" + examId + "/" + qnum, { method: "DELETE" }); },
     search:           function (p) { return call("/api/search" + qs(p)); },
     getCorpus:        function () { return call("/api/corpus"); },
-    ingestPdf:        function (d, apiKey) { return call("/api/ingest", { method: "POST", headers: { "Content-Type": "application/json", "x-anthropic-key": apiKey || "" }, body: JSON.stringify(d) }); },
+    // PDF取り込み：SSE でフェーズを逐次受信。onEvent({phase, ...}) を都度呼ぶ。
+    // 戻り値の Promise はストリーム終了時に解決（ネットワーク失敗時は reject）。
+    ingestPdfStream:  function (d, apiKey, onEvent) {
+      var b;
+      try { b = base(); } catch (e) { return Promise.reject(e); }
+      return fetch(b + "/api/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-anthropic-key": apiKey || "" },
+        body: JSON.stringify(d)
+      }).catch(function () {
+        throw new Error("通信に失敗しました（Worker URL や CORS 設定を確認してください）。");
+      }).then(function (res) {
+        var ct = res.headers.get("Content-Type") || "";
+        if (ct.indexOf("text/event-stream") < 0 || !res.body) {
+          // SSE でない（バリデーション 400 等）→ JSON エラーとして処理
+          return res.json().catch(function () { return {}; }).then(function (data) {
+            throw new Error(data.message || data.error || ("APIエラー " + res.status));
+          });
+        }
+        var reader = res.body.getReader();
+        var dec = new TextDecoder();
+        var buf = "";
+        function pump() {
+          return reader.read().then(function (r) {
+            if (r.done) return;
+            buf += dec.decode(r.value, { stream: true });
+            var parts = buf.split("\n\n");
+            buf = parts.pop();
+            parts.forEach(function (chunk) {
+              var lines = chunk.split("\n");
+              for (var i = 0; i < lines.length; i++) {
+                if (lines[i].indexOf("data:") === 0) {
+                  var s = lines[i].slice(5).trim();
+                  if (s) { try { onEvent(JSON.parse(s)); } catch (e) {} }
+                }
+              }
+            });
+            return pump();
+          });
+        }
+        return pump();
+      });
+    },
     getWordLists:     function (type) { return call("/api/wordlists" + qs({ type: type })); },
     createWordList:   function (d) { return call("/api/wordlists", { method: "POST", body: JSON.stringify(d) }); },
     updateWordList:   function (id, d) { return call("/api/wordlists/" + id, { method: "PUT", body: JSON.stringify(d) }); },

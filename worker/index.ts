@@ -148,42 +148,89 @@ async function handleIngest(request: Request, env: Env, origin: string | null): 
     ],
   };
 
-  let res: Response;
-  try {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify(payload),
-    });
-  } catch {
-    return json({ message: "Anthropic API への接続に失敗しました。" }, 502, origin);
-  }
+  // SSE（Server-Sent Events）でフェーズを逐次送信。
+  // 1回の長いリクエスト中に「受信→解析中→整形→完了/エラー」を流し、
+  // 接続維持の鼓動も送ることでタイムアウト切断を防ぐ。
+  const enc = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      let alive = true;
+      const send = (obj: unknown) => {
+        if (!alive) return;
+        try { controller.enqueue(enc.encode("data: " + JSON.stringify(obj) + "\n\n")); } catch { /* closed */ }
+      };
+      const close = () => { alive = false; try { controller.close(); } catch { /* already closed */ } };
 
-  const data: any = await res.json();
-  if (!res.ok) {
-    const msg = (data && data.error && data.error.message) || `Anthropic API エラー (${res.status})`;
-    return json({ message: msg }, res.status, origin);
-  }
-  if (data.stop_reason === "refusal") {
-    return json({ message: "解析が安全性の理由で拒否されました。別のPDFでお試しください。" }, 422, origin);
-  }
+      // 解析中の鼓動（接続維持）
+      let beating = true;
+      (async () => {
+        while (beating) {
+          await new Promise((r) => setTimeout(r, 15000));
+          if (beating) send({ phase: "analyzing", heartbeat: true });
+        }
+      })();
 
-  const textBlock = Array.isArray(data.content) ? data.content.find((b: any) => b.type === "text") : null;
-  if (!textBlock || !textBlock.text) {
-    return json({ message: "解析結果を取得できませんでした（出力が空でした）。" }, 502, origin);
-  }
-  let parsed: any;
-  try {
-    parsed = JSON.parse(textBlock.text);
-  } catch {
-    return json({ message: "解析結果のJSONを読み取れませんでした。" }, 502, origin);
-  }
-  if (data.stop_reason === "max_tokens") parsed._truncated = true;
-  return json(parsed, 200, origin);
+      try {
+        send({ phase: "received", bytes: pdf.length });
+        send({ phase: "analyzing" });
+
+        let res: Response;
+        try {
+          res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify(payload),
+          });
+        } catch {
+          beating = false;
+          send({ phase: "error", message: "Anthropic API への接続に失敗しました。" });
+          return close();
+        }
+        beating = false;
+
+        let data: any;
+        try { data = await res.json(); }
+        catch { send({ phase: "error", message: `Anthropic API の応答を解析できませんでした（${res.status}）。` }); return close(); }
+
+        if (!res.ok) {
+          send({ phase: "error", message: (data && data.error && data.error.message) || `Anthropic API エラー（${res.status}）` });
+          return close();
+        }
+        if (data.stop_reason === "refusal") {
+          send({ phase: "error", message: "解析が安全性の理由で拒否されました。別のPDFでお試しください。" });
+          return close();
+        }
+
+        const textBlock = Array.isArray(data.content) ? data.content.find((b: any) => b.type === "text") : null;
+        if (!textBlock || !textBlock.text) {
+          send({ phase: "error", message: "解析結果を取得できませんでした（出力が空でした）。" });
+          return close();
+        }
+
+        send({ phase: "parsing" });
+        let parsed: any;
+        try { parsed = JSON.parse(textBlock.text); }
+        catch { send({ phase: "error", message: "解析結果のJSONを読み取れませんでした。" }); return close(); }
+        if (data.stop_reason === "max_tokens") parsed._truncated = true;
+
+        send({ phase: "done", result: parsed });
+        close();
+      } catch (e: any) {
+        beating = false;
+        send({ phase: "error", message: "解析中にエラーが発生しました: " + (e && e.message ? e.message : String(e)) });
+        close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", ...cors(origin) },
+  });
 }
 
 export default {
