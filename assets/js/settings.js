@@ -10,15 +10,17 @@
     conn:     { id: "conn",     label: "接続設定",         icon: "fa-plug" },
     list:     { id: "list",     label: "入試問題一覧",     icon: "fa-table-list" },
     register: { id: "register", label: "問題登録",         icon: "fa-pen-to-square" },
-    ingest:   { id: "ingest",   label: "PDF取り込み",      icon: "fa-file-import" },
-    corpus:   { id: "corpus",   label: "コーパス検索設定", icon: "fa-language" }
+    ingest:    { id: "ingest",    label: "PDF取り込み",      icon: "fa-file-import" },
+    ingestcfg: { id: "ingestcfg", label: "取り込み設定",      icon: "fa-wand-magic-sparkles" },
+    corpus:    { id: "corpus",    label: "コーパス検索設定", icon: "fa-language" }
   };
-  var SET_ORDER = ["main", "conn", "list", "register", "ingest", "corpus"];
+  var SET_ORDER = ["main", "conn", "list", "register", "ingest", "ingestcfg", "corpus"];
   var MAIN_TABS = { search: { label: "通常検索", icon: "fa-table-list" }, corpus: { label: "コーパス検索", icon: "fa-language" }, print: { label: "問題印刷", icon: "fa-print" } };
   var MAIN_ORDER = ["search", "corpus", "print"];
 
   var state = {
     config: { schedules: [], year_presets: [], question_categories: [], section_types: [] },
+    repl: [],  // 取り込み置換ルール [{from,to,regex}]
     universities: [],
     list: { filter: { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "" }, rows: [], sortedRows: [], sort: { key: "year", dir: "desc" }, nav: { examId: null, qnum: null } },
     reg: { sections: [], editingExamId: null, meta: { year: "", university: "", schedule: "", qnum: "1", category: "" } },
@@ -46,6 +48,7 @@
     wireList();
     wireRegister();
     wireIngest();
+    wireIngestConfig();
     wireCorpusSettings();
 
     // 接続済みなら設定読み込み
@@ -366,6 +369,111 @@
     });
   }
 
+  /* ================= タブ: 取り込み設定（追加プロンプト / 置換ルール） ================= */
+  var REPL_EXAMPLE = [
+    { from: "，", to: "、", regex: false },
+    { from: "．", to: "。", regex: false }
+  ];
+  var PROMPT_EXAMPLE =
+    "- ①②③ は ((1))((2))((3)) に、a. b. c. は ((a))((b))((c)) に、ア イ ウ は ((ア))((イ))((ウ)) に変換する\n" +
+    "- 空所 [[ ]] の中には英数字のみを入れる（[[(1)]] のように記号を入れない）\n" +
+    "- 下線部などに付く小問番号 (1)(2) は空所にせず ~~(1)~~ で下付きにする\n" +
+    "- 注釈・脚注は必ず ##語::訳## の語注記法を使う\n" +
+    "- 全訳・全文和訳は省略せず、解説に {{全訳}} 見出しを付けて全文を含める\n" +
+    "- 全角カンマ「，」は読点「、」に統一する";
+
+  function wireIngestConfig() {
+    if (!el("cfg-ingest-prompt-save")) return;
+    el("cfg-ingest-prompt-save").addEventListener("click", function () {
+      if (!Store.getWorkerUrl()) { toast("Worker URL が未設定です（接続設定タブ）", "err"); return; }
+      var v = el("cfg-ingest-prompt").value;
+      el("ingest-prompt-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> 保存中…';
+      Api.updateConfig({ ingest_prompt: v }).then(function () {
+        state.config.ingest_prompt = v;
+        el("ingest-prompt-status").innerHTML = '<span style="color:var(--emerald-dark)"><i class="fa-solid fa-circle-check"></i> 保存しました</span>';
+        toast("追加プロンプトを保存しました", "ok");
+      }).catch(function (e) {
+        el("ingest-prompt-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
+        toast(e.message, "err");
+      });
+    });
+    el("cfg-ingest-prompt-example").addEventListener("click", function () {
+      var ta = el("cfg-ingest-prompt");
+      ta.value = ta.value.trim() ? ta.value.replace(/\s*$/, "") + "\n" + PROMPT_EXAMPLE : PROMPT_EXAMPLE;
+      toast("推奨例を挿入しました（保存で確定）", "ok");
+    });
+
+    el("repl-add").addEventListener("click", function () {
+      state.repl.push({ from: "", to: "", regex: false });
+      renderReplList();
+    });
+    el("repl-example").addEventListener("click", function () {
+      REPL_EXAMPLE.forEach(function (r) { state.repl.push({ from: r.from, to: r.to, regex: r.regex }); });
+      renderReplList();
+      toast("推奨例を追加しました（保存で確定）", "ok");
+    });
+    el("repl-save").addEventListener("click", function () {
+      if (!Store.getWorkerUrl()) { toast("Worker URL が未設定です（接続設定タブ）", "err"); return; }
+      readReplFromDom();
+      var rules = state.repl.filter(function (r) { return r.from; });
+      el("repl-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> 保存中…';
+      Api.updateConfig({ ingest_replacements: rules }).then(function () {
+        state.config.ingest_replacements = rules;
+        state.repl = rules.slice();
+        renderReplList();
+        el("repl-status").innerHTML = '<span style="color:var(--emerald-dark)"><i class="fa-solid fa-circle-check"></i> 保存しました（' + rules.length + " 件）</span>";
+        toast("置換ルールを保存しました", "ok");
+      }).catch(function (e) {
+        el("repl-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
+        toast(e.message, "err");
+      });
+    });
+  }
+
+  // DOM の入力値を state.repl へ吸い上げ（並び順を保ったまま）
+  function readReplFromDom() {
+    var rows = $all("[data-repl]", el("repl-list"));
+    state.repl = rows.map(function (row) {
+      return {
+        from: $(".repl-from", row).value,
+        to: $(".repl-to", row).value,
+        regex: $(".repl-regex", row).checked
+      };
+    });
+  }
+
+  function renderReplList() {
+    var c = el("repl-list");
+    if (!c) return;
+    if (!state.repl.length) {
+      c.innerHTML = '<p class="hint">まだルールがありません。「ルールを追加」または「推奨例を挿入」から作成してください。</p>';
+      return;
+    }
+    var h = "";
+    state.repl.forEach(function (r, i) {
+      h += '<div class="sort-item" data-repl="' + i + '" style="gap:8px;flex-wrap:wrap">' +
+        '<input type="text" class="repl-from" placeholder="検索（例: ，）" value="' + esc(r.from || "") + '" style="flex:1;min-width:120px">' +
+        '<i class="fa-solid fa-arrow-right" style="color:var(--blue)"></i>' +
+        '<input type="text" class="repl-to" placeholder="置換後（例: 、）" value="' + esc(r.to || "") + '" style="flex:1;min-width:120px">' +
+        '<label class="check-inline" style="white-space:nowrap"><input type="checkbox" class="repl-regex"' + (r.regex ? " checked" : "") + '> <span>正規表現</span></label>' +
+        '<span class="move">' +
+        '<button class="icon-btn sm" data-replup="' + i + '" title="上へ"' + (i === 0 ? " disabled" : "") + '><i class="fa-solid fa-arrow-up"></i></button>' +
+        '<button class="icon-btn sm" data-repldown="' + i + '" title="下へ"' + (i === state.repl.length - 1 ? " disabled" : "") + '><i class="fa-solid fa-arrow-down"></i></button>' +
+        '<button class="icon-btn sm danger" data-repldel="' + i + '" title="削除"><i class="fa-solid fa-trash"></i></button>' +
+        "</span></div>";
+    });
+    c.innerHTML = h;
+    $all("[data-replup]", c).forEach(function (b) {
+      b.addEventListener("click", function () { readReplFromDom(); var i = +b.getAttribute("data-replup"); swap(state.repl, i, i - 1); renderReplList(); });
+    });
+    $all("[data-repldown]", c).forEach(function (b) {
+      b.addEventListener("click", function () { readReplFromDom(); var i = +b.getAttribute("data-repldown"); swap(state.repl, i, i + 1); renderReplList(); });
+    });
+    $all("[data-repldel]", c).forEach(function (b) {
+      b.addEventListener("click", function () { readReplFromDom(); state.repl.splice(+b.getAttribute("data-repldel"), 1); renderReplList(); });
+    });
+  }
+
   function loadServerConfig() {
     return Promise.all([
       Api.getConfig().catch(function () { return { schedules: [], year_presets: [], question_categories: [], section_types: [] }; }),
@@ -377,6 +485,10 @@
       if (!Array.isArray(state.config.question_categories)) state.config.question_categories = [];
       if (!Array.isArray(state.config.section_types)) state.config.section_types = ["問題", "解答", "解説"];
       Store.setSectionTypes(state.config.section_types);
+      // 取り込み設定（追加プロンプト・置換ルール）を反映
+      if (el("cfg-ingest-prompt")) el("cfg-ingest-prompt").value = state.config.ingest_prompt || "";
+      state.repl = Array.isArray(state.config.ingest_replacements) ? state.config.ingest_replacements : [];
+      renderReplList();
       state.universities = (res[1] && res[1].universities) || [];
       // サブタイトル（Worker 側にあれば反映）
       if (state.config.site_subtitle) {

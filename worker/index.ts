@@ -62,17 +62,56 @@ const INGEST_SYSTEM = `あなたは日本の大学入試（英語）の冊子PDF
 PDFを読み取り、大問ごとにまとめ直してください。各大問について、問題本文(problemText)・解答(answerText)・解説(commentaryText)の3つに振り分けます。解答ページや解説ページの「(1)…」等は、対応する大問の問題と必ず紐づけてください。該当が無いセクションは空文字にします。
 
 # 出力テキストの記法（problemText / answerText / commentaryText で使用）
-- 空所は [[1]] [[A]]
-- 選択肢は行頭に ((A)) 本文
+- 空所は [[1]] [[A]]。**[[ ]] の中には英数字のみ**を入れる（[[1]] [[12]] [[A]]）。[[(1)]] のように括弧や記号を入れてはいけない。
+- 選択肢は行頭に ((ラベル)) 本文 の形式。①②③ → ((1))((2))((3))、a. b. c. → ((a))((b))((c))、ア イ ウ → ((ア))((イ))((ウ)) のように、選択肢記号は必ず (()) で囲む。
 - 黄ハイライト ==語==、下線 __語__、下付き ~~x~~、上付き ^^x^^
-- 語注 ##語::訳##
+- 語注（脚注・注記・「注)」の列挙）は必ず ##語::訳## 形式を使う。本文には上付き番号が付き、末尾に訳一覧が出る。注釈をそのまま地の文に書かない。
 - 区切り線 ----、段落間は空行
+
+# 変換ルール（重要）
+- 下線部や語句に付く小問番号 (1)(2) 等が本文中に現れる場合は、空所ではないので [[ ]] にせず、~~(1)~~ のように下付きにする（例: 下線部(1) → __…__~~(1)~~ ）。
+- 「全訳」「全文和訳」「本文の訳」は省略してはいけない。解説(commentaryText)に {{全訳}} の見出しを付けて全文を必ず含める。
+- 全角カンマ「，」は読点「、」に統一する。
 
 # 注意
 - 図・写真・数式は文章で簡潔に補足する（例: [図] や [グラフ]）。
 - OCRが不確実な箇所は推測しすぎず原文に忠実に。英文はそのまま、和文設問もそのまま書き起こす。
 - universityName / year / schedule は表紙や本文から判断する（不明なら universityName は空文字、year は 0）。schedule は「前期」「後期」「全学部」等の入試方式。
 - questionNumber は 1 始まりの整数。category は「長文読解」「文法」「英作文」等が分かれば記入、不明なら空文字。`;
+
+type Replacement = { from?: string; to?: string; regex?: boolean; flags?: string };
+
+// 取り込み結果テキストへ置換ルール（grep replace）を適用。
+// regex=true のときは正規表現（不正なパターンは無視）、それ以外は全件の単純置換。
+function applyReplacements(text: string, rules: Replacement[]): string {
+  if (!text || !rules || !rules.length) return text;
+  let out = text;
+  for (const r of rules) {
+    if (!r || !r.from) continue;
+    try {
+      if (r.regex) {
+        out = out.replace(new RegExp(r.from, r.flags || "g"), r.to || "");
+      } else {
+        out = out.split(r.from).join(r.to || "");
+      }
+    } catch { /* 不正な正規表現は無視 */ }
+  }
+  return out;
+}
+
+// 取り込み用の追加設定（追加プロンプト・置換ルール）を D1 config から読む。
+async function getIngestConfig(env: Env): Promise<{ prompt: string; replacements: Replacement[] }> {
+  let prompt = "";
+  let replacements: Replacement[] = [];
+  try {
+    await env.DB.exec("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+    const pr = await env.DB.prepare("SELECT value FROM config WHERE key = 'ingest_prompt'").first<{ value: string }>();
+    if (pr) { try { prompt = JSON.parse(pr.value) || ""; } catch { /* 壊れた値は無視 */ } }
+    const rp = await env.DB.prepare("SELECT value FROM config WHERE key = 'ingest_replacements'").first<{ value: string }>();
+    if (rp) { try { const v = JSON.parse(rp.value); if (Array.isArray(v)) replacements = v; } catch { /* 壊れた値は無視 */ } }
+  } catch { /* config テーブル未作成等は無視 */ }
+  return { prompt, replacements };
+}
 
 type IngestBody = {
   pdfBase64?: string;
@@ -148,10 +187,16 @@ async function handleIngest(request: Request, env: Env, origin: string | null): 
   if (hint.schedule) hintLines.push(`方式: ${hint.schedule}`);
   const hintText = hintLines.length ? `\n\n参考情報（判明している場合は優先）:\n${hintLines.join("\n")}` : "";
 
+  // ユーザー設定（追加プロンプト・置換ルール）を取得
+  const ingestCfg = await getIngestConfig(env);
+  const system = ingestCfg.prompt
+    ? INGEST_SYSTEM + "\n\n# 追加の変換ルール（ユーザー設定）\n" + ingestCfg.prompt
+    : INGEST_SYSTEM;
+
   const payload = {
     model,
     max_tokens: 16000,
-    system: INGEST_SYSTEM,
+    system,
     messages: [
       {
         role: "user",
@@ -269,6 +314,15 @@ async function handleIngest(request: Request, env: Env, origin: string | null): 
         catch { send({ phase: "error", message: "解析結果のJSONを読み取れませんでした。" }); return close(); }
         if (stopReason === "max_tokens") parsed._truncated = true;
 
+        // 置換ルール（grep replace）を各大問のテキストへ適用
+        if (ingestCfg.replacements.length && parsed && Array.isArray(parsed.questions)) {
+          for (const q of parsed.questions) {
+            q.problemText = applyReplacements(q.problemText || "", ingestCfg.replacements);
+            q.answerText = applyReplacements(q.answerText || "", ingestCfg.replacements);
+            q.commentaryText = applyReplacements(q.commentaryText || "", ingestCfg.replacements);
+          }
+        }
+
         send({ phase: "done", result: parsed });
         close();
       } catch (e: any) {
@@ -335,6 +389,12 @@ export default {
         const sectionTypesRow = await env.DB.prepare(
           "SELECT value FROM config WHERE key = 'section_types'"
         ).first<{ value: string }>();
+        const ingestPromptRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'ingest_prompt'"
+        ).first<{ value: string }>();
+        const ingestReplRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'ingest_replacements'"
+        ).first<{ value: string }>();
         const curYear = new Date().getFullYear();
         const defaultSchedules = ["前期","後期","一般前期","一般後期","推薦","AO","その他"];
         const defaultYears = Array.from({ length: 8 }, (_, i) => String(curYear - i));
@@ -349,6 +409,8 @@ export default {
           site_subtitle: subtitleRow ? JSON.parse(subtitleRow.value) : undefined,
           question_categories: categoryRow ? JSON.parse(categoryRow.value) : defaultCategories,
           section_types: sectionTypesRow ? JSON.parse(sectionTypesRow.value) : defaultSectionTypes,
+          ingest_prompt: ingestPromptRow ? JSON.parse(ingestPromptRow.value) : "",
+          ingest_replacements: ingestReplRow ? JSON.parse(ingestReplRow.value) : [],
         }, 200, origin);
       }
 
@@ -357,7 +419,7 @@ export default {
         await env.DB.exec(
           "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         );
-        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string; site_subtitle?: string; question_categories?: string[]; section_types?: string[] };
+        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string; site_subtitle?: string; question_categories?: string[]; section_types?: string[]; ingest_prompt?: string; ingest_replacements?: Replacement[] };
         const body = await request.json<ConfigBody>();
         const upsert = async (key: string, val: unknown) => {
           await env.DB.prepare(
@@ -372,6 +434,8 @@ export default {
         if (body.site_subtitle !== undefined) await upsert("site_subtitle", body.site_subtitle);
         if (body.question_categories !== undefined) await upsert("question_categories", body.question_categories);
         if (body.section_types !== undefined) await upsert("section_types", body.section_types);
+        if (body.ingest_prompt !== undefined) await upsert("ingest_prompt", body.ingest_prompt);
+        if (body.ingest_replacements !== undefined) await upsert("ingest_replacements", body.ingest_replacements);
         return json({ success: true }, 200, origin);
       }
 
