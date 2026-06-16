@@ -105,44 +105,16 @@ async function handleIngest(request: Request, env: Env, origin: string | null): 
   if (hint.schedule) hintLines.push(`方式: ${hint.schedule}`);
   const hintText = hintLines.length ? `\n\n参考情報（判明している場合は優先）:\n${hintLines.join("\n")}` : "";
 
-  const schema = {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      universityName: { type: "string" },
-      year: { type: "integer" },
-      schedule: { type: "string" },
-      questions: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            questionNumber: { type: "integer" },
-            category: { type: "string" },
-            problemText: { type: "string" },
-            answerText: { type: "string" },
-            commentaryText: { type: "string" },
-          },
-          required: ["questionNumber", "category", "problemText", "answerText", "commentaryText"],
-        },
-      },
-    },
-    required: ["universityName", "year", "schedule", "questions"],
-  };
-
   const payload = {
     model,
-    max_tokens: 32000,
-    thinking: { type: "adaptive" },
-    output_config: { effort: "medium", format: { type: "json_schema", schema } },
+    max_tokens: 16000,
     system: INGEST_SYSTEM,
     messages: [
       {
         role: "user",
         content: [
           { type: "document", source: { type: "base64", media_type: body.mediaType || "application/pdf", data: pdf } },
-          { type: "text", text: `添付の入試問題PDFを解析し、スキーマに従って大問ごと・セクションごとに構造化してください。${hintText}` },
+          { type: "text", text: `添付の入試問題PDFを解析し、大問ごと・セクションごとに構造化してください。${hintText}\n\n以下のJSON形式のみで出力してください。前後に説明文やコードブロックを含めないでください。\n{"universityName":"...","year":2024,"schedule":"...","questions":[{"questionNumber":1,"category":"...","problemText":"...","answerText":"...","commentaryText":"..."}]}` },
         ],
       },
     ],
@@ -245,7 +217,12 @@ async function handleIngest(request: Request, env: Env, origin: string | null): 
 
         send({ phase: "parsing" });
         let parsed: any;
-        try { parsed = JSON.parse(text); }
+        try {
+          let jsonText = text.trim();
+          const m = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+          if (m) jsonText = m[1].trim();
+          parsed = JSON.parse(jsonText);
+        }
         catch { send({ phase: "error", message: "解析結果のJSONを読み取れませんでした。" }); return close(); }
         if (stopReason === "max_tokens") parsed._truncated = true;
 
