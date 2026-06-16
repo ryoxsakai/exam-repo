@@ -10,9 +10,10 @@
     conn:     { id: "conn",     label: "接続設定",         icon: "fa-plug" },
     list:     { id: "list",     label: "入試問題一覧",     icon: "fa-table-list" },
     register: { id: "register", label: "問題登録",         icon: "fa-pen-to-square" },
+    ingest:   { id: "ingest",   label: "PDF取り込み",      icon: "fa-file-import" },
     corpus:   { id: "corpus",   label: "コーパス検索設定", icon: "fa-language" }
   };
-  var SET_ORDER = ["main", "conn", "list", "register", "corpus"];
+  var SET_ORDER = ["main", "conn", "list", "register", "ingest", "corpus"];
   var MAIN_TABS = { search: { label: "通常検索", icon: "fa-table-list" }, corpus: { label: "コーパス検索", icon: "fa-language" }, print: { label: "問題印刷", icon: "fa-print" } };
   var MAIN_ORDER = ["search", "corpus", "print"];
 
@@ -44,10 +45,12 @@
     wireConn();
     wireList();
     wireRegister();
+    wireIngest();
     wireCorpusSettings();
 
     // 接続済みなら設定読み込み
     el("cfg-worker").value = Store.getWorkerUrl();
+    el("cfg-anthropic").value = Store.getAnthropicKey();
     if (Store.getWorkerUrl()) loadServerConfig();
     onTab(active);
   }
@@ -182,6 +185,129 @@
         el("conn-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
         toast("接続に失敗しました", "err");
       });
+    });
+    el("cfg-anthropic-save").addEventListener("click", function () {
+      Store.setAnthropicKey(el("cfg-anthropic").value);
+      el("anthropic-status").innerHTML = '<span style="color:var(--emerald-dark)"><i class="fa-solid fa-circle-check"></i> 保存しました</span>';
+      toast("Anthropic API キーを保存しました", "ok");
+    });
+  }
+
+  /* ================= タブ: PDF取り込み（自動解析） ================= */
+  function wireIngest() {
+    var run = el("ing-run");
+    if (run) run.addEventListener("click", runIngest);
+  }
+
+  function fileToBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () {
+        var s = String(r.result || "");
+        var i = s.indexOf(",");
+        resolve(i >= 0 ? s.slice(i + 1) : s);
+      };
+      r.onerror = function () { reject(new Error("ファイルの読み込みに失敗しました")); };
+      r.readAsDataURL(file);
+    });
+  }
+
+  function runIngest() {
+    var f = el("ing-file").files[0];
+    if (!f) { toast("PDF ファイルを選択してください", "err"); return; }
+    if (f.type && f.type.indexOf("pdf") < 0) { toast("PDF ファイルを選択してください", "err"); return; }
+    if (!Store.getWorkerUrl()) { toast("Worker URL が未設定です（接続設定タブ）", "err"); return; }
+    var key = Store.getAnthropicKey();
+    if (!key) { toast("Anthropic API キーが未設定です（接続設定タブ）", "err"); return; }
+
+    var hint = {
+      year: Number(el("ing-year").value) || undefined,
+      universityName: el("ing-university").value.trim() || undefined,
+      schedule: el("ing-schedule").value.trim() || undefined
+    };
+    el("ing-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> 解析中…（PDFの量により最大数分かかります）';
+    el("ing-run").disabled = true;
+    el("ing-result").innerHTML = "";
+
+    fileToBase64(f).then(function (b64) {
+      return Api.ingestPdf({ pdfBase64: b64, hint: hint }, key);
+    }).then(function (data) {
+      el("ing-status").innerHTML = '<span style="color:var(--emerald-dark)"><i class="fa-solid fa-circle-check"></i> 解析完了</span>';
+      el("ing-run").disabled = false;
+      renderIngestResult(data);
+    }).catch(function (e) {
+      el("ing-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
+      el("ing-run").disabled = false;
+      toast(e.message, "err");
+    });
+  }
+
+  function ingMetaInput(id, label, val, type) {
+    return '<div class="reg-meta-item"><span class="field-label">' + esc(label) + '</span>' +
+      '<input type="' + (type || "text") + '" id="' + id + '" value="' + esc(String(val)) + '"></div>';
+  }
+  function ingSectionTa(label, cls, val) {
+    return '<div style="margin-top:10px"><span class="field-label">' + esc(label) + "</span>" +
+      '<textarea class="' + cls + '" rows="6" style="width:100%">' + esc(val || "") + "</textarea></div>";
+  }
+
+  function renderIngestResult(data) {
+    var qs = (data && Array.isArray(data.questions)) ? data.questions : [];
+    var h = "";
+    if (data && data._truncated) {
+      h += '<div class="card"><p class="hint" style="color:#b91c1c"><i class="fa-solid fa-triangle-exclamation"></i> 出力が長く途中で切れた可能性があります。大問数が多い場合は PDF を分割して取り込んでください。</p></div>';
+    }
+    h += '<div class="card"><div class="card-head"><h3><i class="fa-solid fa-circle-check ic"></i> 解析結果（確認・修正して登録）</h3></div>';
+    h += '<div class="reg-meta">';
+    h += ingMetaInput("ing-r-university", "大学名", (data && data.universityName) || "");
+    h += ingMetaInput("ing-r-year", "年度", (data && data.year) || "", "number");
+    h += ingMetaInput("ing-r-schedule", "方式", (data && data.schedule) || "");
+    h += "</div></div>";
+
+    qs.forEach(function (q, i) {
+      h += '<div class="card" data-qcard="' + i + '">';
+      h += '<div class="card-head"><h3 style="font-size:14px"><i class="fa-solid fa-hashtag ic"></i> 大問 ' +
+        '<input type="number" min="1" class="ing-q-num" style="width:64px" value="' + (Number(q.questionNumber) || (i + 1)) + '"></h3>' +
+        '<span class="spacer"></span>' +
+        '<input type="text" class="ing-q-cat" placeholder="種別（任意）" value="' + esc(q.category || "") + '" style="width:170px"></div>';
+      h += ingSectionTa("問題", "ing-q-problem", q.problemText);
+      h += ingSectionTa("解答", "ing-q-answer", q.answerText);
+      h += ingSectionTa("解説", "ing-q-comment", q.commentaryText);
+      h += "</div>";
+    });
+
+    h += '<div class="toolbar" style="margin-top:8px;justify-content:flex-end">' +
+      '<button class="btn primary" id="ing-register"><i class="fa-solid fa-floppy-disk"></i> この内容で登録（全' + qs.length + "大問）</button></div>";
+    el("ing-result").innerHTML = h;
+    if (el("ing-register")) el("ing-register").addEventListener("click", registerIngest);
+  }
+
+  function registerIngest() {
+    var uni = el("ing-r-university").value.trim();
+    var year = Number(el("ing-r-year").value);
+    var sched = el("ing-r-schedule").value.trim();
+    if (!uni || !year || !sched) { toast("大学名・年度・方式を入力してください", "err"); return; }
+
+    var cards = $all("[data-qcard]", el("ing-result"));
+    var questions = cards.map(function (card) {
+      return {
+        questionNumber: Number($(".ing-q-num", card).value) || 1,
+        category: $(".ing-q-cat", card).value.trim(),
+        problemText: $(".ing-q-problem", card).value,
+        answerText: $(".ing-q-answer", card).value,
+        commentaryText: $(".ing-q-comment", card).value
+      };
+    });
+    if (!questions.length) { toast("登録する大問がありません", "err"); return; }
+
+    el("ing-register").disabled = true;
+    Api.createExam({ universityName: uni, year: year, schedule: sched, questions: questions }).then(function () {
+      toast("登録しました（" + questions.length + " 大問）", "ok");
+      el("ing-register").disabled = false;
+      loadServerConfig();
+    }).catch(function (e) {
+      toast(e.message, "err");
+      el("ing-register").disabled = false;
     });
   }
 
