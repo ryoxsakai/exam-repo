@@ -174,6 +174,8 @@ async function handleIngest(request: Request, env: Env, origin: string | null): 
         send({ phase: "received", bytes: pdf.length });
         send({ phase: "analyzing" });
 
+        // Anthropic 自体もストリーミングで呼ぶ（非ストリーミングだと長い生成で
+        // ゲートウェイが 502/504 を返すため）。テキストデルタを連結して JSON 化。
         let res: Response;
         try {
           res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -183,39 +185,69 @@ async function handleIngest(request: Request, env: Env, origin: string | null): 
               "x-api-key": apiKey,
               "anthropic-version": "2023-06-01",
             },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({ ...payload, stream: true }),
           });
         } catch {
           beating = false;
           send({ phase: "error", message: "Anthropic API への接続に失敗しました。" });
           return close();
         }
-        beating = false;
 
-        let data: any;
-        try { data = await res.json(); }
-        catch { send({ phase: "error", message: `Anthropic API の応答を解析できませんでした（${res.status}）。` }); return close(); }
-
-        if (!res.ok) {
-          send({ phase: "error", message: (data && data.error && data.error.message) || `Anthropic API エラー（${res.status}）` });
+        if (!res.ok || !res.body) {
+          beating = false;
+          let msg = `Anthropic API エラー（${res.status}）`;
+          try { const ed: any = await res.json(); if (ed && ed.error && ed.error.message) msg = ed.error.message; } catch { /* 非JSON */ }
+          send({ phase: "error", message: msg });
           return close();
         }
-        if (data.stop_reason === "refusal") {
+
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let sbuf = "";
+        let text = "";
+        let stopReason: string | null = null;
+        let apiErr: string | null = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          sbuf += dec.decode(value, { stream: true });
+          const events = sbuf.split("\n\n");
+          sbuf = events.pop() || "";
+          for (const evt of events) {
+            const dataLine = evt.split("\n").find((l) => l.indexOf("data:") === 0);
+            if (!dataLine) continue;
+            const ds = dataLine.slice(5).trim();
+            if (!ds) continue;
+            let obj: any;
+            try { obj = JSON.parse(ds); } catch { continue; }
+            if (obj.type === "content_block_delta" && obj.delta && obj.delta.type === "text_delta") {
+              text += obj.delta.text;
+              send({ phase: "analyzing", chars: text.length });
+            } else if (obj.type === "message_delta" && obj.delta && obj.delta.stop_reason) {
+              stopReason = obj.delta.stop_reason;
+            } else if (obj.type === "error") {
+              apiErr = (obj.error && obj.error.message) || "Anthropic API エラー";
+            }
+          }
+        }
+        beating = false;
+
+        if (apiErr) { send({ phase: "error", message: apiErr }); return close(); }
+        if (stopReason === "refusal") {
           send({ phase: "error", message: "解析が安全性の理由で拒否されました。別のPDFでお試しください。" });
           return close();
         }
-
-        const textBlock = Array.isArray(data.content) ? data.content.find((b: any) => b.type === "text") : null;
-        if (!textBlock || !textBlock.text) {
+        if (!text) {
           send({ phase: "error", message: "解析結果を取得できませんでした（出力が空でした）。" });
           return close();
         }
 
         send({ phase: "parsing" });
         let parsed: any;
-        try { parsed = JSON.parse(textBlock.text); }
+        try { parsed = JSON.parse(text); }
         catch { send({ phase: "error", message: "解析結果のJSONを読み取れませんでした。" }); return close(); }
-        if (data.stop_reason === "max_tokens") parsed._truncated = true;
+        if (stopReason === "max_tokens") parsed._truncated = true;
 
         send({ phase: "done", result: parsed });
         close();

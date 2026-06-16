@@ -242,12 +242,13 @@
 
     var t0 = Date.now();
     var phase = "reading";
+    var detail = "";
     var finished = false;
     var timer = setInterval(renderStatus, 1000);
     function renderStatus() {
       var label = ING_PHASE_LABEL[phase] || "処理中…";
       el("ing-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> ' +
-        esc(label) + ' <span class="hint">（経過 ' + ingFmt(Date.now() - t0) + "）</span>";
+        esc(label) + (detail ? " " + esc(detail) : "") + ' <span class="hint">（経過 ' + ingFmt(Date.now() - t0) + "）</span>";
     }
     function setPhase(p) { phase = p; renderStatus(); }
     function finishOk(data) {
@@ -272,9 +273,9 @@
         if (!ev || !ev.phase) return;
         if (ev.phase === "done") { finishOk(ev.result); return; }
         if (ev.phase === "error") { finishErr(new Error(ev.message)); return; }
-        if (ev.phase === "received") setPhase("received");
-        else if (ev.phase === "analyzing") setPhase("analyzing");
-        else if (ev.phase === "parsing") setPhase("parsing");
+        if (ev.phase === "received") { detail = ""; setPhase("received"); }
+        else if (ev.phase === "analyzing") { detail = ev.chars ? "（受信 " + ev.chars + " 文字）" : ""; setPhase("analyzing"); }
+        else if (ev.phase === "parsing") { detail = ""; setPhase("parsing"); }
       });
     }).then(function () {
       // ストリームが done/error イベント無しで終了した場合
