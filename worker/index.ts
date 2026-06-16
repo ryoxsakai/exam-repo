@@ -6,7 +6,7 @@ function cors(origin?: string | null) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-anthropic-key",
     "Access-Control-Max-Age": "86400",
   };
 }
@@ -47,6 +47,143 @@ async function fixZeroQuestionNumbers(env: Env) {
     await env.DB.prepare("UPDATE questions SET question_number = ? WHERE id = ?")
       .bind(examMax[row.exam_id], row.id).run();
   }
+}
+
+// ───────────────────────────────────────────────────────────────────
+// PDF 自動取り込み（Anthropic API でスキャンPDF→構造化問題データ）
+// APIキーはリクエストヘッダ x-anthropic-key で受け取り、サーバ側には保存しない。
+// ───────────────────────────────────────────────────────────────────
+const INGEST_SYSTEM = `あなたは日本の大学入試（英語）の冊子PDFを読み取り、構造化された問題データに変換するアシスタントです。
+
+# 入力
+1つのPDFには、ある年度・大学・方式の全大問が含まれます。冊子は多くの場合「問題（大問1〜N）→ 解答 → 解説」のようにセクション単位で並んでいます。
+
+# タスク
+PDFを読み取り、大問ごとにまとめ直してください。各大問について、問題本文(problemText)・解答(answerText)・解説(commentaryText)の3つに振り分けます。解答ページや解説ページの「(1)…」等は、対応する大問の問題と必ず紐づけてください。該当が無いセクションは空文字にします。
+
+# 出力テキストの記法（problemText / answerText / commentaryText で使用）
+- 空所は [[1]] [[A]]
+- 選択肢は行頭に ((A)) 本文
+- 黄ハイライト ==語==、下線 __語__、下付き ~~x~~、上付き ^^x^^
+- 語注 ##語::訳##
+- 区切り線 ----、段落間は空行
+
+# 注意
+- 図・写真・数式は文章で簡潔に補足する（例: [図] や [グラフ]）。
+- OCRが不確実な箇所は推測しすぎず原文に忠実に。英文はそのまま、和文設問もそのまま書き起こす。
+- universityName / year / schedule は表紙や本文から判断する（不明なら universityName は空文字、year は 0）。schedule は「前期」「後期」「全学部」等の入試方式。
+- questionNumber は 1 始まりの整数。category は「長文読解」「文法」「英作文」等が分かれば記入、不明なら空文字。`;
+
+type IngestBody = {
+  pdfBase64?: string;
+  mediaType?: string;
+  model?: string;
+  hint?: { year?: number; universityName?: string; schedule?: string };
+};
+
+async function handleIngest(request: Request, env: Env, origin: string | null): Promise<Response> {
+  const apiKey = request.headers.get("x-anthropic-key") || "";
+  if (!apiKey) {
+    return json({ message: "Anthropic API キーが未設定です。設定ページ →「接続設定」で登録してください。" }, 400, origin);
+  }
+
+  let body: IngestBody;
+  try {
+    body = await request.json<IngestBody>();
+  } catch {
+    return json({ message: "リクエストの解析に失敗しました。" }, 400, origin);
+  }
+
+  const pdf = body.pdfBase64 || "";
+  if (!pdf) return json({ message: "PDF データがありません。" }, 400, origin);
+
+  const model = body.model || "claude-opus-4-8";
+  const hint = body.hint || {};
+  const hintLines: string[] = [];
+  if (hint.year) hintLines.push(`年度: ${hint.year}`);
+  if (hint.universityName) hintLines.push(`大学名: ${hint.universityName}`);
+  if (hint.schedule) hintLines.push(`方式: ${hint.schedule}`);
+  const hintText = hintLines.length ? `\n\n参考情報（判明している場合は優先）:\n${hintLines.join("\n")}` : "";
+
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      universityName: { type: "string" },
+      year: { type: "integer" },
+      schedule: { type: "string" },
+      questions: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            questionNumber: { type: "integer" },
+            category: { type: "string" },
+            problemText: { type: "string" },
+            answerText: { type: "string" },
+            commentaryText: { type: "string" },
+          },
+          required: ["questionNumber", "category", "problemText", "answerText", "commentaryText"],
+        },
+      },
+    },
+    required: ["universityName", "year", "schedule", "questions"],
+  };
+
+  const payload = {
+    model,
+    max_tokens: 32000,
+    thinking: { type: "adaptive" },
+    output_config: { effort: "medium", format: { type: "json_schema", schema } },
+    system: INGEST_SYSTEM,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "document", source: { type: "base64", media_type: body.mediaType || "application/pdf", data: pdf } },
+          { type: "text", text: `添付の入試問題PDFを解析し、スキーマに従って大問ごと・セクションごとに構造化してください。${hintText}` },
+        ],
+      },
+    ],
+  };
+
+  let res: Response;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    return json({ message: "Anthropic API への接続に失敗しました。" }, 502, origin);
+  }
+
+  const data: any = await res.json();
+  if (!res.ok) {
+    const msg = (data && data.error && data.error.message) || `Anthropic API エラー (${res.status})`;
+    return json({ message: msg }, res.status, origin);
+  }
+  if (data.stop_reason === "refusal") {
+    return json({ message: "解析が安全性の理由で拒否されました。別のPDFでお試しください。" }, 422, origin);
+  }
+
+  const textBlock = Array.isArray(data.content) ? data.content.find((b: any) => b.type === "text") : null;
+  if (!textBlock || !textBlock.text) {
+    return json({ message: "解析結果を取得できませんでした（出力が空でした）。" }, 502, origin);
+  }
+  let parsed: any;
+  try {
+    parsed = JSON.parse(textBlock.text);
+  } catch {
+    return json({ message: "解析結果のJSONを読み取れませんでした。" }, 502, origin);
+  }
+  if (data.stop_reason === "max_tokens") parsed._truncated = true;
+  return json(parsed, 200, origin);
 }
 
 export default {
@@ -219,6 +356,11 @@ export default {
         }
 
         return json({ exam: { ...exam, university_name: universityName }, questions: createdQuestions }, 201, origin);
+      }
+
+      // ── POST /api/ingest（PDF自動取り込み） ────────────────────────
+      if (path === "/api/ingest" && request.method === "POST") {
+        return handleIngest(request, env, origin);
       }
 
       // ── DELETE /api/questions/:examId/:questionNumber ──────────────

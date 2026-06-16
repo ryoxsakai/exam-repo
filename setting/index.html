@@ -105,6 +105,20 @@
         </div>
         <p class="hint" style="margin-top:8px">Cloudflare Worker の公開URLを入力してください。末尾スラッシュは不要です。</p>
       </div>
+
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-key ic"></i> Anthropic API キー（PDF取り込み用）</h3></div>
+        <label class="field">
+          <span class="field-label">API キー</span>
+          <input type="password" id="cfg-anthropic" placeholder="sk-ant-..." autocomplete="off" />
+        </label>
+        <div class="toolbar" style="margin-top:14px">
+          <button class="btn primary" id="cfg-anthropic-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+          <span class="spacer"></span>
+          <span class="hint" id="anthropic-status"></span>
+        </div>
+        <p class="hint" style="margin-top:8px">「PDF取り込み」タブの自動解析で使用します。キーはこの端末のブラウザ（localStorage）にのみ保存され、解析時に Worker 経由で Anthropic へ送信されます。共有端末では使用後に空欄で保存してください。</p>
+      </div>
     </section>
 
     <!-- ===== タブ3: 入試問題一覧 ===== -->
@@ -176,6 +190,38 @@
       </div>
 
       <button class="fab" id="reg-add-section" title="セクションを追加"><i class="fa-solid fa-plus"></i></button>
+    </section>
+
+    <!-- ===== タブ: PDF取り込み（自動解析） ===== -->
+    <section data-panel="ingest" class="panel">
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-file-import ic"></i> PDF取り込み（自動解析）</h3></div>
+        <p class="hint">問題・解答・解説が載った PDF をアップロードすると、AI が大問ごと・セクションごとに自動で振り分けます。解析後に内容を確認・修正してから登録してください。<br>※ Anthropic API キー（接続設定タブ）と Worker URL が必要です。</p>
+        <div class="reg-meta" style="margin-top:12px">
+          <div class="reg-meta-item">
+            <span class="field-label">年度（任意・自動抽出の補助）</span>
+            <input type="number" id="ing-year" placeholder="PDFから自動抽出" />
+          </div>
+          <div class="reg-meta-item">
+            <span class="field-label">大学名（任意）</span>
+            <input type="text" id="ing-university" placeholder="PDFから自動抽出" />
+          </div>
+          <div class="reg-meta-item">
+            <span class="field-label">方式（任意）</span>
+            <input type="text" id="ing-schedule" placeholder="PDFから自動抽出" />
+          </div>
+        </div>
+        <label class="field" style="margin-top:12px">
+          <span class="field-label">PDF ファイル</span>
+          <input type="file" id="ing-file" accept="application/pdf" />
+        </label>
+        <div class="toolbar" style="margin-top:14px">
+          <button class="btn primary" id="ing-run"><i class="fa-solid fa-wand-magic-sparkles"></i> 解析する</button>
+          <span class="spacer"></span>
+          <span class="hint" id="ing-status"></span>
+        </div>
+      </div>
+      <div id="ing-result"></div>
     </section>
 
     <!-- ===== タブ5: コーパス検索設定 ===== -->
@@ -336,10 +382,10 @@
 
   <script src="../assets/data/oxford5000.js?v=20260612a"></script>
   <script src="../assets/data/target1900.js?v=20260613h"></script>
-  <script src="../assets/js/store.js?v=20260613h"></script>
-  <script src="../assets/js/api.js?v=20260612ao"></script>
+  <script src="../assets/js/store.js?v=20260616a"></script>
+  <script src="../assets/js/api.js?v=20260616a"></script>
   <script src="../assets/js/ui.js?v=20260612z"></script>
   <script src="../assets/js/markup.js?v=20260612ai"></script>
-  <script src="../assets/js/settings.js?v=20260613h"></script>
+  <script src="../assets/js/settings.js?v=20260616a"></script>
 </body>
 </html>

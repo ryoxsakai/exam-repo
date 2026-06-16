@@ -6,6 +6,7 @@
 
   var KEYS = {
     workerUrl:     "cf_worker_url",          // Worker API のベースURL
+    anthropicKey:  "anthropic_api_key",      // PDF取り込み用 Anthropic APIキー（この端末のみ）
     siteTitle:     "exam_site_title",        // サイトタイトル
     siteSubtitle:  "exam_site_subtitle",     // サブタイトル
     customDomain:  "exam_custom_domain",     // 独自ドメイン（リンク生成用）
@@ -66,6 +67,10 @@
       return u;
     },
     setWorkerUrl: function (url) { localStorage.setItem(KEYS.workerUrl, (url || "").trim()); },
+
+    /* Anthropic API キー（PDF取り込み用。この端末の localStorage のみに保存） */
+    getAnthropicKey: function () { return (readRaw(KEYS.anthropicKey, "") || "").trim(); },
+    setAnthropicKey: function (k) { localStorage.setItem(KEYS.anthropicKey, (k || "").trim()); },
 
     /* サイトタイトル */
     getSiteTitle: function (fallback) { return readRaw(KEYS.siteTitle, fallback || "入試問題データベース"); },
