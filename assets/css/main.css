@@ -236,12 +236,34 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
 @media (max-width: 640px) {
   table.data thead th,
   table.data tbody td { padding: 8px 8px; font-size: 12.5px; }
-  /* メイン検索結果: 1列目(年度)・2列目(大学名)・最終列(表示)のみ残す */
-  table.data:not(.freq-table) { min-width: 0; }
-  table.data:not(.freq-table) thead th:not(:first-child):not(:nth-child(2)):not(:last-child),
-  table.data:not(.freq-table) tbody td:not(:first-child):not(:nth-child(2)):not(:last-child) { display: none; }
   /* 分布バーは幅が不要なのでコンパクトに */
   .bar-track { min-width: 30px; }
+
+  /* メイン検索結果: 横スクロールせず各行をカード状に積み上げ、全項目を表示
+     （data-label を持つ #results-area のテーブルのみ対象） */
+  #results-area .table-wrap { overflow-x: visible; border: 0; background: transparent; border-radius: 0; }
+  #results-area table.data { min-width: 0; display: block; font-size: 13px; }
+  #results-area table.data thead { display: none; }
+  #results-area table.data tbody,
+  #results-area table.data tbody tr,
+  #results-area table.data tbody td { display: block; width: 100%; }
+  #results-area table.data tbody tr {
+    border: 1px solid var(--line); border-radius: var(--radius); background: #fff;
+    box-shadow: var(--shadow); margin-bottom: 10px; padding: 2px 2px;
+  }
+  #results-area table.data tbody tr:hover { background: #fff; }
+  #results-area table.data tbody td {
+    border: 0; border-bottom: 1px solid var(--line-soft);
+    padding: 9px 14px; display: flex; align-items: center; gap: 12px;
+    justify-content: space-between; text-align: right;
+  }
+  #results-area table.data tbody tr td:last-child { border-bottom: 0; }
+  #results-area table.data tbody td::before {
+    content: attr(data-label); flex: 0 0 auto; text-align: left;
+    font-family: var(--sans); font-size: 12px; font-weight: 700; color: var(--muted);
+  }
+  #results-area table.data tbody td.row-actions { justify-content: flex-end; }
+  #results-area table.data tbody td.row-actions::before { display: none; }
 }
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 
