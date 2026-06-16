@@ -93,6 +93,22 @@
         return pump();
       });
     },
+    // Anthropic API キーの疎通確認。成功で {ok:true, model}、失敗時は reject。
+    testAnthropic:    function (apiKey) {
+      var b;
+      try { b = base(); } catch (e) { return Promise.reject(e); }
+      return fetch(b + "/api/anthropic-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-anthropic-key": apiKey || "" }
+      }).catch(function () {
+        throw new Error("通信に失敗しました（Worker URL や CORS 設定を確認してください）。");
+      }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          if (!res.ok) throw new Error(data.message || data.error || ("APIエラー " + res.status));
+          return data;
+        });
+      });
+    },
     getWordLists:     function (type) { return call("/api/wordlists" + qs({ type: type })); },
     createWordList:   function (d) { return call("/api/wordlists", { method: "POST", body: JSON.stringify(d) }); },
     updateWordList:   function (id, d) { return call("/api/wordlists/" + id, { method: "PUT", body: JSON.stringify(d) }); },

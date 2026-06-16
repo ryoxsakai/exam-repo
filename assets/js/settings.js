@@ -191,6 +191,18 @@
       el("anthropic-status").innerHTML = '<span style="color:var(--emerald-dark)"><i class="fa-solid fa-circle-check"></i> 保存しました</span>';
       toast("Anthropic API キーを保存しました", "ok");
     });
+    el("cfg-anthropic-test").addEventListener("click", function () {
+      var key = el("cfg-anthropic").value;
+      Store.setAnthropicKey(key);
+      el("anthropic-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> 確認中…';
+      Api.testAnthropic(key).then(function () {
+        el("anthropic-status").innerHTML = '<span style="color:var(--emerald-dark)"><i class="fa-solid fa-circle-check"></i> キーは有効です</span>';
+        toast("Anthropic API キーは有効です", "ok");
+      }).catch(function (e) {
+        el("anthropic-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
+        toast("接続テストに失敗しました", "err");
+      });
+    });
   }
 
   /* ================= タブ: PDF取り込み（自動解析） ================= */

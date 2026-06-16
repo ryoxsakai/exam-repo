@@ -81,6 +81,49 @@ type IngestBody = {
   hint?: { year?: number; universityName?: string; schedule?: string };
 };
 
+// Anthropic API キーの疎通確認。最小リクエスト（haiku / max_tokens:1）を投げ、
+// 認証が通るかだけを確認する。キーはヘッダで受け取り保存しない。
+async function handleAnthropicTest(request: Request, origin: string | null): Promise<Response> {
+  const apiKey = request.headers.get("x-anthropic-key") || "";
+  if (!apiKey) {
+    return json({ message: "Anthropic API キーが未設定です。先にキーを入力・保存してください。" }, 400, origin);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5",
+        max_tokens: 1,
+        messages: [{ role: "user", content: "ping" }],
+      }),
+    });
+  } catch {
+    return json({ message: "Anthropic API への接続に失敗しました。" }, 502, origin);
+  }
+
+  if (res.ok) {
+    return json({ ok: true, model: "claude-haiku-4-5" }, 200, origin);
+  }
+
+  // 認証エラー等は Anthropic のメッセージを拾って返す
+  let msg = `Anthropic API エラー（${res.status}）`;
+  try {
+    const ed: any = await res.json();
+    if (ed && ed.error && ed.error.message) msg = ed.error.message;
+  } catch { /* 非JSON */ }
+  if (res.status === 401) msg = "API キーが無効です（認証エラー 401）。キーを確認してください。";
+  else if (res.status === 403) msg = "このキーには利用権限がありません（403）。";
+  const status = res.status === 401 || res.status === 403 ? 400 : 502;
+  return json({ ok: false, message: msg }, status, origin);
+}
+
 async function handleIngest(request: Request, env: Env, origin: string | null): Promise<Response> {
   const apiKey = request.headers.get("x-anthropic-key") || "";
   if (!apiKey) {
@@ -417,6 +460,11 @@ export default {
       // ── POST /api/ingest（PDF自動取り込み） ────────────────────────
       if (path === "/api/ingest" && request.method === "POST") {
         return handleIngest(request, env, origin);
+      }
+
+      // ── POST /api/anthropic-test（APIキー疎通確認） ────────────────
+      if (path === "/api/anthropic-test" && request.method === "POST") {
+        return handleAnthropicTest(request, origin);
       }
 
       // ── DELETE /api/questions/:examId/:questionNumber ──────────────
