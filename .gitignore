@@ -1,0 +1,13 @@
+# Node / build artifacts (not used by the static site)
+node_modules/
+.next/
+out/
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# Wrangler / Cloudflare
+.wrangler/
+.dev.vars
+
+# OS / editor
+.DS_Store

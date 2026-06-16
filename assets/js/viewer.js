@@ -283,8 +283,8 @@
       { key: "year", label: "年度" },
       { key: "university_name", label: "大学名" },
       { key: "schedule", label: "方式" },
-      { key: "question_number", label: "大問" },
-      { key: "category", label: "種別" }
+      { key: "question_number", label: "大問番号" },
+      { key: "category", label: "問題種別" }
     ];
     if (showOcc) cols.push({ key: "occurrences", label: "出現回数" });
 
@@ -298,13 +298,13 @@
     html += '<th style="text-align:right">表示</th></tr></thead><tbody>';
     rows.forEach(function (r) {
       html += "<tr>" +
-        '<td><span class="pill em">' + esc(r.year) + "</span></td>" +
-        "<td><strong>" + esc(r.university_name) + "</strong></td>" +
-        "<td>" + esc(r.schedule) + "</td>" +
-        "<td>大問" + esc(r.question_number) + "</td>" +
-        "<td>" + esc(r.category) + "</td>" +
-        (showOcc ? '<td><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
-        '<td class="row-actions"><button class="icon-btn" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
+        '<td data-label="年度"><span class="pill em">' + esc(r.year) + "</span></td>" +
+        '<td data-label="大学名"><strong>' + esc(r.university_name) + "</strong></td>" +
+        '<td data-label="方式">' + esc(r.schedule) + "</td>" +
+        '<td data-label="大問番号">大問' + esc(r.question_number) + "</td>" +
+        '<td data-label="問題種別">' + (r.category ? esc(r.category) : '<span class="hint">—</span>') + "</td>" +
+        (showOcc ? '<td data-label="出現回数"><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
+        '<td class="row-actions"><button class="icon-btn sm" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
         "</tr>";
     });
     html += "</tbody></table></div>";
