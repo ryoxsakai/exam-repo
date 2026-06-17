@@ -42,6 +42,8 @@
     covOffList: null,
     covListName: "",
     printExam: null,     // 印刷タブで構築した {year,university_name,schedule,questions[]}
+    printSel: { uni: "", year: "", sched: "" },  // 印刷タブで選んだ大学/年度/方式
+    printTreeLoaded: false,
     treeLoaded: false,   // ツリー検索を読み込み済みか
     charts: {}
   };
@@ -63,11 +65,11 @@
     if (DEFAULT_ORDER.indexOf(active) < 0) active = order[0];
     UI.buildTabs({
       tabsEl: el("main-tabs"), order: order, defs: TAB_DEFS, active: active, page: "main",
-      onChange: function (id) { Store.setLastTab("main", id); if (id === "corpus") refreshCorpusLists(); if (id === "print") loadPrintPreview(); if (id === "tree") loadTree(); }
+      onChange: function (id) { Store.setLastTab("main", id); if (id === "corpus") refreshCorpusLists(); if (id === "print") openPrintTab(); if (id === "tree") loadTree(); }
     });
     UI.setActiveTab(el("main-tabs"), active);
     if (active === "corpus") refreshCorpusLists(); else ensureCorpusControls();
-    if (active === "print") loadPrintPreview();
+    if (active === "print") openPrintTab();
     if (active === "tree") loadTree();
 
     // モーダル配線
@@ -110,9 +112,6 @@
     if (treeRefresh) treeRefresh.addEventListener("click", function () { loadTree(true); });
 
     // 問題印刷タブ
-    ["pr-year", "pr-university", "pr-schedule"].forEach(function (id) {
-      el(id).addEventListener("change", loadPrintPreview);
-    });
     el("pr-cover").addEventListener("change", renderPrintPreview);
     el("pr-fontsize").value = Store.getPrintFontSize();
     el("pr-fontsize").addEventListener("change", function () {
@@ -178,9 +177,6 @@
       fillSelect(el("sm-schedule"), cfg.schedules || [], "指定なし");
       fillSelect(el("sm-university"), unis.map(function (u) { return u.name; }), "指定なし");
       fillSelect(el("sm-category"), cfg.question_categories || [], "指定なし");
-      fillSelect(el("pr-year"), cfg.year_presets || [], "選択してください");
-      fillSelect(el("pr-schedule"), cfg.schedules || [], "選択してください");
-      fillSelect(el("pr-university"), unis.map(function (u) { return u.name; }), "選択してください");
     });
   }
 
@@ -718,13 +714,81 @@
     });
   }
 
+  // 印刷タブを開いたとき：ツリー（大学→年度→方式）とプレビューを用意
+  function openPrintTab() {
+    loadPrintTree();
+    loadPrintPreview();
+  }
+
+  // 印刷タブのツリー（大学→年度→方式まで。方式クリックで全大問プレビュー）
+  function loadPrintTree(force) {
+    var box = el("pr-tree");
+    if (!box) return;
+    if (!Store.getWorkerUrl()) { box.innerHTML = ""; return; }
+    if (state.printTreeLoaded && !force) return;
+    box.innerHTML = '<div class="tree-msg"><span class="spinner"></span> 読み込み中…</div>';
+    Api.getExams({}).then(function (data) {
+      var exams = data.exams || [];
+      if (!exams.length) { box.innerHTML = '<div class="tree-msg">登録された入試問題がありません。</div>'; return; }
+      var unis = {};
+      exams.forEach(function (e) {
+        var u = e.university_name || "（大学名なし）", y = String(e.year), s = e.schedule || "（方式なし）";
+        if (!unis[u]) unis[u] = {};
+        if (!unis[u][y]) unis[u][y] = {};
+        unis[u][y][s] = true;
+      });
+      var html = '<div class="tree">';
+      Object.keys(unis).sort(function (a, b) { return a.localeCompare(b, "ja"); }).forEach(function (u) {
+        html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
+        Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
+          html += '<div class="tree-node">' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
+          Object.keys(unis[u][y]).sort(function (a, b) { return (schedOrder(a) - schedOrder(b)) || a.localeCompare(b, "ja"); }).forEach(function (s) {
+            var picked = (state.printSel.uni === u && state.printSel.year === y && state.printSel.sched === s);
+            html += '<button type="button" class="tree-row tree-row-sched tree-row-pick' + (picked ? " selected" : "") + '"' +
+              ' data-uni="' + esc(u) + '" data-year="' + esc(y) + '" data-sched="' + esc(s) + '">' +
+              '<i class="fa-solid fa-layer-group tree-ic"></i><span class="tree-label">' + esc(s) + "</span></button>";
+          });
+          html += "</div></div>";
+        });
+        html += "</div></div>";
+      });
+      html += "</div>";
+      box.innerHTML = html;
+      state.printTreeLoaded = true;
+      wirePrintTree();
+    }).catch(function (e) {
+      box.innerHTML = '<div class="tree-msg">' + esc(e.message) + "</div>";
+    });
+  }
+
+  function wirePrintTree() {
+    var box = el("pr-tree");
+    $all(".tree-row", box).forEach(function (row) {
+      row.addEventListener("click", function () {
+        if (row.classList.contains("tree-row-pick")) {
+          $all(".tree-row-pick", box).forEach(function (x) { x.classList.remove("selected"); });
+          row.classList.add("selected");
+          state.printSel = { uni: row.getAttribute("data-uni"), year: row.getAttribute("data-year"), sched: row.getAttribute("data-sched") };
+          loadPrintPreview();
+          return;
+        }
+        var children = row.nextElementSibling;
+        if (!children || !children.classList.contains("tree-children")) return;
+        var willOpen = children.hidden;
+        children.hidden = !willOpen;
+        row.classList.toggle("open", willOpen);
+      });
+    });
+  }
+
   function loadPrintPreview() {
     if (!Store.getWorkerUrl()) { el("print-preview").innerHTML = noWorkerHtml(); return; }
-    var year = el("pr-year").value, uni = el("pr-university").value, sched = el("pr-schedule").value;
+    var sel = state.printSel || {};
+    var year = sel.year, uni = sel.uni, sched = sel.sched;
     if (!year || !uni || !sched) {
       state.printExam = null;
       renderPrintSectionControls();
-      el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-print ic"></i>年度・大学・方式をすべて選択してください。</div></div>';
+      el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-print ic"></i>上のツリーから 大学 → 年度 → 方式 を選んでください。</div></div>';
       return;
     }
     el("print-preview").innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';

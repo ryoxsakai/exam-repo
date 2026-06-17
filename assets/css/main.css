@@ -295,6 +295,10 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
 .tree-cat { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 4px; }
 .tree-children { margin-left: 16px; border-left: 1px solid var(--line); padding-left: 6px; }
 .tree-msg { padding: 8px 12px; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+/* 印刷タブのツリー（大学→年度→方式を選択） */
+.pr-tree-box { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 4px; max-height: 320px; overflow: auto; }
+.tree-row-pick.selected { background: var(--frost); font-weight: 700; }
+.tree-row-pick.selected .tree-ic { color: var(--blue-dark); }
 
 .pill {
   display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
