@@ -518,7 +518,7 @@
         var p = b.getAttribute("data-imk").split(":");
         var ta = $('[data-isectext="' + p[0] + ":" + p[1] + '"]', root);
         if (!ta) return;
-        insertMarkup(ta, MK_DEFS[+p[2]].b, MK_DEFS[+p[2]].a);
+        insertMarkup(ta, MK_DEFS[+p[2]].b, MK_DEFS[+p[2]].a, MK_DEFS[+p[2]].ls);
         state.ing.questions[+p[0]].sections[+p[1]].text = ta.value;
       });
     });
@@ -1111,10 +1111,9 @@
       el("exam-modal-body").innerHTML = body || '<div class="empty">大問が登録されていません。</div>';
     }).catch(function (e) { el("exam-modal-body").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
   }
-  function isBodySection(label) { return label === "本文" || /全訳|和訳/.test(label); }
   function field(label, icon, text) {
     return '<div style="margin-bottom:14px"><div class="exam-section-title">' + esc(label) +
-      '</div><div class="exam-doc' + (label === "本文" ? "" : " no-indent") + '">' + Markup.render(text, { autoParaNum: isBodySection(label) }).html + "</div></div>";
+      '</div><div class="exam-doc' + (label === "本文" ? "" : " no-indent") + '">' + Markup.render(text).html + "</div></div>";
   }
 
   /* ================= タブ4: 問題登録 ================= */
@@ -1245,7 +1244,7 @@
     { l: "下線", t: "下線 __語__",              b: "__", a: "__" },
     { l: "太字", t: "太字 **語**",              b: "**", a: "**" },
     { l: "語注", t: "語注 ##語::訳##",          b: "##", a: "::訳##" },
-    { l: "段落", t: "段落番号 ##1##",           b: "##", a: "##" },
+    { l: "段落", t: "段落番号マーカー ++（行頭に付けた段落だけ連番）", b: "++ ", a: "", ls: true },
     { l: "斜",   t: "斜字 ||||語||||",          b: "||||", a: "||||" },
     { l: "出典", t: "出典 !!!!出典!!!!（右寄せ・グレー）", b: "!!!!", a: "!!!!" },
     { l: "下付", t: "下付き ~~x~~",             b: "~~", a: "~~" },
@@ -1282,7 +1281,7 @@
         var parts = b.getAttribute("data-mk").split(":");
         var i = Number(parts[0]), k = Number(parts[1]);
         var ta = $('[data-sectext="' + i + '"]', c);
-        insertMarkup(ta, MK_DEFS[k].b, MK_DEFS[k].a);
+        insertMarkup(ta, MK_DEFS[k].b, MK_DEFS[k].a, MK_DEFS[k].ls);
         state.reg.sections[i].text = ta.value;
         saveDraft();
       });
@@ -1303,7 +1302,7 @@
     { code: "{{問1}} 次の文を読みなさい。", desc: "大問見出し（行頭）" },
     { code: "Fill in [[1]] and [[A]].", desc: "空所バッジ" },
     { code: "The ##immune::免疫## system.", desc: "語注（末尾に訳一覧）" },
-    { code: "##1## In the first paragraph...", desc: "段落番号バッジ（##N##。語注とは別）" },
+    { code: "++ In the first paragraph...\n++ The second paragraph follows.", desc: "段落番号マーカー（行頭 ++ を付けた段落だけ 1 から連番）" },
     { code: "He felt ||||déjà vu||||.", desc: "斜字（イタリック）" },
     { code: "!!!!出典: The Economist (2023)!!!!", desc: "出典（右寄せ・グレー・小）" },
     { code: "This is ==important==.", desc: "ハイライト（黄）" },
@@ -1335,9 +1334,17 @@
   }
   // テキストエリアにマークアップ挿入。選択範囲を before/after で囲む。
   // 選択なしの場合は before|after の中央にカーソルを置く（例: 空所 [[ | ]]）。
-  function insertMarkup(ta, before, after) {
+  // lineStart=true のときは選択を無視し、カーソル行の行頭に before を挿入（例: ++ 段落マーカー）。
+  function insertMarkup(ta, before, after, lineStart) {
     ta.focus();
     var s = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
+    if (lineStart) {
+      var ls = v.lastIndexOf("\n", s - 1) + 1;  // カーソル行の行頭位置
+      ta.value = v.slice(0, ls) + before + v.slice(ls);
+      ta.selectionStart = ta.selectionEnd = ls + before.length;
+      ta.focus();
+      return;
+    }
     var sel = v.slice(s, e);
     ta.value = v.slice(0, s) + before + sel + after + v.slice(e);
     var caret = sel ? s + before.length + sel.length + after.length : s + before.length;

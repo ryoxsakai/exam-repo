@@ -13,7 +13,7 @@
      !!!!出典!!!!    … 出典表記（右寄せ・グレー・小）
      ||||斜字||||    … 斜字（イタリック）
      ----           … 区切り線
-   段落番号は render(text, { autoParaNum: true }) で自動付番（本文・全訳セクション用）。
+     ++（行頭）      … その段落に段落番号バッジを付ける（番号は 1 から連番）
    ===================================================================== */
 (function (global) {
   "use strict";
@@ -139,9 +139,8 @@
   }
 
   // テキスト全体 → { html, footnotes }
-  // opts.autoParaNum = true のとき、各段落先頭に段落番号バッジを自動付番する（本文・全訳用）
-  function render(text, opts) {
-    var autoParaNum = opts && opts.autoParaNum;
+  // 行頭に ++ が付いた行だけ段落番号バッジを自動付番する（番号は 1 から連番）。
+  function render(text) {
     var footnotes = [];
     var lines = String(text == null ? "" : text).split("\n");
     var html = "";
@@ -177,6 +176,13 @@
         continue;
       }
 
+      // ++ 行頭マーカー → この段落に番号バッジを付ける
+      var paraMark = false;
+      if (/^\s*\+\+/.test(line)) {
+        paraMark = true;
+        line = line.replace(/^\s*\+\+\s?/, "");
+        trimmed = line.trim();
+      }
       // @@ 行頭タグ → 強制字下げなし（indent 抑制）
       var noIndent = false;
       if (/^\s*@@/.test(line)) {
@@ -184,10 +190,10 @@
         line = line.replace(/^\s*@@\s?/, "");
         trimmed = line.trim();
       }
-      // 段落先頭かつ英語大文字で始まる行のみ字下げ
-      var indent = !noIndent && paraStart && /^[A-Z]/.test(trimmed);
+      // 段落先頭かつ英語大文字で始まる行のみ字下げ（番号バッジ付き行は字下げ不要）
+      var indent = !noIndent && !paraMark && paraStart && /^[A-Z]/.test(trimmed);
       var prefix = "";
-      if (autoParaNum && paraStart) {
+      if (paraMark) {
         paraNum++;
         prefix = '<span class="para-badge">' + paraNum + "</span>";
       }
@@ -221,6 +227,7 @@
     t = t.replace(/~~([^~]+)~~/g, "$1");            // 下付き
     t = t.replace(/\^\^([^^]+)\^\^/g, "$1");        // 上付き
     t = t.replace(/\(\(([^)]+)\)\)/g, " ");         // 選択肢ラベル
+    t = t.replace(/^\s*\+\+\s?/gm, "");             // ++ 段落番号マーカー
     t = t.replace(/^@@\s?/gm, "");                  // @@ 字下げ抑制タグ
     t = t.replace(/----/g, " ");
     return t;
