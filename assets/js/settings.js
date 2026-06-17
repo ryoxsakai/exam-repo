@@ -945,6 +945,22 @@
     el("exam-show-all").addEventListener("click", function () {
       if (state.list.nav.examId != null) openExam(state.list.nav.examId, null);
     });
+    // モーダル下部：編集・削除（表示中の大問が対象）
+    el("exam-edit").addEventListener("click", function () {
+      var nav = state.list.nav;
+      if (nav.examId == null) return;
+      UI.closeModal(el("exam-modal"));
+      loadExamIntoForm(nav.examId, nav.qnum != null ? nav.qnum : undefined);
+    });
+    el("exam-del").addEventListener("click", function () {
+      var nav = state.list.nav;
+      if (nav.examId == null) return;
+      var qnum = nav.qnum;
+      if (!confirm(qnum != null ? "この大問を削除しますか？" : "この入試問題（全大問）を削除しますか？")) return;
+      var p = qnum != null ? Api.deleteQuestion(nav.examId, qnum) : Api.deleteExam(nav.examId);
+      p.then(function () { toast("削除しました", "ok"); UI.closeModal(el("exam-modal")); loadList(); })
+        .catch(function (e) { toast(e.message, "err"); });
+    });
   }
   function runListSearch() {
     state.list.filter = readSearchModal();
@@ -979,80 +995,67 @@
       el("list-area").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div></div>";
     });
   }
+  function schedOrderS(s) {
+    var cfg = (state.config && state.config.schedules) || [];
+    var i = cfg.indexOf(s);
+    return i < 0 ? 999 : i;
+  }
+  function treeRowS(lvl, icon, label) {
+    return '<button type="button" class="tree-row tree-row-' + lvl + '">' +
+      '<i class="fa-solid fa-chevron-right tree-chev"></i>' +
+      '<i class="fa-solid ' + icon + ' tree-ic"></i>' +
+      '<span class="tree-label">' + label + "</span></button>";
+  }
+  // 一覧をツリー表示（大学→年度→方式→大問）。大問クリックで表示モーダル。
   function renderListTable() {
     var rows = state.list.rows.slice();
-    var key = state.list.sort.key, dir = state.list.sort.dir === "asc" ? 1 : -1;
-    rows.sort(function (a, b) {
-      var av = a[key], bv = b[key];
-      if (key === "year" || key === "question_number") { av = Number(av) || 0; bv = Number(bv) || 0; }
-      else { av = String(av || "").toLowerCase(); bv = String(bv || "").toLowerCase(); }
-      return av < bv ? -dir : av > bv ? dir : 0;
-    });
     if (!rows.length) { el("list-area").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>該当する入試問題がありません。</div></div>'; return; }
-    var cols = [
-      { key: "year", label: "年度" },
-      { key: "university_name", label: "大学名" },
-      { key: "schedule", label: "方式" },
-      { key: "question_number", label: "大問" },
-      { key: "category", label: "種別" }
-    ];
-    var html = '<div class="table-wrap"><table class="data"><thead><tr>';
-    cols.forEach(function (c) {
-      var sorted = state.list.sort.key === c.key;
-      var ic = sorted ? (state.list.sort.dir === "asc" ? "fa-arrow-up-short-wide" : "fa-arrow-down-wide-short") : "fa-sort";
-      html += '<th class="sortable' + (sorted ? " sorted" : "") + '" data-sort="' + c.key + '">' + esc(c.label) + '<i class="fa-solid ' + ic + ' sort-ic"></i></th>';
-    });
-    html += '<th style="text-align:right">操作</th></tr></thead><tbody>';
+    var unis = {};
     rows.forEach(function (r) {
-      html += "<tr>" +
-        "<td><span class=\"pill em\">" + esc(r.year) + "</span></td>" +
-        "<td><strong>" + esc(r.university_name) + "</strong></td>" +
-        "<td>" + esc(r.schedule) + "</td>" +
-        "<td>大問" + esc(r.question_number) + "</td>" +
-        "<td>" + esc(r.category) + "</td>" +
-        "<td class=\"row-actions\">" +
-        "<button class=\"icon-btn\" data-view=\"" + r.exam_id + ":" + r.question_number + "\" title=\"表示\"><i class=\"fa-solid fa-file-lines\"></i></button>" +
-        "<button class=\"icon-btn\" data-edit=\"" + r.exam_id + ":" + r.question_number + "\" title=\"編集\"><i class=\"fa-solid fa-pen\"></i></button>" +
-        "<button class=\"icon-btn danger\" data-del=\"" + r.exam_id + ":" + r.question_number + "\" title=\"削除\"><i class=\"fa-solid fa-trash\"></i></button>" +
-        "</td></tr>";
+      var u = r.university_name || "（大学名なし）";
+      var y = String(r.year);
+      var s = r.schedule || "（方式なし）";
+      if (!unis[u]) unis[u] = {};
+      if (!unis[u][y]) unis[u][y] = {};
+      if (!unis[u][y][s]) unis[u][y][s] = [];
+      unis[u][y][s].push(r);
     });
-    html += "</tbody></table></div>";
-    state.list.sortedRows = rows;
+    var flat = [];  // ツリー表示順（モーダルの前/次ナビ用）
+    var html = '<div class="tree card">';
+    Object.keys(unis).sort(function (a, b) { return a.localeCompare(b, "ja"); }).forEach(function (u) {
+      html += '<div class="tree-node">' + treeRowS("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
+      Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
+        html += '<div class="tree-node">' + treeRowS("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
+        Object.keys(unis[u][y]).sort(function (a, b) { return (schedOrderS(a) - schedOrderS(b)) || a.localeCompare(b, "ja"); }).forEach(function (s) {
+          var qrows = unis[u][y][s].slice().sort(function (a, b) { return (Number(a.question_number) || 0) - (Number(b.question_number) || 0); });
+          html += '<div class="tree-node">' + treeRowS("sched", "fa-layer-group", esc(s)) + '<div class="tree-children" hidden>';
+          qrows.forEach(function (r) {
+            flat.push(r);
+            html += '<button type="button" class="tree-row tree-row-q" data-eid="' + r.exam_id + '" data-q="' + esc(String(r.question_number)) + '">' +
+              '<i class="fa-solid fa-file-lines tree-ic"></i>' +
+              '<span class="tree-label">大問' + esc(String(r.question_number)) +
+              (r.category ? ' <span class="tree-cat">' + esc(r.category) + "</span>" : "") + "</span></button>";
+          });
+          html += "</div></div>";
+        });
+        html += "</div></div>";
+      });
+      html += "</div></div>";
+    });
+    html += "</div>";
+    state.list.sortedRows = flat;
     el("list-area").innerHTML = html;
-    $all("th.sortable", el("list-area")).forEach(function (th) {
-      th.addEventListener("click", function () {
-        var k = th.getAttribute("data-sort");
-        if (state.list.sort.key === k) state.list.sort.dir = state.list.sort.dir === "asc" ? "desc" : "asc";
-        else { state.list.sort.key = k; state.list.sort.dir = (k === "year" || k === "question_number") ? "desc" : "asc"; }
-        renderListTable();
-      });
-    });
-    $all("[data-view]", el("list-area")).forEach(function (b) {
-      b.addEventListener("click", function () {
-        var val = b.getAttribute("data-view");
-        var parts = val.split(":");
-        openExam(Number(parts[0]), parts[1] ? Number(parts[1]) : null);
-      });
-    });
-    $all("[data-edit]", el("list-area")).forEach(function (b) {
-      b.addEventListener("click", function () {
-        var val = b.getAttribute("data-edit");
-        var parts = val.split(":");
-        var examId = Number(parts[0]);
-        var qnum = parts[1] ? Number(parts[1]) : undefined;
-        loadExamIntoForm(examId, qnum);
-      });
-    });
-    $all("[data-del]", el("list-area")).forEach(function (b) {
-      b.addEventListener("click", function () {
-        if (!confirm("この大問を削除しますか？")) return;
-        var val = b.getAttribute("data-del");
-        var parts = val.split(":");
-        var examId = Number(parts[0]);
-        var qnum = parts[1] ? Number(parts[1]) : null;
-        var p = qnum ? Api.deleteQuestion(examId, qnum) : Api.deleteExam(examId);
-        p.then(function () { toast("削除しました", "ok"); loadList(); })
-          .catch(function (e) { toast(e.message, "err"); });
+    $all(".tree-row", el("list-area")).forEach(function (row) {
+      row.addEventListener("click", function () {
+        if (row.classList.contains("tree-row-q")) {
+          openExam(Number(row.getAttribute("data-eid")), Number(row.getAttribute("data-q")));
+          return;
+        }
+        var children = row.nextElementSibling;
+        if (!children || !children.classList.contains("tree-children")) return;
+        var willOpen = children.hidden;
+        children.hidden = !willOpen;
+        row.classList.toggle("open", willOpen);
       });
     });
   }
