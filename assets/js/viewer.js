@@ -36,7 +36,8 @@
     config: null,
     corpus: null,
     // null = 制限なし。配列なら該当値のみ対象（値は文字列で保持）
-    corpusFilter: { universities: null, years: null, schedules: null, qnums: null, categories: null },
+    // null = 制限なし。配列なら該当値のみ対象（値は文字列で保持）。sections は対象セクション種別。
+    corpusFilter: { universities: null, years: null, schedules: null, categories: null, sections: ["問題", "本文", "設問"] },
     levelStats: null,
     levelListName: "",
     covOffList: null,
@@ -64,7 +65,7 @@
     var active = Store.getLastTab("main");
     if (DEFAULT_ORDER.indexOf(active) < 0) active = order[0];
     UI.buildTabs({
-      tabsEl: el("main-tabs"), order: order, defs: TAB_DEFS, active: active, page: "main",
+      tabsEl: el("main-tabs"), order: order, defs: TAB_DEFS, active: active, page: "main", iconOnly: true,
       onChange: function (id) { Store.setLastTab("main", id); if (id === "corpus") refreshCorpusLists(); if (id === "print") openPrintTab(); if (id === "tree") loadTree(); }
     });
     UI.setActiveTab(el("main-tabs"), active);
@@ -835,9 +836,39 @@
     { key: "universities", label: "大学", field: "university_name" },
     { key: "years",        label: "年度", field: "year" },
     { key: "schedules",    label: "方式", field: "schedule" },
-    { key: "qnums",        label: "大問", field: "question_number" },
-    { key: "categories",   label: "種別", field: "category" }
+    { key: "categories",   label: "種別", field: "category" },
+    { key: "sections",     label: "セクション", field: "__section__" }
   ];
+
+  // 全問題に含まれるセクション種別を収集（問題・本文・設問・解答・解説・全訳 を優先順に）
+  function corpusSectionTypes(qs) {
+    var set = [];
+    qs.forEach(function (q) {
+      var types = Markup.parseSections(q.problem_text || "").map(function (s) { return s.type; });
+      if (q.answer_text && q.answer_text.trim() && types.indexOf("解答") < 0) types.push("解答");
+      if (q.commentary_text && q.commentary_text.trim() && types.indexOf("解説") < 0) types.push("解説");
+      types.forEach(function (t) { if (set.indexOf(t) < 0) set.push(t); });
+    });
+    var order = ["問題", "本文", "設問", "解答", "解説", "全訳"];
+    set.sort(function (a, b) {
+      var ia = order.indexOf(a), ib = order.indexOf(b);
+      if (ia < 0) ia = 999; if (ib < 0) ib = 999;
+      return ia - ib || a.localeCompare(b, "ja");
+    });
+    return set;
+  }
+
+  // 1問題の選択セクションだけを連結して記法除去（secSet=null は全セクション）
+  function questionSectionText(q, secSet) {
+    var sections = Markup.parseSections(q.problem_text || "");
+    var hasAns = sections.some(function (s) { return s.type === "解答"; });
+    var hasCom = sections.some(function (s) { return s.type === "解説"; });
+    if (q.answer_text && q.answer_text.trim() && !hasAns) sections.push({ type: "解答", text: q.answer_text });
+    if (q.commentary_text && q.commentary_text.trim() && !hasCom) sections.push({ type: "解説", text: q.commentary_text });
+    var parts = [];
+    sections.forEach(function (s) { if (!secSet || secSet.indexOf(s.type) >= 0) parts.push(s.text); });
+    return Markup.strip(parts.join("\n"));
+  }
 
   function applyCorpusFilter(qs) {
     var f = state.corpusFilter;
@@ -845,7 +876,6 @@
       if (f.universities && f.universities.indexOf(String(q.university_name)) < 0) return false;
       if (f.years && f.years.indexOf(String(q.year)) < 0) return false;
       if (f.schedules && f.schedules.indexOf(String(q.schedule)) < 0) return false;
-      if (f.qnums && f.qnums.indexOf(String(q.question_number)) < 0) return false;
       if (f.categories && f.categories.indexOf(String(q.category || "")) < 0) return false;
       return true;
     });
@@ -853,7 +883,6 @@
 
   function cfLabel(field, v) {
     if (field === "year") return v + "年";
-    if (field === "question_number") return "大問" + v;
     return v;
   }
 
@@ -879,13 +908,16 @@
     var html = "";
     CF_GROUPS.forEach(function (g) {
       var vals = [];
-      qs.forEach(function (q) {
-        var v = (q[g.field] != null && q[g.field] !== "") ? String(q[g.field]) : null;
-        if (v !== null && vals.indexOf(v) < 0) vals.push(v);
-      });
-      if (g.field === "year") vals.sort(function (a, b) { return Number(b) - Number(a); });
-      else if (g.field === "question_number") vals.sort(function (a, b) { return Number(a) - Number(b); });
-      else vals.sort();
+      if (g.field === "__section__") {
+        vals = corpusSectionTypes(qs);
+      } else {
+        qs.forEach(function (q) {
+          var v = (q[g.field] != null && q[g.field] !== "") ? String(q[g.field]) : null;
+          if (v !== null && vals.indexOf(v) < 0) vals.push(v);
+        });
+        if (g.field === "year") vals.sort(function (a, b) { return Number(b) - Number(a); });
+        else vals.sort();
+      }
       var sel = state.corpusFilter[g.key];
       html += '<div class="cf-group"><div class="cf-group-head">' +
         '<span class="field-label">' + esc(g.label) + "</span>" +
@@ -993,16 +1025,16 @@
       el("corpus-results").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-filter ic"></i>絞り込み条件に該当する入試問題がありません。「対象を絞り込み」から条件を見直してください。</div></div>';
       return;
     }
-    // ドキュメント（KWIC用ラベル付き）と全文
+    // ドキュメント（KWIC用ラベル付き）と全文。選択セクションのみ対象。
+    var secSet = state.corpusFilter.sections;  // 配列 or null（全セクション）
     var docs = qs.map(function (q) {
-      var text = Markup.strip([q.problem_text, q.answer_text, q.commentary_text].join("\n"));
-      return { text: text, label: q.year + " " + q.university_name + " 大問" + q.question_number };
-    });
+      return { text: questionSectionText(q, secSet), label: q.year + " " + q.university_name + " 大問" + q.question_number };
+    }).filter(function (d) { return d.text.trim(); });
     var fullText = docs.map(function (d) { return d.text; }).join("\n");
     var tokens = Corpus.tokenize(fullText);
 
-    if (!tokens.length) {
-      el("corpus-results").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>英文テキストが見つかりませんでした。問題を登録してください。</div></div>';
+    if (!docs.length || !tokens.length) {
+      el("corpus-results").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>選択したセクションに英文テキストが見つかりませんでした。「対象を絞り込み」のセクション選択を見直してください。</div></div>';
       return;
     }
 

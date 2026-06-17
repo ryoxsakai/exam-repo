@@ -733,7 +733,7 @@ export default {
       // 全入試問題の英文テキストを一括返却（クライアント側コーパス分析用）
       if (path === "/api/corpus" && request.method === "GET") {
         const { results } = await env.DB.prepare(`
-          SELECT q.id AS question_id, q.question_number,
+          SELECT q.id AS question_id, q.question_number, q.category,
                  q.problem_text, q.answer_text, q.commentary_text,
                  e.id AS exam_id, e.year, e.schedule,
                  u.name AS university_name
