@@ -20,10 +20,11 @@
 
   var TAB_DEFS = {
     search: { id: "search", label: "通常検索", icon: "fa-table-list" },
+    tree:   { id: "tree",   label: "ツリー検索", icon: "fa-sitemap" },
     corpus: { id: "corpus", label: "コーパス検索", icon: "fa-language" },
     print:  { id: "print",  label: "問題印刷",   icon: "fa-print" }
   };
-  var DEFAULT_ORDER = ["search", "corpus", "print"];
+  var DEFAULT_ORDER = ["search", "tree", "corpus", "print"];
 
   // 状態
   var state = {
@@ -41,6 +42,7 @@
     covOffList: null,
     covListName: "",
     printExam: null,     // 印刷タブで構築した {year,university_name,schedule,questions[]}
+    treeLoaded: false,   // ツリー検索を読み込み済みか
     charts: {}
   };
 
@@ -61,11 +63,12 @@
     if (DEFAULT_ORDER.indexOf(active) < 0) active = order[0];
     UI.buildTabs({
       tabsEl: el("main-tabs"), order: order, defs: TAB_DEFS, active: active, page: "main",
-      onChange: function (id) { Store.setLastTab("main", id); if (id === "corpus") refreshCorpusLists(); if (id === "print") loadPrintPreview(); }
+      onChange: function (id) { Store.setLastTab("main", id); if (id === "corpus") refreshCorpusLists(); if (id === "print") loadPrintPreview(); if (id === "tree") loadTree(); }
     });
     UI.setActiveTab(el("main-tabs"), active);
     if (active === "corpus") refreshCorpusLists(); else ensureCorpusControls();
     if (active === "print") loadPrintPreview();
+    if (active === "tree") loadTree();
 
     // モーダル配線
     UI.wireModal(el("search-modal"));
@@ -101,6 +104,10 @@
     el("exam-show-all").addEventListener("click", function () {
       if (state.nav.examId != null) openExam(state.nav.examId, null);
     });
+
+    // ツリー検索 再読み込み
+    var treeRefresh = el("btn-tree-refresh");
+    if (treeRefresh) treeRefresh.addEventListener("click", function () { loadTree(true); });
 
     // 問題印刷タブ
     ["pr-year", "pr-university", "pr-schedule"].forEach(function (id) {
@@ -343,6 +350,130 @@
     nextBtn.disabled = (idx < 0 || idx >= total - 1);
     el("exam-nav-label").textContent = (idx >= 0 && total > 0) ? (idx + 1) + " / " + total : "";
     el("exam-show-all").style.display = (state.nav.qnum != null) ? "" : "none";
+  }
+
+  /* ---------------- ツリー検索（大学→年度→方式→大問） ---------------- */
+  function loadTree(force) {
+    var box = el("tree-area");
+    if (!box) return;
+    if (!Store.getWorkerUrl()) { box.innerHTML = noWorkerHtml(); return; }
+    if (state.treeLoaded && !force) return;
+    box.innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
+    Api.getExams({}).then(function (data) {
+      var exams = data.exams || [];
+      if (!exams.length) {
+        box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>登録された入試問題がありません。</div></div>';
+        return;
+      }
+      box.innerHTML = renderTree(buildTreeData(exams));
+      wireTree();
+      state.treeLoaded = true;
+    }).catch(function (e) {
+      box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div></div>";
+    });
+  }
+
+  // exams[] → { uniName: { year: { schedule: [examId,...] } } }
+  function buildTreeData(exams) {
+    var unis = {};
+    exams.forEach(function (e) {
+      var u = e.university_name || "（大学名なし）";
+      var y = String(e.year);
+      var s = e.schedule || "（方式なし）";
+      if (!unis[u]) unis[u] = {};
+      if (!unis[u][y]) unis[u][y] = {};
+      if (!unis[u][y][s]) unis[u][y][s] = [];
+      unis[u][y][s].push(e.id);
+    });
+    return unis;
+  }
+
+  function schedOrder(s) {
+    var cfg = (state.config && state.config.schedules) || [];
+    var i = cfg.indexOf(s);
+    return i < 0 ? 999 : i;
+  }
+
+  function treeRow(lvl, icon, label, data) {
+    var attrs = "";
+    if (data) Object.keys(data).forEach(function (k) { attrs += " data-" + k + '="' + esc(String(data[k])) + '"'; });
+    return '<button type="button" class="tree-row tree-row-' + lvl + '"' + attrs + '>' +
+      '<i class="fa-solid fa-chevron-right tree-chev"></i>' +
+      '<i class="fa-solid ' + icon + ' tree-ic"></i>' +
+      '<span class="tree-label">' + label + "</span></button>";
+  }
+
+  function renderTree(unis) {
+    var uniNames = Object.keys(unis).sort(function (a, b) { return a.localeCompare(b, "ja"); });
+    var html = '<div class="tree card">';
+    uniNames.forEach(function (u) {
+      html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
+      Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
+        html += '<div class="tree-node">' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
+        Object.keys(unis[u][y]).sort(function (a, b) { return (schedOrder(a) - schedOrder(b)) || a.localeCompare(b, "ja"); }).forEach(function (s) {
+          html += '<div class="tree-node">' +
+            treeRow("sched", "fa-layer-group", esc(s), { exams: unis[u][y][s].join(","), uni: u, year: y, sched: s }) +
+            '<div class="tree-children" hidden data-loaded="0"></div></div>';
+        });
+        html += "</div></div>";
+      });
+      html += "</div></div>";
+    });
+    html += "</div>";
+    return html;
+  }
+
+  function wireTree() {
+    $all(".tree-row", el("tree-area")).forEach(function (row) {
+      row.addEventListener("click", function () {
+        var children = row.nextElementSibling;
+        if (!children || !children.classList.contains("tree-children")) return;
+        var willOpen = children.hidden;
+        children.hidden = !willOpen;
+        row.classList.toggle("open", willOpen);
+        if (willOpen && row.classList.contains("tree-row-sched") && children.getAttribute("data-loaded") === "0") {
+          loadTreeQuestions(row, children);
+        }
+      });
+    });
+  }
+
+  // 方式ノードを開いたとき、その配下の大問を遅延読み込み
+  function loadTreeQuestions(row, children) {
+    children.setAttribute("data-loaded", "1");
+    children.innerHTML = '<div class="tree-msg"><span class="spinner"></span> 読み込み中…</div>';
+    var ids = (row.getAttribute("data-exams") || "").split(",").filter(Boolean).map(Number);
+    Promise.all(ids.map(function (id) { return Api.getExam(id).catch(function () { return null; }); })).then(function (results) {
+      var rows = [];
+      results.forEach(function (r) {
+        if (!r || !r.exam) return;
+        var ex = r.exam;
+        (ex.questions || []).slice().sort(function (a, b) {
+          return (Number(a.question_number) || 0) - (Number(b.question_number) || 0);
+        }).forEach(function (q) {
+          rows.push({ exam_id: ex.id, question_number: q.question_number, university_name: ex.university_name, year: ex.year, schedule: ex.schedule, category: q.category });
+        });
+      });
+      if (!rows.length) { children.innerHTML = '<div class="tree-msg">大問が登録されていません。</div>'; return; }
+      var html = "";
+      rows.forEach(function (r, i) {
+        html += '<button type="button" class="tree-row tree-row-q" data-eid="' + r.exam_id + '" data-q="' + esc(String(r.question_number)) + '" data-i="' + i + '">' +
+          '<i class="fa-solid fa-file-lines tree-ic"></i>' +
+          '<span class="tree-label">大問' + esc(String(r.question_number)) +
+          (r.category ? ' <span class="tree-cat">' + esc(r.category) + "</span>" : "") +
+          "</span></button>";
+      });
+      children.innerHTML = html;
+      children._rows = rows;
+      $all(".tree-row-q", children).forEach(function (b) {
+        b.addEventListener("click", function () {
+          state.sortedRows = children._rows;  // 前/次ナビをこの方式内に限定
+          openExam(Number(b.getAttribute("data-eid")), Number(b.getAttribute("data-q")));
+        });
+      });
+    }).catch(function (e) {
+      children.innerHTML = '<div class="tree-msg">' + esc(e.message) + "</div>";
+    });
   }
 
   /* ---------------- 入試問題 表示モーダル ---------------- */
