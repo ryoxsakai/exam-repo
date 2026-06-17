@@ -758,22 +758,40 @@
       el("ext-prompt-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
     });
   }
-  // 貼り付けJSON文字列から最初の { 〜 最後の } を取り出す（コードフェンス等を許容）
+  // 貼り付けJSON文字列から最初の { 〜 マッチする } を取り出す（コードフェンス等を許容）
   function extractJson(raw) {
     var s = String(raw || "").trim();
     var fence = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (fence) s = fence[1].trim();
-    var i = s.indexOf("{"), j = s.lastIndexOf("}");
-    if (i >= 0 && j > i) s = s.slice(i, j + 1);
-    return s;
+    var i = s.indexOf("{");
+    if (i < 0) return "";
+    // 最初の { からカウントして、マッチする } を見つける
+    var depth = 0, inStr = false, esc = false, j;
+    for (j = i; j < s.length; j++) {
+      var c = s[j];
+      if (esc) { esc = false; continue; }
+      if (c === "\\") { esc = true; continue; }
+      if (c === '"') { inStr = !inStr; continue; }
+      if (!inStr) {
+        if (c === "{") depth++;
+        else if (c === "}") {
+          depth--;
+          if (depth === 0) return s.slice(i, j + 1);
+        }
+      }
+    }
+    return "";  // マッチする } が見つからない
   }
   function loadExtJson() {
     var raw = el("ext-json").value;
     if (!raw.trim()) { toast("JSONを貼り付けてください", "err"); return; }
+    var extracted = extractJson(raw);
     var parsed;
-    try { parsed = JSON.parse(extractJson(raw)); }
+    try { parsed = JSON.parse(extracted); }
     catch (e) {
-      el("ext-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> JSONを読み取れませんでした（形式を確認してください）。</span>';
+      var msg = e.message || "不明なエラー";
+      var detail = extracted ? "（抽出: " + extracted.slice(0, 60) + (extracted.length > 60 ? "..." : "") + "）" : "（JSON部分が見つかりません）";
+      el("ext-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> JSONを読み取れませんでした: ' + esc(msg) + detail + '</span>';
       toast("JSONの解析に失敗しました", "err");
       return;
     }
