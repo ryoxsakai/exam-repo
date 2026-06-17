@@ -197,7 +197,7 @@ a { color: var(--blue); text-decoration: none; }
 /* ---------- Form controls ---------- */
 label.field { display: block; }
 .field-label { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); margin-bottom: 6px; display: block; }
-input[type=text], input[type=number], input[type=url], select, textarea {
+input[type=text], input[type=number], input[type=url], input[type=password], select, textarea {
   width: 100%; font-family: inherit; font-size: 14px; color: var(--ink);
   background: #fff; border: 1px solid var(--line); border-radius: var(--radius-sm);
   padding: 10px 12px; transition: .15s; outline: none;
@@ -389,6 +389,8 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
 .exam-doc { font-family: var(--serif); font-size: 16px; line-height: 1.95; color: var(--ink); }
 .exam-doc .blk { display: block; text-align: justify; }
 .exam-doc .blk.indent { text-indent: 1.5em; }
+/* 1行目インデントは本文セクションのみ。それ以外（設問・解答・解説・全訳・問題）は無効 */
+.exam-doc.no-indent .blk.indent { text-indent: 0; }
 .em-dash { letter-spacing: -.15em; }
 /* 文字サイズ切替（問題閲覧モーダル） — 5段階 */
 .fs-xs .exam-doc { font-size: 12px; }
@@ -402,11 +404,11 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
 .lh-3 .exam-doc { line-height: 1.9; }
 .lh-4 .exam-doc { line-height: 2.3; }
 .lh-5 .exam-doc { line-height: 2.8; }
-.question-block-header { display: flex; align-items: baseline; flex-wrap: nowrap; gap: 3px; margin: 18px 0 8px; }
+/* バッジと後続テキストはインライン流し込み（折り返しはバッジ下へ回り込む） */
+.question-block-header { display: block; margin: 18px 0 8px; text-align: justify; }
+.question-block-header .qtext { display: inline; }
 @media (max-width: 600px) {
-  /* スマホ: バッジとテキストを通常のインライン流し込みに（折り返しがバッジの下に回り込む） */
-  .question-block-header { display: block; margin: 10px 0 6px; text-align: justify; }
-  .question-block-header .qtext { display: inline; }
+  .question-block-header { margin: 10px 0 6px; }
 }
 .question-badge {
   /* [[]]（blank-badge）と同サイズ。薄いブルーのグラデーション背景 */

@@ -493,7 +493,7 @@
       '<label class="print-check" title="チェックした項目のみ印刷されます">' +
       '<input type="checkbox" data-printsec="' + esc(label) + '"' + checked + '><span>印刷</span></label>' +
       "</div>" +
-      '<div class="exam-doc">' + r.html + "</div></div>";
+      '<div class="exam-doc' + (label === "本文" ? "" : " no-indent") + '">' + r.html + "</div></div>";
   }
 
   /* ---------------- 問題印刷タブ ---------------- */
@@ -512,7 +512,7 @@
 
   function printField(label, text) {
     return '<div class="print-field"><div class="print-field-label">' + esc(label) + "</div>" +
-      '<div class="exam-doc">' + Markup.render(text).html + "</div></div>";
+      '<div class="exam-doc' + (label === "本文" ? "" : " no-indent") + '">' + Markup.render(text).html + "</div></div>";
   }
 
   // 印刷ドキュメントの HTML を構築（表紙 → 問題面 → 解答面）

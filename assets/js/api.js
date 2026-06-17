@@ -109,6 +109,10 @@
         });
       });
     },
+    // 登録データの一括置換。dryRun=true で件数のみ取得。
+    replaceRegistered: function (rules, dryRun) {
+      return call("/api/replace", { method: "POST", body: JSON.stringify({ rules: rules, dryRun: !!dryRun }) });
+    },
     getWordLists:     function (type) { return call("/api/wordlists" + qs({ type: type })); },
     createWordList:   function (d) { return call("/api/wordlists", { method: "POST", body: JSON.stringify(d) }); },
     updateWordList:   function (id, d) { return call("/api/wordlists/" + id, { method: "PUT", body: JSON.stringify(d) }); },

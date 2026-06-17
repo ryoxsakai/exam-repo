@@ -12,15 +12,16 @@
     register: { id: "register", label: "問題登録",         icon: "fa-pen-to-square" },
     ingest:    { id: "ingest",    label: "PDF取り込み",      icon: "fa-file-import" },
     ingestcfg: { id: "ingestcfg", label: "取り込み設定",      icon: "fa-wand-magic-sparkles" },
+    replace:   { id: "replace",   label: "登録データ置換",   icon: "fa-right-left" },
     corpus:    { id: "corpus",    label: "コーパス検索設定", icon: "fa-language" }
   };
-  var SET_ORDER = ["main", "conn", "list", "register", "ingest", "ingestcfg", "corpus"];
+  var SET_ORDER = ["main", "conn", "list", "register", "ingest", "ingestcfg", "replace", "corpus"];
   var MAIN_TABS = { search: { label: "通常検索", icon: "fa-table-list" }, corpus: { label: "コーパス検索", icon: "fa-language" }, print: { label: "問題印刷", icon: "fa-print" } };
   var MAIN_ORDER = ["search", "corpus", "print"];
 
   var state = {
     config: { schedules: [], year_presets: [], question_categories: [], section_types: [] },
-    repl: [],  // 取り込み置換ルール [{from,to,regex}]
+    bulk: [],  // 登録データ一括置換ルール [{from,to,regex}]
     ing: { universityName: "", year: "", schedule: "", truncated: false, questions: [] },  // PDF取り込み解析結果
     universities: [],
     list: { filter: { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "" }, rows: [], sortedRows: [], sort: { key: "year", dir: "desc" }, nav: { examId: null, qnum: null } },
@@ -50,6 +51,7 @@
     wireRegister();
     wireIngest();
     wireIngestConfig();
+    wireReplaceTab();
     wireCorpusSettings();
 
     // 接続済みなら設定読み込み
@@ -71,6 +73,7 @@
   function onTab(id) {
     if (id === "list") loadList();
     if (id === "register") renderReg();
+    if (id === "replace") renderBulkList();
     if (id === "corpus") loadWordLists();
   }
 
@@ -305,12 +308,22 @@
     return '<div class="reg-meta-item"><span class="field-label">' + esc(label) + '</span>' +
       '<input type="' + (type || "text") + '" id="' + id + '" value="' + esc(String(val)) + '"></div>';
   }
-  // 取り込み編集で使うセクション種別（全訳を必ず含める）
+  // 取り込み編集で使うセクション種別（本文・設問・全訳を必ず含める）
   function ingSectionTypes() {
     var base = (state.config.section_types && state.config.section_types.length)
-      ? state.config.section_types.slice() : ["問題", "解答", "解説"];
-    if (base.indexOf("全訳") < 0) base.push("全訳");
+      ? state.config.section_types.slice() : ["問題", "本文", "設問", "解答", "解説", "全訳"];
+    ["本文", "設問", "全訳"].forEach(function (t) { if (base.indexOf(t) < 0) base.push(t); });
     return base;
+  }
+  // 読み取り値を既存候補に寄せる（例: 「一般前期」が無ければ「前期」）
+  function bestExisting(value, options) {
+    value = String(value == null ? "" : value).trim();
+    if (!value || !Array.isArray(options) || !options.length) return value;
+    if (options.indexOf(value) >= 0) return value;
+    var cand = options.slice().sort(function (a, b) { return String(b).length - String(a).length; });
+    for (var i = 0; i < cand.length; i++) { if (cand[i] && value.indexOf(cand[i]) >= 0) return cand[i]; }
+    for (var j = 0; j < cand.length; j++) { if (cand[j] && String(cand[j]).indexOf(value) >= 0) return cand[j]; }
+    return value;
   }
   function ingTypeOptions(cur) {
     var types = ingSectionTypes();
@@ -329,12 +342,15 @@
   }
 
   // AI 解析結果（sections 形式 / 旧 problemText 形式の両対応）を state.ing へ
+  // 方式・種別は既存候補に寄せる（無ければ読み取り値のまま）
   function ingestToState(data) {
     var qs = (data && Array.isArray(data.questions)) ? data.questions : [];
+    var schedules = state.config.schedules || [];
+    var cats = state.config.question_categories || [];
     return {
       universityName: (data && data.universityName) || "",
       year: (data && data.year) || "",
-      schedule: (data && data.schedule) || "",
+      schedule: bestExisting((data && data.schedule) || "", schedules),
       truncated: !!(data && data._truncated),
       questions: qs.map(function (q, i) {
         var sections = [];
@@ -351,7 +367,7 @@
         if (!sections.length) sections.push({ type: "問題", text: "" });
         return {
           questionNumber: Number(q.questionNumber) || (i + 1),
-          category: q.category || "",
+          category: bestExisting(q.category || "", cats),
           sections: sections
         };
       })
@@ -408,15 +424,18 @@
         '<span class="spacer"></span>' +
         '<button class="icon-btn sm danger" data-iqdel="' + qi + '" title="この大問を削除"><i class="fa-solid fa-trash"></i></button></div>';
       q.sections.forEach(function (sec, si) {
+        var key = qi + ":" + si;
         h += '<div class="reg-section" data-isec="' + si + '">' +
           '<div class="reg-section-head">' +
-            '<select class="ing-sec-type" data-isectype="' + qi + ":" + si + '" style="max-width:160px">' + ingTypeOptions(sec.type) + "</select>" +
+            '<select class="ing-sec-type" data-isectype="' + key + '" style="max-width:160px">' + ingTypeOptions(sec.type) + "</select>" +
             '<span class="spacer"></span>' +
-            '<button class="icon-btn sm" data-isecup="' + qi + ":" + si + '" title="上へ"' + (si === 0 ? " disabled" : "") + '><i class="fa-solid fa-arrow-up"></i></button>' +
-            '<button class="icon-btn sm" data-isecdown="' + qi + ":" + si + '" title="下へ"' + (si === q.sections.length - 1 ? " disabled" : "") + '><i class="fa-solid fa-arrow-down"></i></button>' +
-            '<button class="icon-btn sm danger" data-isecdel="' + qi + ":" + si + '" title="削除"><i class="fa-solid fa-trash"></i></button>' +
+            '<button class="icon-btn sm" data-isecpv="' + key + '" title="見え方を確認"><i class="fa-solid fa-file-lines"></i></button>' +
+            '<button class="icon-btn sm" data-isecup="' + key + '" title="上へ"' + (si === 0 ? " disabled" : "") + '><i class="fa-solid fa-arrow-up"></i></button>' +
+            '<button class="icon-btn sm" data-isecdown="' + key + '" title="下へ"' + (si === q.sections.length - 1 ? " disabled" : "") + '><i class="fa-solid fa-arrow-down"></i></button>' +
+            '<button class="icon-btn sm danger" data-isecdel="' + key + '" title="削除"><i class="fa-solid fa-trash"></i></button>' +
           "</div>" +
-          '<textarea class="ing-sec-text" data-isectext="' + qi + ":" + si + '" rows="6" style="width:100%">' + esc(sec.text || "") + "</textarea>" +
+          ingMarkupBar(key) +
+          '<textarea class="ing-sec-text" data-isectext="' + key + '" rows="6" style="width:100%">' + esc(sec.text || "") + "</textarea>" +
         "</div>";
       });
       h += '<div class="toolbar" style="margin-top:8px"><button class="btn sm" data-isecadd="' + qi + '"><i class="fa-solid fa-plus"></i> セクション追加</button></div>';
@@ -426,9 +445,21 @@
     h += '<div class="toolbar" style="margin-top:8px">' +
       '<button class="btn" id="ing-add-q"><i class="fa-solid fa-plus"></i> 大問を追加</button>' +
       '<span class="spacer"></span>' +
+      '<button class="btn blue" id="ing-preview-all"><i class="fa-solid fa-eye"></i> 全体を表示確認</button>' +
       '<button class="btn primary" id="ing-register"><i class="fa-solid fa-floppy-disk"></i> この内容で登録（全' + d.questions.length + "大問）</button></div>";
     el("ing-result").innerHTML = h;
     wireIngestResult();
+  }
+
+  // 取り込み編集用の記法ボタンバー（data-imk="qi:si:k"）
+  function ingMarkupBar(key) {
+    var h = '<div class="markup-bar">';
+    MK_DEFS.forEach(function (bn, k) {
+      h += '<button class="btn sm" data-imk="' + key + ":" + k + '" title="' + esc(bn.t) + '">' + esc(bn.l) + "</button>";
+    });
+    h += '<button class="btn sm link" data-syntax="1" title="記法の一覧と見え方"><i class="fa-solid fa-circle-question"></i> 記法一覧</button>';
+    h += "</div>";
+    return h;
   }
 
   function wireIngestResult() {
@@ -478,13 +509,52 @@
         renderIngest();
       });
     });
+    // 記法ボタン：テキストエリアへ挿入し state に反映（再描画なし）
+    $all("[data-imk]", root).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var p = b.getAttribute("data-imk").split(":");
+        var ta = $('[data-isectext="' + p[0] + ":" + p[1] + '"]', root);
+        if (!ta) return;
+        insertMarkup(ta, MK_DEFS[+p[2]].b, MK_DEFS[+p[2]].a);
+        state.ing.questions[+p[0]].sections[+p[1]].text = ta.value;
+      });
+    });
+    $all("[data-syntax]", root).forEach(function (b) { b.addEventListener("click", openSyntaxModal); });
+    // セクション単位の見え方確認
+    $all("[data-isecpv]", root).forEach(function (b) {
+      b.addEventListener("click", function () {
+        readIngFromDom();
+        var p = b.getAttribute("data-isecpv").split(":");
+        var sec = state.ing.questions[+p[0]].sections[+p[1]];
+        openPreview(sec.type, field(sec.type, SECTION_ICONS[sec.type] || "fa-file-lines", sec.text || "（未入力）"));
+      });
+    });
     if (el("ing-add-q")) el("ing-add-q").addEventListener("click", function () {
       readIngFromDom();
       var n = state.ing.questions.reduce(function (mx, q) { return Math.max(mx, Number(q.questionNumber) || 0); }, 0) + 1;
       state.ing.questions.push({ questionNumber: n, category: "", sections: [{ type: "問題", text: "" }] });
       renderIngest();
     });
+    if (el("ing-preview-all")) el("ing-preview-all").addEventListener("click", previewIngestAll);
     if (el("ing-register")) el("ing-register").addEventListener("click", registerIngest);
+  }
+
+  // 解析結果の全大問をまとめてプレビュー
+  function previewIngestAll() {
+    readIngFromDom();
+    if (!state.ing.questions.length) { toast("表示する大問がありません", "err"); return; }
+    var body = "";
+    state.ing.questions.forEach(function (q) {
+      var fields = [];
+      q.sections.forEach(function (sec) {
+        if ((sec.text || "").trim()) fields.push(field(sec.type, SECTION_ICONS[sec.type] || "fa-file-lines", sec.text));
+      });
+      body += '<div class="exam-section" style="margin-bottom:18px">' +
+        '<div class="exam-section-title" style="color:var(--blue)"><i class="fa-solid fa-hashtag"></i> 大問' + esc(q.questionNumber) + (q.category ? "（" + esc(q.category) + "）" : "") + "</div>" +
+        (fields.length ? fields.join('<hr class="exam-hr exam-field-sep">') : '<div class="hint">（未入力）</div>') + "</div>";
+    });
+    var m = [state.ing.year, state.ing.universityName, state.ing.schedule].filter(Boolean).join(" ");
+    openPreview(m || "解析結果プレビュー", body);
   }
 
   // セクション配列を保存用の {problemText, answerText, commentaryText} へ（問題登録と同じ規則）
@@ -529,18 +599,13 @@
     });
   }
 
-  /* ================= タブ: 取り込み設定（追加プロンプト / 置換ルール） ================= */
-  var REPL_EXAMPLE = [
-    { from: "，", to: "、", regex: false },
-    { from: "．", to: "。", regex: false }
-  ];
+  /* ================= タブ: 取り込み設定（追加プロンプト） ================= */
   var PROMPT_EXAMPLE =
     "- ①②③ は ((1))((2))((3)) に、a. b. c. は ((a))((b))((c)) に、ア イ ウ は ((ア))((イ))((ウ)) に変換する\n" +
     "- 空所 [[ ]] の中には英数字のみを入れる（[[(1)]] のように記号を入れない）\n" +
     "- 下線部などに付く小問番号 (1)(2) は空所にせず ~~(1)~~ で下付きにする\n" +
     "- 注釈・脚注は必ず ##語::訳## の語注記法を使う\n" +
-    "- 全訳・全文和訳は省略せず、解説に {{全訳}} 見出しを付けて全文を含める\n" +
-    "- 全角カンマ「，」は読点「、」に統一する";
+    "- 全訳・全文和訳は省略せず「全訳」セクションに全文を含める";
 
   function wireIngestConfig() {
     if (!el("cfg-ingest-prompt-save")) return;
@@ -562,75 +627,91 @@
       ta.value = ta.value.trim() ? ta.value.replace(/\s*$/, "") + "\n" + PROMPT_EXAMPLE : PROMPT_EXAMPLE;
       toast("推奨例を挿入しました（保存で確定）", "ok");
     });
-
-    el("repl-add").addEventListener("click", function () {
-      state.repl.push({ from: "", to: "", regex: false });
-      renderReplList();
-    });
-    el("repl-example").addEventListener("click", function () {
-      REPL_EXAMPLE.forEach(function (r) { state.repl.push({ from: r.from, to: r.to, regex: r.regex }); });
-      renderReplList();
-      toast("推奨例を追加しました（保存で確定）", "ok");
-    });
-    el("repl-save").addEventListener("click", function () {
-      if (!Store.getWorkerUrl()) { toast("Worker URL が未設定です（接続設定タブ）", "err"); return; }
-      readReplFromDom();
-      var rules = state.repl.filter(function (r) { return r.from; });
-      el("repl-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> 保存中…';
-      Api.updateConfig({ ingest_replacements: rules }).then(function () {
-        state.config.ingest_replacements = rules;
-        state.repl = rules.slice();
-        renderReplList();
-        el("repl-status").innerHTML = '<span style="color:var(--emerald-dark)"><i class="fa-solid fa-circle-check"></i> 保存しました（' + rules.length + " 件）</span>";
-        toast("置換ルールを保存しました", "ok");
-      }).catch(function (e) {
-        el("repl-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
-        toast(e.message, "err");
-      });
-    });
   }
 
-  // DOM の入力値を state.repl へ吸い上げ（並び順を保ったまま）
-  function readReplFromDom() {
-    var rows = $all("[data-repl]", el("repl-list"));
-    state.repl = rows.map(function (row) {
-      return {
-        from: $(".repl-from", row).value,
-        to: $(".repl-to", row).value,
-        regex: $(".repl-regex", row).checked
-      };
+  /* ================= タブ: 登録データ置換（grep replace） ================= */
+  var BULK_EXAMPLE = [
+    { from: "，", to: "、", regex: false },
+    { from: "．", to: "。", regex: false }
+  ];
+  function wireReplaceTab() {
+    if (!el("bulk-add")) return;
+    state.bulk = Store.getReplaceRules();
+    el("bulk-add").addEventListener("click", function () { readBulkFromDom(); state.bulk.push({ from: "", to: "", regex: false }); renderBulkList(); });
+    el("bulk-example").addEventListener("click", function () {
+      readBulkFromDom();
+      BULK_EXAMPLE.forEach(function (r) { state.bulk.push({ from: r.from, to: r.to, regex: r.regex }); });
+      renderBulkList();
+      toast("推奨例を追加しました", "ok");
+    });
+    el("bulk-preview").addEventListener("click", function () { runBulk(true); });
+    el("bulk-run").addEventListener("click", function () {
+      if (!confirm("登録済みの全問題に置換を実行します。元に戻せません。よろしいですか？")) return;
+      runBulk(false);
     });
   }
-
-  function renderReplList() {
-    var c = el("repl-list");
+  function bulkRules() {
+    readBulkFromDom();
+    Store.setReplaceRules(state.bulk);
+    return state.bulk.filter(function (r) { return r.from; });
+  }
+  function runBulk(dryRun) {
+    if (!Store.getWorkerUrl()) { toast("Worker URL が未設定です（接続設定タブ）", "err"); return; }
+    var rules = bulkRules();
+    if (!rules.length) { toast("置換ルールを入力してください", "err"); return; }
+    el("bulk-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> ' + (dryRun ? "確認中…" : "置換中…");
+    Api.replaceRegistered(rules, dryRun).then(function (d) {
+      if (dryRun) {
+        el("bulk-status").innerHTML = '<span style="color:var(--blue-dark,#1d4ed8)"><i class="fa-solid fa-magnifying-glass"></i> ' +
+          (d.changedRows || 0) + " 大問・" + (d.occurrences || 0) + " 箇所が対象（全 " + (d.total || 0) + " 大問）</span>";
+      } else {
+        el("bulk-status").innerHTML = '<span style="color:var(--emerald-dark)"><i class="fa-solid fa-circle-check"></i> ' +
+          (d.changedRows || 0) + " 大問・" + (d.occurrences || 0) + " 箇所を置換しました</span>";
+        toast("置換しました（" + (d.occurrences || 0) + " 箇所）", "ok");
+      }
+    }).catch(function (e) {
+      el("bulk-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
+      toast(e.message, "err");
+    });
+  }
+  function readBulkFromDom() {
+    var c = el("bulk-list");
     if (!c) return;
-    if (!state.repl.length) {
+    var rows = $all("[data-bulk]", c);
+    if (!rows.length) return;
+    state.bulk = rows.map(function (row) {
+      return { from: $(".bulk-from", row).value, to: $(".bulk-to", row).value, regex: $(".bulk-regex", row).checked };
+    });
+  }
+  function renderBulkList() {
+    var c = el("bulk-list");
+    if (!c) return;
+    if (!state.bulk.length) {
       c.innerHTML = '<p class="hint">まだルールがありません。「ルールを追加」または「推奨例を挿入」から作成してください。</p>';
       return;
     }
     var h = "";
-    state.repl.forEach(function (r, i) {
-      h += '<div class="sort-item" data-repl="' + i + '" style="gap:8px;flex-wrap:wrap">' +
-        '<input type="text" class="repl-from" placeholder="検索（例: ，）" value="' + esc(r.from || "") + '" style="flex:1;min-width:120px">' +
+    state.bulk.forEach(function (r, i) {
+      h += '<div class="sort-item" data-bulk="' + i + '" style="gap:8px;flex-wrap:wrap">' +
+        '<input type="text" class="bulk-from" placeholder="検索（例: ，）" value="' + esc(r.from || "") + '" style="flex:1;min-width:120px">' +
         '<i class="fa-solid fa-arrow-right" style="color:var(--blue)"></i>' +
-        '<input type="text" class="repl-to" placeholder="置換後（例: 、）" value="' + esc(r.to || "") + '" style="flex:1;min-width:120px">' +
-        '<label class="check-inline" style="white-space:nowrap"><input type="checkbox" class="repl-regex"' + (r.regex ? " checked" : "") + '> <span>正規表現</span></label>' +
+        '<input type="text" class="bulk-to" placeholder="置換後（例: 、）" value="' + esc(r.to || "") + '" style="flex:1;min-width:120px">' +
+        '<label class="check-inline" style="white-space:nowrap"><input type="checkbox" class="bulk-regex"' + (r.regex ? " checked" : "") + '> <span>正規表現</span></label>' +
         '<span class="move">' +
-        '<button class="icon-btn sm" data-replup="' + i + '" title="上へ"' + (i === 0 ? " disabled" : "") + '><i class="fa-solid fa-arrow-up"></i></button>' +
-        '<button class="icon-btn sm" data-repldown="' + i + '" title="下へ"' + (i === state.repl.length - 1 ? " disabled" : "") + '><i class="fa-solid fa-arrow-down"></i></button>' +
-        '<button class="icon-btn sm danger" data-repldel="' + i + '" title="削除"><i class="fa-solid fa-trash"></i></button>' +
+        '<button class="icon-btn sm" data-bulkup="' + i + '" title="上へ"' + (i === 0 ? " disabled" : "") + '><i class="fa-solid fa-arrow-up"></i></button>' +
+        '<button class="icon-btn sm" data-bulkdown="' + i + '" title="下へ"' + (i === state.bulk.length - 1 ? " disabled" : "") + '><i class="fa-solid fa-arrow-down"></i></button>' +
+        '<button class="icon-btn sm danger" data-bulkdel="' + i + '" title="削除"><i class="fa-solid fa-trash"></i></button>' +
         "</span></div>";
     });
     c.innerHTML = h;
-    $all("[data-replup]", c).forEach(function (b) {
-      b.addEventListener("click", function () { readReplFromDom(); var i = +b.getAttribute("data-replup"); swap(state.repl, i, i - 1); renderReplList(); });
+    $all("[data-bulkup]", c).forEach(function (b) {
+      b.addEventListener("click", function () { readBulkFromDom(); var i = +b.getAttribute("data-bulkup"); swap(state.bulk, i, i - 1); renderBulkList(); });
     });
-    $all("[data-repldown]", c).forEach(function (b) {
-      b.addEventListener("click", function () { readReplFromDom(); var i = +b.getAttribute("data-repldown"); swap(state.repl, i, i + 1); renderReplList(); });
+    $all("[data-bulkdown]", c).forEach(function (b) {
+      b.addEventListener("click", function () { readBulkFromDom(); var i = +b.getAttribute("data-bulkdown"); swap(state.bulk, i, i + 1); renderBulkList(); });
     });
-    $all("[data-repldel]", c).forEach(function (b) {
-      b.addEventListener("click", function () { readReplFromDom(); state.repl.splice(+b.getAttribute("data-repldel"), 1); renderReplList(); });
+    $all("[data-bulkdel]", c).forEach(function (b) {
+      b.addEventListener("click", function () { readBulkFromDom(); state.bulk.splice(+b.getAttribute("data-bulkdel"), 1); renderBulkList(); });
     });
   }
 
@@ -643,12 +724,10 @@
       if (!Array.isArray(state.config.schedules)) state.config.schedules = [];
       if (!Array.isArray(state.config.year_presets)) state.config.year_presets = [];
       if (!Array.isArray(state.config.question_categories)) state.config.question_categories = [];
-      if (!Array.isArray(state.config.section_types)) state.config.section_types = ["問題", "解答", "解説"];
+      if (!Array.isArray(state.config.section_types)) state.config.section_types = ["問題", "本文", "設問", "解答", "解説", "全訳"];
       Store.setSectionTypes(state.config.section_types);
-      // 取り込み設定（追加プロンプト・置換ルール）を反映
+      // 取り込み設定（追加プロンプト）を反映
       if (el("cfg-ingest-prompt")) el("cfg-ingest-prompt").value = state.config.ingest_prompt || "";
-      state.repl = Array.isArray(state.config.ingest_replacements) ? state.config.ingest_replacements : [];
-      renderReplList();
       state.universities = (res[1] && res[1].universities) || [];
       // サブタイトル（Worker 側にあれば反映）
       if (state.config.site_subtitle) {
@@ -881,7 +960,7 @@
   }
   function field(label, icon, text) {
     return '<div style="margin-bottom:14px"><div class="exam-section-title">' + esc(label) +
-      '</div><div class="exam-doc">' + Markup.render(text).html + "</div></div>";
+      '</div><div class="exam-doc' + (label === "本文" ? "" : " no-indent") + '">' + Markup.render(text).html + "</div></div>";
   }
 
   /* ================= タブ4: 問題登録 ================= */
@@ -1004,7 +1083,7 @@
   }
   // 記法ボタン定義（ラベルは最小限の表記）
   var MK_DEFS = [
-    { l: "問",   t: "問見出し {{問1}}",        b: "{{問", a: "}}" },
+    { l: "問",   t: "見出しバッジ {{ }}",       b: "{{", a: "}}" },
     { l: "空所", t: "空所 [[1]]",              b: "[[", a: "]]" },
     { l: "選択", t: "選択肢 ((A)) 本文",        b: "((", a: "))" },
     { l: "蛍光", t: "ハイライト ==語==",        b: "==", a: "==" },

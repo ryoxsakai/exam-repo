@@ -23,7 +23,8 @@
     printFontSize: "exam_print_fontsize",    // 問題印刷の文字サイズ（表紙以外。xs/sm/md/lg/xl）
     printLineHeight: "exam_print_lineheight", // 問題印刷の行間（表紙以外。1〜5）
     regDraft:      "exam_reg_draft",         // 問題登録フォームの下書き（リロードしても保持）
-    printSections: "exam_print_sections"     // 印刷対象セクション {種別: bool}（全問題で共有）
+    printSections: "exam_print_sections",    // 印刷対象セクション {種別: bool}（全問題で共有）
+    replaceRules:  "exam_replace_rules"      // 登録データ一括置換のルール [{from,to,regex}]
   };
 
   function read(key, fallback) {
@@ -42,7 +43,7 @@
   }
 
   /* ---- 既定値 ---- */
-  var DEFAULT_SECTION_TYPES = ["問題", "解答", "解説"];
+  var DEFAULT_SECTION_TYPES = ["問題", "本文", "設問", "解答", "解説", "全訳"];
 
   // 汎用英語ストップワード（簡易）
   var DEFAULT_STOPWORDS = [
@@ -206,6 +207,10 @@
       return t;
     },
     setSectionTypes: function (t) { write(KEYS.sectionTypes, t); },
+
+    /* 登録データ一括置換のルール（この端末に保持） */
+    getReplaceRules: function () { var r = read(KEYS.replaceRules, null); return Array.isArray(r) ? r : []; },
+    setReplaceRules: function (r) { write(KEYS.replaceRules, r); },
 
     /* 問題閲覧モーダルの文字サイズ */
     getFontSize: function () {
