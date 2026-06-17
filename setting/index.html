@@ -264,6 +264,37 @@
       </div>
     </section>
 
+    <!-- ===== タブ: 外部LLM取り込み（プロンプト + JSON貼り付け） ===== -->
+    <section data-panel="extllm" class="panel">
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-robot ic"></i> 外部LLMで取り込む</h3></div>
+        <p class="hint">claude.ai・ChatGPT・Gemini など任意のチャットAIで取り込めます。Anthropic APIキー不要。<br>
+          <strong>手順:</strong> ①下のプロンプトをコピー → ②チャットAIにPDF（または画像）と一緒に貼り付けて送信 → ③返ってきたJSONを下の欄に貼り付け → ④「読み込む」で編集画面へ。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3><i class="fa-solid fa-clipboard ic"></i> ① プロンプト</h3>
+          <span class="spacer"></span>
+          <button class="btn sm primary" id="ext-copy"><i class="fa-solid fa-copy"></i> コピー</button>
+        </div>
+        <textarea id="ext-prompt" rows="10" readonly style="width:100%;font-size:12.5px" placeholder="読み込み中…"></textarea>
+        <p class="hint" id="ext-prompt-status" style="margin-top:6px"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-paste ic"></i> ② 結果のJSONを貼り付け</h3></div>
+        <textarea id="ext-json" rows="10" style="width:100%;font-size:12.5px" placeholder='{"universityName":"...","year":2024,"schedule":"...","questions":[ ... ]}'></textarea>
+        <div class="toolbar" style="margin-top:12px">
+          <button class="btn primary" id="ext-load"><i class="fa-solid fa-file-import"></i> 読み込む（編集画面へ）</button>
+          <button class="btn ghost sm" id="ext-clear"><i class="fa-solid fa-eraser"></i> クリア</button>
+          <span class="spacer"></span>
+          <span class="hint" id="ext-status"></span>
+        </div>
+        <p class="hint" style="margin-top:8px">※ コードブロック（```）が付いていても自動で除去します。読み込み後は「PDF取り込み」タブの編集画面で確認・修正して登録します。</p>
+      </div>
+    </section>
+
     <!-- ===== タブ5: コーパス検索設定 ===== -->
     <section data-panel="corpus" class="panel">
       <div class="card">
@@ -423,9 +454,9 @@
   <script src="../assets/data/oxford5000.js?v=20260612a"></script>
   <script src="../assets/data/target1900.js?v=20260613h"></script>
   <script src="../assets/js/store.js?v=20260616b"></script>
-  <script src="../assets/js/api.js?v=20260616e"></script>
+  <script src="../assets/js/api.js?v=20260616f"></script>
   <script src="../assets/js/ui.js?v=20260612z"></script>
   <script src="../assets/js/markup.js?v=20260616a"></script>
-  <script src="../assets/js/settings.js?v=20260616h"></script>
+  <script src="../assets/js/settings.js?v=20260616i"></script>
 </body>
 </html>

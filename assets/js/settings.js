@@ -13,9 +13,10 @@
     ingest:    { id: "ingest",    label: "PDF取り込み",      icon: "fa-file-import" },
     ingestcfg: { id: "ingestcfg", label: "取り込み設定",      icon: "fa-wand-magic-sparkles" },
     replace:   { id: "replace",   label: "登録データ置換",   icon: "fa-right-left" },
+    extllm:    { id: "extllm",    label: "外部LLM取り込み",  icon: "fa-robot" },
     corpus:    { id: "corpus",    label: "コーパス検索設定", icon: "fa-language" }
   };
-  var SET_ORDER = ["main", "conn", "list", "register", "ingest", "ingestcfg", "replace", "corpus"];
+  var SET_ORDER = ["main", "conn", "list", "register", "ingest", "ingestcfg", "replace", "extllm", "corpus"];
   var MAIN_TABS = { search: { label: "通常検索", icon: "fa-table-list" }, corpus: { label: "コーパス検索", icon: "fa-language" }, print: { label: "問題印刷", icon: "fa-print" } };
   var MAIN_ORDER = ["search", "corpus", "print"];
 
@@ -52,6 +53,7 @@
     wireIngest();
     wireIngestConfig();
     wireReplaceTab();
+    wireExtLlm();
     wireCorpusSettings();
 
     // 接続済みなら設定読み込み
@@ -74,6 +76,7 @@
     if (id === "list") loadList();
     if (id === "register") renderReg();
     if (id === "replace") renderBulkList();
+    if (id === "extllm") loadExtPrompt();
     if (id === "corpus") loadWordLists();
   }
 
@@ -615,6 +618,7 @@
       el("ingest-prompt-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> 保存中…';
       Api.updateConfig({ ingest_prompt: v }).then(function () {
         state.config.ingest_prompt = v;
+        extPromptLoaded = false;  // 外部LLM用プロンプトを次回再取得
         el("ingest-prompt-status").innerHTML = '<span style="color:var(--emerald-dark)"><i class="fa-solid fa-circle-check"></i> 保存しました</span>';
         toast("追加プロンプトを保存しました", "ok");
       }).catch(function (e) {
@@ -713,6 +717,77 @@
     $all("[data-bulkdel]", c).forEach(function (b) {
       b.addEventListener("click", function () { readBulkFromDom(); state.bulk.splice(+b.getAttribute("data-bulkdel"), 1); renderBulkList(); });
     });
+  }
+
+  /* ================= タブ: 外部LLM取り込み ================= */
+  var extPromptLoaded = false;
+  function wireExtLlm() {
+    if (!el("ext-load")) return;
+    el("ext-copy").addEventListener("click", function () {
+      var ta = el("ext-prompt");
+      if (!ta.value) { toast("プロンプトがまだ読み込まれていません", "err"); return; }
+      navigator.clipboard.writeText(ta.value).then(function () {
+        toast("プロンプトをコピーしました", "ok");
+      }, function () {
+        // フォールバック（execCommand）
+        ta.removeAttribute("readonly"); ta.select();
+        try { document.execCommand("copy"); toast("プロンプトをコピーしました", "ok"); }
+        catch (e) { toast("コピーに失敗しました。手動で選択してください", "err"); }
+        ta.setAttribute("readonly", "readonly");
+        window.getSelection && window.getSelection().removeAllRanges();
+      });
+    });
+    el("ext-clear").addEventListener("click", function () { el("ext-json").value = ""; el("ext-status").innerHTML = ""; });
+    el("ext-load").addEventListener("click", loadExtJson);
+  }
+  // 外部LLM用プロンプトを Worker から取得して表示（初回のみ）
+  function loadExtPrompt(force) {
+    if (!el("ext-prompt")) return;
+    if (extPromptLoaded && !force) return;
+    if (!Store.getWorkerUrl()) {
+      el("ext-prompt-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> Worker URL が未設定です（接続設定タブ）。</span>';
+      return;
+    }
+    el("ext-prompt").value = "";
+    el("ext-prompt").placeholder = "読み込み中…";
+    el("ext-prompt-status").textContent = "";
+    Api.getIngestPrompt().then(function (d) {
+      el("ext-prompt").value = (d && d.prompt) || "";
+      extPromptLoaded = true;
+    }).catch(function (e) {
+      el("ext-prompt-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
+    });
+  }
+  // 貼り付けJSON文字列から最初の { 〜 最後の } を取り出す（コードフェンス等を許容）
+  function extractJson(raw) {
+    var s = String(raw || "").trim();
+    var fence = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (fence) s = fence[1].trim();
+    var i = s.indexOf("{"), j = s.lastIndexOf("}");
+    if (i >= 0 && j > i) s = s.slice(i, j + 1);
+    return s;
+  }
+  function loadExtJson() {
+    var raw = el("ext-json").value;
+    if (!raw.trim()) { toast("JSONを貼り付けてください", "err"); return; }
+    var parsed;
+    try { parsed = JSON.parse(extractJson(raw)); }
+    catch (e) {
+      el("ext-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> JSONを読み取れませんでした（形式を確認してください）。</span>';
+      toast("JSONの解析に失敗しました", "err");
+      return;
+    }
+    if (!parsed || !Array.isArray(parsed.questions) || !parsed.questions.length) {
+      el("ext-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> questions 配列が見つかりません。</span>';
+      toast("questions が見つかりません", "err");
+      return;
+    }
+    // PDF取り込みと同じ編集画面へ
+    renderIngestResult(parsed);
+    el("ext-status").innerHTML = '<span style="color:var(--emerald-dark)"><i class="fa-solid fa-circle-check"></i> ' + parsed.questions.length + " 大問を読み込みました</span>";
+    UI.setActiveTab(el("set-tabs"), "ingest");
+    Store.setLastTab("setting", "ingest");
+    toast("編集画面に読み込みました（PDF取り込みタブ）", "ok");
   }
 
   function loadServerConfig() {

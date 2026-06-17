@@ -113,6 +113,8 @@
     replaceRegistered: function (rules, dryRun) {
       return call("/api/replace", { method: "POST", body: JSON.stringify({ rules: rules, dryRun: !!dryRun }) });
     },
+    // 外部LLM取り込み用プロンプト（{ prompt } を返す）
+    getIngestPrompt:  function () { return call("/api/ingest-prompt"); },
     getWordLists:     function (type) { return call("/api/wordlists" + qs({ type: type })); },
     createWordList:   function (d) { return call("/api/wordlists", { method: "POST", body: JSON.stringify(d) }); },
     updateWordList:   function (id, d) { return call("/api/wordlists/" + id, { method: "PUT", body: JSON.stringify(d) }); },
