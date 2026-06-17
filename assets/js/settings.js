@@ -1111,9 +1111,10 @@
       el("exam-modal-body").innerHTML = body || '<div class="empty">大問が登録されていません。</div>';
     }).catch(function (e) { el("exam-modal-body").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
   }
+  function isBodySection(label) { return label === "本文" || /全訳|和訳/.test(label); }
   function field(label, icon, text) {
     return '<div style="margin-bottom:14px"><div class="exam-section-title">' + esc(label) +
-      '</div><div class="exam-doc' + (label === "本文" ? "" : " no-indent") + '">' + Markup.render(text).html + "</div></div>";
+      '</div><div class="exam-doc' + (label === "本文" ? "" : " no-indent") + '">' + Markup.render(text, { autoParaNum: isBodySection(label) }).html + "</div></div>";
   }
 
   /* ================= タブ4: 問題登録 ================= */

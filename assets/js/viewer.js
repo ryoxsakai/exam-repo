@@ -485,8 +485,9 @@
     } catch (e) { return false; }
   }
 
+  function isBodySection(label) { return label === "本文" || /全訳|和訳/.test(label); }
   function renderField(label, icon, text) {
-    var r = Markup.render(text);
+    var r = Markup.render(text, { autoParaNum: isBodySection(label) });
     var checked = Store.isPrintSection(label) ? " checked" : "";
     return '<div class="exam-field" data-sectype="' + esc(label) + '" style="margin-bottom:14px">' +
       '<div class="exam-section-title">' + esc(label) +
@@ -512,7 +513,7 @@
 
   function printField(label, text) {
     return '<div class="print-field"><div class="print-field-label">' + esc(label) + "</div>" +
-      '<div class="exam-doc' + (label === "本文" ? "" : " no-indent") + '">' + Markup.render(text).html + "</div></div>";
+      '<div class="exam-doc' + (label === "本文" ? "" : " no-indent") + '">' + Markup.render(text, { autoParaNum: isBodySection(label) }).html + "</div></div>";
   }
 
   // 印刷ドキュメントの HTML を構築（表紙 → 問題面 → 解答面）

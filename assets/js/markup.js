@@ -10,10 +10,10 @@
      ~~x~~          … 下付き
      ^^x^^          … 上付き
      ((A)) 本文      … 選択肢（行頭）
-     ##N##          … 段落番号バッジ（語注 ##語::訳## とは別。`::` なし）
      !!!!出典!!!!    … 出典表記（右寄せ・グレー・小）
      ||||斜字||||    … 斜字（イタリック）
      ----           … 区切り線
+   段落番号は render(text, { autoParaNum: true }) で自動付番（本文・全訳セクション用）。
    ===================================================================== */
 (function (global) {
   "use strict";
@@ -61,16 +61,6 @@
         footnotes.push({ index: idx, word: m[1], translation: m[2] });
         out += '<span title="' + esc(m[1] + ": " + m[2]) + '">' + esc(m[1]) +
                '<sup class="footnote-number">*' + idx + "</sup></span>";
-        rem = rem.slice(m[0].length); continue;
-      }
-      // ##段落番号##（`::` を含まない ## … ##。語注の後に判定）
-      // 行頭（out が空 or 空白のみ）のときだけバッジ化。途中に現れたものはプレーンテキストとして残す。
-      if ((m = rem.match(/^##([^#:]+)##/))) {
-        if (out.trim() === "") {
-          out += '<span class="para-badge">' + esc(m[1]) + "</span>";
-        } else {
-          out += esc(m[0]);
-        }
         rem = rem.slice(m[0].length); continue;
       }
       // !!!!出典!!!!（右寄せ・グレー・小）
@@ -149,11 +139,14 @@
   }
 
   // テキスト全体 → { html, footnotes }
-  function render(text) {
+  // opts.autoParaNum = true のとき、各段落先頭に段落番号バッジを自動付番する（本文・全訳用）
+  function render(text, opts) {
+    var autoParaNum = opts && opts.autoParaNum;
     var footnotes = [];
     var lines = String(text == null ? "" : text).split("\n");
     var html = "";
     var paraStart = true; // 段落先頭か（空行・見出し・選択肢・区切りの直後）
+    var paraNum = 0;
 
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
@@ -193,7 +186,12 @@
       }
       // 段落先頭かつ英語大文字で始まる行のみ字下げ
       var indent = !noIndent && paraStart && /^[A-Z]/.test(trimmed);
-      html += '<span class="blk' + (indent ? " indent" : "") + '">' + inline(line, footnotes) + "</span>";
+      var prefix = "";
+      if (autoParaNum && paraStart) {
+        paraNum++;
+        prefix = '<span class="para-badge">' + paraNum + "</span>";
+      }
+      html += '<span class="blk' + (indent ? " indent" : "") + '">' + prefix + inline(line, footnotes) + "</span>";
       paraStart = false;
     }
 
@@ -214,7 +212,6 @@
     t = t.replace(/\{\{[^}]*\}\}/g, " ");           // 問見出し
     t = t.replace(/\[\[[^\]]*\]\]/g, " ");          // 空所
     t = t.replace(/##([^:#]+)::[^#]+##/g, "$1");    // 脚注 → 語のみ残す
-    t = t.replace(/##[^#:]+##/g, " ");              // 段落番号 → 除去
     t = t.replace(/!!!!([\s\S]+?)!!!!/g, " ");      // 出典 → 除去
     t = t.replace(/\|\|\|\|([\s\S]+?)\|\|\|\|/g, "$1"); // 斜字 → テキスト残す
     t = t.replace(/==([^=]+)==:\w+/g, "$1");        // 色ハイライト
