@@ -782,14 +782,70 @@
     }
     return "";  // マッチする } が見つからない
   }
+  // コードフェンスを除去し、最初の { 〜 最後の } を広めに切り出す（修復前処理用）
+  function sliceJson(raw) {
+    var s = String(raw || "").trim();
+    var fence = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (fence) s = fence[1].trim();
+    var i = s.indexOf("{"), j = s.lastIndexOf("}");
+    if (i < 0 || j < i) return "";
+    return s.slice(i, j + 1);
+  }
+  // LLM出力にありがちな壊れたJSONを修復する：
+  //  ・文字列値内の未エスケープ二重引用符（英文中の "…" など）を \" に
+  //  ・文字列内の生の改行・タブを \n \t に
+  //  ・} ] 直前の末尾カンマを除去
+  function repairJson(s) {
+    var out = "", inStr = false, esc = false, ws = " \t\n\r";
+    function nextNonWs(from) {
+      var k = from;
+      while (k < s.length && ws.indexOf(s[k]) >= 0) k++;
+      return s[k];
+    }
+    for (var i = 0; i < s.length; i++) {
+      var c = s[i];
+      if (esc) { out += c; esc = false; continue; }
+      if (c === "\\") { out += c; esc = true; continue; }
+      if (inStr) {
+        if (c === '"') {
+          // 文字列の本当の終端か、本文中の引用符かを次の非空白文字で判定
+          var nc = nextNonWs(i + 1);
+          if (nc === undefined || nc === "," || nc === "}" || nc === "]" || nc === ":") {
+            inStr = false; out += c;
+          } else {
+            out += '\\"';  // 本文中の引用符 → エスケープ
+          }
+        } else if (c === "\n") { out += "\\n"; }
+        else if (c === "\r") { out += "\\r"; }
+        else if (c === "\t") { out += "\\t"; }
+        else { out += c; }
+      } else {
+        if (c === '"') { inStr = true; out += c; }
+        else if (c === ",") {
+          var nc2 = nextNonWs(i + 1);
+          if (nc2 === "}" || nc2 === "]") { /* 末尾カンマを除去 */ }
+          else out += c;
+        }
+        else { out += c; }
+      }
+    }
+    return out;
+  }
   function loadExtJson() {
     var raw = el("ext-json").value;
     if (!raw.trim()) { toast("JSONを貼り付けてください", "err"); return; }
     var extracted = extractJson(raw);
-    var parsed;
+    var parsed, lastErr;
     try { parsed = JSON.parse(extracted); }
     catch (e) {
-      var msg = e.message || "不明なエラー";
+      lastErr = e;
+      // 修復を試みる（未エスケープ引用符・制御文字・末尾カンマ）
+      var repaired = repairJson(sliceJson(raw));
+      try { parsed = JSON.parse(repaired); lastErr = null; }
+      catch (e2) { lastErr = e2; }
+    }
+    if (lastErr) {
+      var msg = lastErr.message || "不明なエラー";
       var detail = extracted ? "（抽出: " + extracted.slice(0, 60) + (extracted.length > 60 ? "..." : "") + "）" : "（JSON部分が見つかりません）";
       el("ext-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> JSONを読み取れませんでした: ' + esc(msg) + detail + '</span>';
       toast("JSONの解析に失敗しました", "err");
