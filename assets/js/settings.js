@@ -763,6 +763,8 @@
     var s = String(raw || "").trim();
     var fence = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (fence) s = fence[1].trim();
+    // スマートクォートを ASCII クォートに正規化（LLMが " " などを出力するケース）
+    s = s.replace(/[""]/g, '"').replace(/['']/g, "'");
     var i = s.indexOf("{");
     if (i < 0) return "";
     // 最初の { からカウントして、マッチする } を見つける
@@ -782,11 +784,13 @@
     }
     return "";  // マッチする } が見つからない
   }
-  // コードフェンスを除去し、最初の { 〜 最後の } を広めに切り出す（修復前処理用）
+  // コードフェンスを除去し、スマートクォートを正規化し、最初の { 〜 最後の } を広めに切り出す（修復前処理用）
   function sliceJson(raw) {
     var s = String(raw || "").trim();
     var fence = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (fence) s = fence[1].trim();
+    // LLMが出力するスマートクォート（U+201C/D, U+2018/9）を ASCII クォートに正規化
+    s = s.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
     var i = s.indexOf("{"), j = s.lastIndexOf("}");
     if (i < 0 || j < i) return "";
     return s.slice(i, j + 1);
