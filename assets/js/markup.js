@@ -13,7 +13,7 @@
      !!!!出典!!!!    … 出典表記（右寄せ・グレー・小）
      ||||斜字||||    … 斜字（イタリック）
      ----           … 区切り線
-     ++（行頭）      … その段落に段落番号バッジを付ける（番号は 1 から連番）
+     [1] [2]（行頭） … 本文・和訳の段落先頭に置く段落番号（render の opts.paraNum=true で有効）
    ===================================================================== */
 (function (global) {
   "use strict";
@@ -139,13 +139,14 @@
   }
 
   // テキスト全体 → { html, footnotes }
-  // 行頭に ++ が付いた行だけ段落番号バッジを自動付番する（番号は 1 から連番）。
-  function render(text) {
+  // opts.paraNum=true（本文・和訳セクション）のとき、段落先頭の [1] [2] を段落番号バッジに変換し、
+  // バッジの無い段落先頭には字下げを付ける。
+  function render(text, opts) {
+    var paraNum = opts && opts.paraNum;
     var footnotes = [];
     var lines = String(text == null ? "" : text).split("\n");
     var html = "";
     var paraStart = true; // 段落先頭か（空行・見出し・選択肢・区切りの直後）
-    var paraNum = 0;
 
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
@@ -176,12 +177,15 @@
         continue;
       }
 
-      // ++ 行頭マーカー → この段落に番号バッジを付ける
-      var paraMark = false;
-      if (/^\s*\+\+/.test(line)) {
-        paraMark = true;
-        line = line.replace(/^\s*\+\+\s?/, "");
-        trimmed = line.trim();
+      // 本文・和訳: 段落先頭の [1] [2]（単角括弧。空所 [[ ]] とは別）を段落番号バッジに
+      var badgeNum = "";
+      if (paraNum && paraStart) {
+        var pm = trimmed.match(/^\[([^\[\]]+)\]\s?/);
+        if (pm) {
+          badgeNum = pm[1];
+          line = line.replace(/^\s*\[[^\[\]]+\]\s?/, "");
+          trimmed = line.trim();
+        }
       }
       // @@ 行頭タグ → 強制字下げなし（indent 抑制）
       var noIndent = false;
@@ -190,13 +194,9 @@
         line = line.replace(/^\s*@@\s?/, "");
         trimmed = line.trim();
       }
-      // 段落先頭かつ英語大文字で始まる行のみ字下げ（番号バッジ付き行は字下げ不要）
-      var indent = !noIndent && !paraMark && paraStart && /^[A-Z]/.test(trimmed);
-      var prefix = "";
-      if (paraMark) {
-        paraNum++;
-        prefix = '<span class="para-badge">' + paraNum + "</span>";
-      }
+      // 字下げ：本文・和訳ではバッジの無い段落先頭を字下げ。それ以外は英語大文字始まりのみ。
+      var indent = !noIndent && paraStart && (paraNum ? !badgeNum : /^[A-Z]/.test(trimmed));
+      var prefix = badgeNum ? '<span class="para-badge">' + esc(badgeNum) + "</span>" : "";
       html += '<span class="blk' + (indent ? " indent" : "") + '">' + prefix + inline(line, footnotes) + "</span>";
       paraStart = false;
     }
@@ -217,6 +217,7 @@
     var t = String(text == null ? "" : text);
     t = t.replace(/\{\{[^}]*\}\}/g, " ");           // 問見出し
     t = t.replace(/\[\[[^\]]*\]\]/g, " ");          // 空所
+    t = t.replace(/^\s*\[[^\[\]]+\]\s?/gm, "");     // 段落番号 [1]（行頭・単角括弧）
     t = t.replace(/##([^:#]+)::[^#]+##/g, "$1");    // 脚注 → 語のみ残す
     t = t.replace(/!!!!([\s\S]+?)!!!!/g, " ");      // 出典 → 除去
     t = t.replace(/\|\|\|\|([\s\S]+?)\|\|\|\|/g, "$1"); // 斜字 → テキスト残す
@@ -227,7 +228,6 @@
     t = t.replace(/~~([^~]+)~~/g, "$1");            // 下付き
     t = t.replace(/\^\^([^^]+)\^\^/g, "$1");        // 上付き
     t = t.replace(/\(\(([^)]+)\)\)/g, " ");         // 選択肢ラベル
-    t = t.replace(/^\s*\+\+\s?/gm, "");             // ++ 段落番号マーカー
     t = t.replace(/^@@\s?/gm, "");                  // @@ 字下げ抑制タグ
     t = t.replace(/----/g, " ");
     return t;

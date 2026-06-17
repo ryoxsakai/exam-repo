@@ -1111,9 +1111,11 @@
       el("exam-modal-body").innerHTML = body || '<div class="empty">大問が登録されていません。</div>';
     }).catch(function (e) { el("exam-modal-body").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
   }
+  function isBodySection(label) { return label === "本文" || /全訳|和訳|訳/.test(label); }
   function field(label, icon, text) {
+    var body = isBodySection(label);
     return '<div style="margin-bottom:14px"><div class="exam-section-title">' + esc(label) +
-      '</div><div class="exam-doc' + (label === "本文" ? "" : " no-indent") + '">' + Markup.render(text).html + "</div></div>";
+      '</div><div class="exam-doc' + (body ? "" : " no-indent") + '">' + Markup.render(text, { paraNum: body }).html + "</div></div>";
   }
 
   /* ================= タブ4: 問題登録 ================= */
@@ -1244,7 +1246,7 @@
     { l: "下線", t: "下線 __語__",              b: "__", a: "__" },
     { l: "太字", t: "太字 **語**",              b: "**", a: "**" },
     { l: "語注", t: "語注 ##語::訳##",          b: "##", a: "::訳##" },
-    { l: "段落", t: "段落番号マーカー ++（行頭に付けた段落だけ連番）", b: "++ ", a: "", ls: true },
+    { l: "段落", t: "段落番号 [1]（本文・和訳の段落先頭に置く）", b: "[", a: "]", ls: true },
     { l: "斜",   t: "斜字 ||||語||||",          b: "||||", a: "||||" },
     { l: "出典", t: "出典 !!!!出典!!!!（右寄せ・グレー）", b: "!!!!", a: "!!!!" },
     { l: "下付", t: "下付き ~~x~~",             b: "~~", a: "~~" },
@@ -1302,7 +1304,7 @@
     { code: "{{問1}} 次の文を読みなさい。", desc: "大問見出し（行頭）" },
     { code: "Fill in [[1]] and [[A]].", desc: "空所バッジ" },
     { code: "The ##immune::免疫## system.", desc: "語注（末尾に訳一覧）" },
-    { code: "++ In the first paragraph...\n++ The second paragraph follows.", desc: "段落番号マーカー（行頭 ++ を付けた段落だけ 1 から連番）" },
+    { code: "[1] In the first paragraph...\n\n[2] The second paragraph follows.", desc: "段落番号（本文・和訳の段落先頭に [1] [2]。空所 [[ ]] とは別）", body: true },
     { code: "He felt ||||déjà vu||||.", desc: "斜字（イタリック）" },
     { code: "!!!!出典: The Economist (2023)!!!!", desc: "出典（右寄せ・グレー・小）" },
     { code: "This is ==important==.", desc: "ハイライト（黄）" },
@@ -1320,7 +1322,7 @@
       h += '<div style="margin-bottom:16px">' +
         '<div class="exam-section-title">' + esc(ex.desc) + "</div>" +
         '<pre style="margin:0 0 6px;background:var(--grad-chip);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12.5px;white-space:pre-wrap;overflow-x:auto">' + esc(ex.code) + "</pre>" +
-        '<div class="exam-doc" style="border:1px dashed var(--line);border-radius:8px;padding:8px 12px">' + Markup.render(ex.code).html + "</div>" +
+        '<div class="exam-doc" style="border:1px dashed var(--line);border-radius:8px;padding:8px 12px">' + Markup.render(ex.code, { paraNum: ex.body }).html + "</div>" +
       "</div>";
     });
     el("syntax-body").innerHTML = h;
@@ -1340,8 +1342,8 @@
     var s = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
     if (lineStart) {
       var ls = v.lastIndexOf("\n", s - 1) + 1;  // カーソル行の行頭位置
-      ta.value = v.slice(0, ls) + before + v.slice(ls);
-      ta.selectionStart = ta.selectionEnd = ls + before.length;
+      ta.value = v.slice(0, ls) + before + after + v.slice(ls);
+      ta.selectionStart = ta.selectionEnd = ls + before.length;  // before と after の間にカーソル
       ta.focus();
       return;
     }

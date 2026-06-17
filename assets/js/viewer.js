@@ -485,15 +485,18 @@
     } catch (e) { return false; }
   }
 
+  // 本文・和訳・全訳セクション（段落番号 [1] と字下げを有効にする）
+  function isBodySection(label) { return label === "本文" || /全訳|和訳|訳/.test(label); }
   function renderField(label, icon, text) {
-    var r = Markup.render(text);
+    var body = isBodySection(label);
+    var r = Markup.render(text, { paraNum: body });
     var checked = Store.isPrintSection(label) ? " checked" : "";
     return '<div class="exam-field" data-sectype="' + esc(label) + '" style="margin-bottom:14px">' +
       '<div class="exam-section-title">' + esc(label) +
       '<label class="print-check" title="チェックした項目のみ印刷されます">' +
       '<input type="checkbox" data-printsec="' + esc(label) + '"' + checked + '><span>印刷</span></label>' +
       "</div>" +
-      '<div class="exam-doc' + (label === "本文" ? "" : " no-indent") + '">' + r.html + "</div></div>";
+      '<div class="exam-doc' + (body ? "" : " no-indent") + '">' + r.html + "</div></div>";
   }
 
   /* ---------------- 問題印刷タブ ---------------- */
@@ -511,8 +514,9 @@
   }
 
   function printField(label, text) {
+    var body = isBodySection(label);
     return '<div class="print-field"><div class="print-field-label">' + esc(label) + "</div>" +
-      '<div class="exam-doc' + (label === "本文" ? "" : " no-indent") + '">' + Markup.render(text).html + "</div></div>";
+      '<div class="exam-doc' + (body ? "" : " no-indent") + '">' + Markup.render(text, { paraNum: body }).html + "</div></div>";
   }
 
   // 印刷ドキュメントの HTML を構築（表紙 → 問題面 → 解答面）

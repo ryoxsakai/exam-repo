@@ -436,11 +436,11 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
   font-size: .82em; font-family: var(--sans); font-weight: 600; vertical-align: .04em; line-height: 1;
   text-indent: 0; overflow: hidden;
 }
-/* 段落番号バッジ（空所とほぼ同スタイル・角丸なし・細字・幅1.25em） */
+/* 段落番号バッジ（空所と同じ丸み・ほぼ正方形・右に2emマージン） */
 .para-badge {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 1.25em; box-sizing: border-box; padding: calc(.2em + 1px) 0; margin: 0 .35em 0 0;
-  background: #fff; color: #000; border: 1.5px solid #000; border-radius: 0;
+  min-width: 1.5em; box-sizing: border-box; padding: calc(.2em + 1px) .15em; margin: 0 2em 0 0;
+  background: #fff; color: #000; border: 1.5px solid #000; border-radius: 3px;
   font-size: .82em; font-family: var(--sans); font-weight: 400; vertical-align: .04em; line-height: 1;
   text-indent: 0; overflow: hidden;
 }
