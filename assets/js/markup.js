@@ -64,8 +64,13 @@
         rem = rem.slice(m[0].length); continue;
       }
       // ##段落番号##（`::` を含まない ## … ##。語注の後に判定）
+      // 行頭（out が空 or 空白のみ）のときだけバッジ化。途中に現れたものはプレーンテキストとして残す。
       if ((m = rem.match(/^##([^#:]+)##/))) {
-        out += '<span class="para-badge">' + esc(m[1]) + "</span>";
+        if (out.trim() === "") {
+          out += '<span class="para-badge">' + esc(m[1]) + "</span>";
+        } else {
+          out += esc(m[0]);
+        }
         rem = rem.slice(m[0].length); continue;
       }
       // !!!!出典!!!!（右寄せ・グレー・小）
