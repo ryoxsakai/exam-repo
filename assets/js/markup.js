@@ -138,6 +138,59 @@
     return out;
   }
 
+  // ---- Markdown 風テーブル ----
+  // 区切り行か（パイプを含む `|---|:--:|` 等。本文の `----` と混同しないため
+  // 必ずパイプを1つ以上含むことを条件にする）
+  function isTableSep(line) {
+    var t = line.trim();
+    if (t.indexOf("|") < 0) return false;
+    t = t.replace(/^\|/, "").replace(/\|$/, "");
+    var cells = t.split("|");
+    if (!cells.length) return false;
+    return cells.every(function (c) { return /^\s*:?-+:?\s*$/.test(c); });
+  }
+  // 行をセル配列へ分割（`\|` はセル内のリテラルパイプとして扱う）
+  function splitRow(line) {
+    var t = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+    var cells = [], buf = "";
+    for (var i = 0; i < t.length; i++) {
+      if (t[i] === "\\" && t[i + 1] === "|") { buf += "|"; i++; continue; }
+      if (t[i] === "|") { cells.push(buf.trim()); buf = ""; continue; }
+      buf += t[i];
+    }
+    cells.push(buf.trim());
+    return cells;
+  }
+  // lines[start] をヘッダ、lines[start+1] を区切り行とする表を描画。
+  // 返り値 next は表の次に処理すべき行インデックス。
+  function renderTable(lines, start, footnotes) {
+    var headers = splitRow(lines[start]);
+    var aligns = splitRow(lines[start + 1]).map(function (c) {
+      var l = c.charAt(0) === ":", r = c.charAt(c.length - 1) === ":";
+      return l && r ? "center" : r ? "right" : l ? "left" : "";
+    });
+    var bodies = [], idx = start + 2;
+    for (; idx < lines.length; idx++) {
+      var lt = lines[idx].trim();
+      if (lt === "" || lt.indexOf("|") < 0) break;
+      bodies.push(splitRow(lines[idx]));
+    }
+    function cell(tag, txt, al) {
+      return "<" + tag + (al ? ' style="text-align:' + al + '"' : "") + ">" +
+             inline(txt || "", footnotes) + "</" + tag + ">";
+    }
+    var h = '<div class="exam-table-wrap"><table class="exam-table"><thead><tr>';
+    headers.forEach(function (c, ci) { h += cell("th", c, aligns[ci]); });
+    h += "</tr></thead><tbody>";
+    bodies.forEach(function (row) {
+      h += "<tr>";
+      for (var ci = 0; ci < headers.length; ci++) h += cell("td", row[ci] != null ? row[ci] : "", aligns[ci]);
+      h += "</tr>";
+    });
+    h += "</tbody></table></div>";
+    return { html: h, next: idx };
+  }
+
   // テキスト全体 → { html, footnotes }
   // opts.paraNum=true（本文・和訳セクション）のとき、段落先頭の [1] [2] を段落番号バッジに変換し、
   // バッジの無い段落先頭には字下げを付ける。
@@ -154,6 +207,15 @@
 
       if (trimmed === "") { html += '<div style="height:.6em"></div>'; paraStart = true; continue; }
       if (trimmed === "----") { html += '<hr class="exam-hr">'; paraStart = true; continue; }
+
+      // Markdown 風テーブル（ヘッダ行 + 区切り行 |---|---| が続く場合）
+      if (trimmed.indexOf("|") >= 0 && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+        var tbl = renderTable(lines, i, footnotes);
+        html += tbl.html;
+        i = tbl.next - 1; // for ループの ++ で次行へ
+        paraStart = true;
+        continue;
+      }
 
       // {{問N}} 行頭 → 見出し
       var qm = trimmed.match(/^\{\{([^}]+)\}\}/);
@@ -221,6 +283,8 @@
     t = t.replace(/##([^:#]+)::[^#]+##/g, "$1");    // 脚注 → 語のみ残す
     t = t.replace(/!!!!([\s\S]+?)!!!!/g, " ");      // 出典 → 除去
     t = t.replace(/\|\|\|\|([\s\S]+?)\|\|\|\|/g, "$1"); // 斜字 → テキスト残す
+    t = t.replace(/^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/gm, " "); // 表の区切り行
+    t = t.replace(/\|/g, " ");                          // 表のセル区切り → 空白
     t = t.replace(/==([^=]+)==:\w+/g, "$1");        // 色ハイライト
     t = t.replace(/==([^=]+)==/g, "$1");            // ハイライト
     t = t.replace(/__([^_]+)__/g, "$1");            // 下線
