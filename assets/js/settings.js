@@ -344,6 +344,19 @@
     return "問題";
   }
 
+  // 大学名の表記ゆれを統一（「愛知医科大学 / 愛知医科大 / 愛知医科大学（医）」→「愛知医科」）。
+  // Worker 側 normalizeUniversityName と同一ルール。取り込み結果の表示にも反映する。
+  function normalizeUniName(name) {
+    var n = String(name == null ? "" : name).trim();
+    if (!n) return n;
+    var prev;
+    do { prev = n; n = n.replace(/[（(][^（）()]*[）)]\s*$/, "").trim(); } while (n !== prev);
+    if (/大学$/.test(n)) n = n.replace(/大学$/, "");
+    else if (/大$/.test(n)) n = n.replace(/大$/, "");
+    n = n.trim();
+    return n || String(name == null ? "" : name).trim();
+  }
+
   // AI 解析結果（sections 形式 / 旧 problemText 形式の両対応）を state.ing へ
   // 方式・種別は既存候補に寄せる（無ければ読み取り値のまま）
   function ingestToState(data) {
@@ -351,7 +364,7 @@
     var schedules = state.config.schedules || [];
     var cats = state.config.question_categories || [];
     return {
-      universityName: (data && data.universityName) || "",
+      universityName: normalizeUniName((data && data.universityName) || ""),
       year: (data && data.year) || "",
       schedule: bestExisting((data && data.schedule) || "", schedules),
       truncated: !!(data && data._truncated),

@@ -116,6 +116,24 @@ const INGEST_JSON_SPEC_FENCED = `解析結果は、下記の形のJSONを **1つ
 {"universityName":"...","year":2024,"schedule":"...","questions":[{"questionNumber":1,"category":"...","sections":[{"type":"本文","text":"..."},{"type":"設問","text":"..."},{"type":"解答","text":"..."},{"type":"解説","text":"..."},{"type":"全訳","text":"..."}]}]}
 \`\`\``;
 
+// 大学名の表記ゆれを統一する。取り込み時に「愛知医科大学 / 愛知医科大 / 愛知医科大学（医）」
+// などを「愛知医科」へ寄せ、同一大学が複数レコードに分裂するのを防ぐ。
+//   - 末尾の括弧注記（（医）(医) など）を除去
+//   - 末尾の「大学」を除去、無ければ末尾の「大」を除去
+function normalizeUniversityName(name: string): string {
+  let n = (name || "").trim();
+  if (!n) return n;
+  // 末尾の括弧注記を繰り返し除去（（医）（医学部）(医) など）
+  let prev;
+  do { prev = n; n = n.replace(/[（(][^（）()]*[）)]\s*$/u, "").trim(); } while (n !== prev);
+  // 末尾の「大学」→ 除去。無ければ「大」を除去
+  if (/大学$/u.test(n)) n = n.replace(/大学$/u, "");
+  else if (/大$/u.test(n)) n = n.replace(/大$/u, "");
+  n = n.trim();
+  // 全部消えてしまう異常時は元の名前を返す
+  return n || (name || "").trim();
+}
+
 type Replacement = { from?: string; to?: string; regex?: boolean; flags?: string };
 
 // テキストへ置換ルール（grep replace）を適用し、置換件数も返す。
@@ -578,7 +596,8 @@ export default {
         type QBody = { questionNumber: number; category?: string; problemText: string; answerText: string; commentaryText: string };
         type Body = { universityName: string; year: number; schedule: string; questions?: QBody[] };
         const body = await request.json<Body>();
-        const { universityName, year, schedule, questions = [] } = body;
+        const { year, schedule, questions = [] } = body;
+        const universityName = normalizeUniversityName(body.universityName);
 
         if (!universityName || !year || !schedule) {
           return json({ error: "Missing required fields: universityName, year, schedule" }, 400, origin);
@@ -674,12 +693,13 @@ export default {
 
         // 変更後の (大学・年度・方式) を確定（大学名が来ていれば取得 or 新規作成。まだ UPDATE はしない）
         let targetUniId = existing.university_id;
-        if (body.universityName) {
+        const putUniName = normalizeUniversityName(body.universityName || "");
+        if (putUniName) {
           let uni = await env.DB.prepare("SELECT id FROM universities WHERE name = ?")
-            .bind(body.universityName).first<{ id: number }>();
+            .bind(putUniName).first<{ id: number }>();
           if (!uni) uni = await env.DB.prepare(
             "INSERT INTO universities (name) VALUES (?) RETURNING id"
-          ).bind(body.universityName).first<{ id: number }>();
+          ).bind(putUniName).first<{ id: number }>();
           if (uni) targetUniId = uni.id;
         }
         const targetYear = body.year !== undefined ? body.year : existing.year;
