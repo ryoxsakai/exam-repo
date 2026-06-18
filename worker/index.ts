@@ -514,6 +514,24 @@ export default {
         return json({ success: true }, 200, origin);
       }
 
+      // ── PUT /api/universities/:id（大学名のリネーム） ───────────────
+      const putUniMatch = path.match(/^\/api\/universities\/(\d+)$/);
+      if (putUniMatch && request.method === "PUT") {
+        const uniId = Number(putUniMatch[1]);
+        const body = await request.json<{ name?: string }>().catch(() => ({}));
+        const name = (body.name || "").trim();
+        if (!name) return json({ error: "大学名を入力してください。" }, 400, origin);
+        const exists = await env.DB.prepare(
+          "SELECT id FROM universities WHERE name = ? AND id != ?"
+        ).bind(name, uniId).first<{ id: number }>();
+        if (exists) return json({ error: `「${name}」は既に登録されています。` }, 400, origin);
+        const res = await env.DB.prepare(
+          "UPDATE universities SET name = ? WHERE id = ?"
+        ).bind(name, uniId).run();
+        if (!res.meta.changes) return json({ error: "対象の大学が見つかりません。" }, 404, origin);
+        return json({ success: true, id: uniId, name }, 200, origin);
+      }
+
       // ── DELETE /api/universities/:id ───────────────────────────────
       const delUniMatch = path.match(/^\/api\/universities\/(\d+)$/);
       if (delUniMatch && request.method === "DELETE") {

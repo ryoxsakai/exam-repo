@@ -41,6 +41,7 @@
     getConfig:        function () { return call("/api/config"); },
     updateConfig:     function (data) { return call("/api/config", { method: "PUT", body: JSON.stringify(data) }); },
     getUniversities:  function () { return call("/api/universities"); },
+    updateUniversity: function (id, name) { return call("/api/universities/" + id, { method: "PUT", body: JSON.stringify({ name: name }) }); },
     deleteUniversity: function (id) { return call("/api/universities/" + id, { method: "DELETE" }); },
     getExams:         function (p) { return call("/api/exams" + qs(p)); },
     getExam:          function (id) { return call("/api/exams/" + id); },

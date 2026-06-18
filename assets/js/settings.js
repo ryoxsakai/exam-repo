@@ -1479,20 +1479,25 @@
   }
 
   /* ---- 年度/方式/大学/種別 編集モーダル（汎用） ---- */
-  function openEditModal(title, items, onSave) {
-    state.editCtx = { items: items.slice(), onSave: onSave };
+  function openEditModal(title, items, onSave, opts) {
+    opts = opts || {};
+    // editable=true のときは items を { id, name } オブジェクト配列として扱い、名前を直接編集可能にする
+    state.editCtx = { items: items.slice(), onSave: onSave, editable: !!opts.editable };
     el("edit-modal-title").textContent = title;
     el("edit-new").value = "";
     renderEditList();
     UI.openModal(el("edit-modal"));
   }
   function renderEditList() {
-    var items = state.editCtx.items, c = el("edit-list");
+    var items = state.editCtx.items, c = el("edit-list"), editable = state.editCtx.editable;
     c.innerHTML = "";
     if (!items.length) c.innerHTML = '<li class="hint">項目がありません。上で追加してください。</li>';
     items.forEach(function (it, i) {
+      var label = editable
+        ? '<input class="edit-item-input" type="text" data-edit="' + i + '" value="' + esc(it.name) + '" />'
+        : '<span class="label">' + esc(it) + "</span>";
       var li = create("li", { class: "sort-item" },
-        '<span class="label">' + esc(it) + "</span><span class='move'>" +
+        label + "<span class='move'>" +
         '<button class="icon-btn sm" data-up="' + i + '"' + (i === 0 ? " disabled" : "") + '><i class="fa-solid fa-arrow-up"></i></button>' +
         '<button class="icon-btn sm" data-down="' + i + '"' + (i === items.length - 1 ? " disabled" : "") + '><i class="fa-solid fa-arrow-down"></i></button>' +
         '<button class="icon-btn sm danger" data-del="' + i + '"><i class="fa-solid fa-trash"></i></button></span>');
@@ -1501,6 +1506,7 @@
     $all("[data-up]", c).forEach(function (b) { b.addEventListener("click", function () { var i = +b.getAttribute("data-up"); swap(state.editCtx.items, i, i - 1); renderEditList(); }); });
     $all("[data-down]", c).forEach(function (b) { b.addEventListener("click", function () { var i = +b.getAttribute("data-down"); swap(state.editCtx.items, i, i + 1); renderEditList(); }); });
     $all("[data-del]", c).forEach(function (b) { b.addEventListener("click", function () { state.editCtx.items.splice(+b.getAttribute("data-del"), 1); renderEditList(); }); });
+    $all("[data-edit]", c).forEach(function (inp) { inp.addEventListener("input", function () { state.editCtx.items[+inp.getAttribute("data-edit")].name = inp.value; }); });
   }
   function swap(arr, i, j) { if (j < 0 || j >= arr.length) return; var t = arr[i]; arr[i] = arr[j]; arr[j] = t; }
 
@@ -1517,19 +1523,36 @@
     return Api.updateConfig({ question_categories: items }).then(function () { state.config.question_categories = items; fillRegSelects(); });
   }); }
   function openUniversityEdit() {
-    // 大学は API 由来。追加はローカルに保持（登録時に自動作成）、削除は API。並び替えはローカル表示。
-    openEditModal("大学名の編集", state.universities.map(function (u) { return u.name; }), function (items) {
-      // 追加された新規大学名は登録時に作成される。ローカル順序を反映。
-      var existing = state.universities.slice();
-      var byName = {}; existing.forEach(function (u) { byName[u.name] = u; });
-      // 削除されたものを API 削除
-      var removed = existing.filter(function (u) { return items.indexOf(u.name) < 0; });
-      var ops = removed.map(function (u) { return Api.deleteUniversity(u.id).catch(function () {}); });
-      return Promise.all(ops).then(function () {
-        state.universities = items.map(function (n) { return byName[n] || { id: null, name: n }; });
-        fillRegSelects(); fillSelect(el("sm-university"), items, "指定なし");
+    // 大学は API 由来。名前は直接編集（リネーム）可能。リネーム・削除は API、追加はローカル保持（登録時に自動作成）。
+    var startItems = state.universities.map(function (u) { return { id: u.id, name: u.name }; });
+    openEditModal("大学名の編集", startItems, function (items) {
+      var existing = state.universities.filter(function (u) { return u.id != null; });
+      var byId = {}; existing.forEach(function (u) { byId[u.id] = u; });
+      var keptIds = {}, ops = [];
+      // リネーム: id があり名前が変わったもの
+      items.forEach(function (it) {
+        if (it.id == null) return;
+        keptIds[it.id] = true;
+        var orig = byId[it.id], name = (it.name || "").trim();
+        if (orig && name && name !== orig.name) ops.push(Api.updateUniversity(it.id, name));
       });
-    });
+      // 削除: 元々あって items から消えた id（試験があるとAPI側で弾かれるので catch）
+      existing.forEach(function (u) { if (!keptIds[u.id]) ops.push(Api.deleteUniversity(u.id).catch(function () {})); });
+      return Promise.all(ops)
+        .then(function () { return Api.getUniversities().catch(function () { return { universities: existing }; }); })
+        .then(function (res) {
+          state.universities = (res.universities || []).map(function (u) { return { id: u.id, name: u.name }; });
+          // 新規追加（id:null）のローカル名は登録時に作成されるため末尾に保持
+          items.forEach(function (it) {
+            var name = (it.name || "").trim();
+            if (it.id == null && name && !state.universities.some(function (u) { return u.name === name; })) {
+              state.universities.push({ id: null, name: name });
+            }
+          });
+          fillRegSelects();
+          fillSelect(el("sm-university"), state.universities.map(function (u) { return u.name; }), "指定なし");
+        });
+    }, { editable: true });
   }
 
   /* ================= タブ5: コーパス検索設定 ================= */
@@ -1674,7 +1697,11 @@
   function wireEditModal() {
     el("edit-add").addEventListener("click", function () {
       var v = el("edit-new").value.trim(); if (!v) return;
-      if (state.editCtx.items.indexOf(v) < 0) state.editCtx.items.push(v);
+      if (state.editCtx.editable) {
+        if (!state.editCtx.items.some(function (it) { return it.name === v; })) state.editCtx.items.push({ id: null, name: v });
+      } else if (state.editCtx.items.indexOf(v) < 0) {
+        state.editCtx.items.push(v);
+      }
       el("edit-new").value = ""; renderEditList();
     });
     el("edit-new").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); el("edit-add").click(); } });
