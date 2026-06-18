@@ -473,7 +473,7 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
   display: inline-flex; align-items: center; justify-content: center;
   height: 1.5em; min-width: 1.5em; box-sizing: border-box; padding: 0 .12em; margin: 0 2em 0 0;
   background: #fff; color: #555; border: 1px solid #999; border-radius: 3px;
-  font-size: .6em; font-family: var(--sans); font-weight: 400; vertical-align: .04em; line-height: 1;
+  font-size: .6em; font-family: var(--sans); font-weight: 400; vertical-align: .28em; line-height: 1;
   text-indent: 0; overflow: hidden;
 }
 /* 出典表記（右寄せ・グレー・小） */
