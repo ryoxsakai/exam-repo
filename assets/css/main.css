@@ -446,6 +446,15 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
 .exam-doc u { text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
 .exam-hr { border: 0; height: 1px; background: linear-gradient(to right, transparent, var(--line), transparent); margin: 16px 0; }
 
+/* 表（Markdown 記法） */
+.exam-table-wrap { overflow-x: auto; margin: 14px 0; }
+.exam-table { border-collapse: collapse; width: auto; min-width: min(100%, 320px); font-size: .92em; }
+.exam-table th, .exam-table td {
+  border: 1px solid var(--line); padding: .4em .8em; text-align: left; vertical-align: top; line-height: 1.6;
+}
+.exam-table thead th { background: var(--grad-chip); color: var(--emerald-dark); font-weight: 700; font-family: var(--sans); }
+.exam-table tbody tr:nth-child(even) td { background: var(--line-soft); }
+
 /* Answer choices — clean wrapping for long options */
 .answer-choice {
   display: flex; align-items: baseline; gap: .5em; margin: .3em 0; padding-left: .25em;
@@ -648,6 +657,14 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area .hl-aqua   { background: #a5f3fc !important; }
   /* ハイライトの文字色は黒に統一（リセットで上書き済みだが明示） */
   #print-area mark.hl { color: #000 !important; }
+  /* 表は枠線を黒で保持し、途中で改ページしない */
+  #print-area .exam-table { break-inside: avoid; page-break-inside: avoid; }
+  #print-area .exam-table th, #print-area .exam-table td { border: 1px solid #000 !important; color: #000 !important; }
+  #print-area .exam-table thead th {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    background: #f2f4f8 !important;
+  }
+  #print-area .exam-table tbody tr:nth-child(even) td { background: #fff !important; }
   /* 問題印刷タブの出力: 表紙→問題面→解答面を改ページ */
   #print-area.print-out .print-cover {
     height: 92vh; display: flex; flex-direction: column; justify-content: center;

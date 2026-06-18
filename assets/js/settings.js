@@ -1246,7 +1246,8 @@
     { l: "下付", t: "下付き ~~x~~",             b: "~~", a: "~~" },
     { l: "上付", t: "上付き ^^x^^",             b: "^^", a: "^^" },
     { l: "詰め", t: "字下げなし @@ （段落先頭のインデント抑制）", b: "@@", a: "" },
-    { l: "区切", t: "区切り線 ----",            b: "\n----\n", a: "" }
+    { l: "区切", t: "区切り線 ----",            b: "\n----\n", a: "" },
+    { l: "表",   t: "表（Markdown記法。| でセル区切り）", b: "\n| 見出し1 | 見出し2 |\n| --- | --- |\n| 　 | 　 |\n| 　 | 　 |\n", a: "" }
   ];
   function markupBar(i) {
     var h = '<div class="markup-bar">';
@@ -1308,7 +1309,8 @@
     { code: "H~~2~~O and 1^^st^^.", desc: "下付き・上付き" },
     { code: "((A)) apple\n((B)) a very long choice that wraps neatly onto the next line", desc: "選択肢（行頭。折り返しも整形）" },
     { code: "----", desc: "区切り線" },
-    { code: "@@The quick brown fox jumps.", desc: "@@ — 行頭に付けると段落インデントを抑制" }
+    { code: "@@The quick brown fox jumps.", desc: "@@ — 行頭に付けると段落インデントを抑制" },
+    { code: "| 語 | 意味 |\n| --- | --- |\n| apple | りんご |\n| orange | オレンジ |", desc: "表（Markdown記法。1行目=見出し、2行目=区切り |---|、以降が中身。:--- 左 / :--: 中央 / ---: 右寄せ）" }
   ];
   function openSyntaxModal() {
     var h = "";
