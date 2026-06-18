@@ -461,12 +461,14 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
   font-size: .82em; font-family: var(--sans); font-weight: 600; vertical-align: .04em; line-height: 1;
   text-indent: 0; overflow: hidden;
 }
-/* 段落番号バッジ（空所と同じ丸み・ほぼ正方形・右に2emマージン） */
+/* 段落番号バッジ（空所と同じ丸み・正方形・右に2emマージン）
+   height と min-width を同値にして1桁は正方形を保つ。縦パディングは使わず
+   固定 height + フレックス中央寄せで高さを担保（2桁以上は横へ伸びる） */
 .para-badge {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 1.5em; box-sizing: border-box; padding: calc(.2em + 1px) .15em; margin: 0 2em 0 0;
+  height: 1.5em; min-width: 1.5em; box-sizing: border-box; padding: 0 .12em; margin: 0 2em 0 0;
   background: #fff; color: #000; border: 1.5px solid #000; border-radius: 3px;
-  font-size: .82em; font-family: var(--sans); font-weight: 400; vertical-align: .04em; line-height: 1;
+  font-size: .74em; font-family: var(--sans); font-weight: 400; vertical-align: .04em; line-height: 1;
   text-indent: 0; overflow: hidden;
 }
 /* 出典表記（右寄せ・グレー・小） */
