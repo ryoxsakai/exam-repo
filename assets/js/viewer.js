@@ -24,7 +24,7 @@
     corpus: { id: "corpus", label: "コーパス検索", icon: "fa-language" },
     print:  { id: "print",  label: "問題印刷",   icon: "fa-print" }
   };
-  var DEFAULT_ORDER = ["search", "tree", "corpus", "print"];
+  var DEFAULT_ORDER = ["tree", "search", "corpus", "print"];
 
   // 状態
   var state = {
