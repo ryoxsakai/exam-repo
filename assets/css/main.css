@@ -343,7 +343,17 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
 #exam-modal .modal-head .icon-btn, #preview-modal .modal-head .icon-btn { width: 34px; height: 34px; border-radius: 9px; font-size: 13px; }
 #exam-modal .modal-foot { padding: 10px 14px; gap: 6px; justify-content: flex-start; }
 #exam-nav-label { font-size: 12px; color: var(--muted); min-width: 3.5em; text-align: center; }
-
+/* 閲覧モーダル: この問題内のみ置換するバー（フッターの上に出る） */
+.exam-replace-bar {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  padding: 10px 14px; border-top: 1px solid var(--line); background: var(--grad-chip);
+}
+.exam-replace-bar input {
+  flex: 1 1 auto; min-width: 0; font-size: 13.5px; padding: 7px 10px;
+  border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink);
+}
+.exam-replace-bar input:focus { border-color: var(--emerald); box-shadow: 0 0 0 3px rgba(5,150,105,.12); outline: none; }
+.exam-replace-bar .exam-rep-arrow { color: var(--muted); flex: 0 0 auto; font-size: 12px; }
 /* Modal tabs */
 .modal .tabs { margin: 0 0 18px; }
 
