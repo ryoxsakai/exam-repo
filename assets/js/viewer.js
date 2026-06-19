@@ -539,6 +539,7 @@
     if (bar) bar.hidden = true;
     if (el("exam-rep-from")) el("exam-rep-from").value = "";
     if (el("exam-rep-to")) el("exam-rep-to").value = "";
+    if (el("exam-rep-regex")) el("exam-rep-regex").checked = false;
   }
   function toggleReplaceBar() {
     var bar = el("exam-replace-bar");
@@ -546,9 +547,13 @@
     bar.hidden = !bar.hidden;
     if (!bar.hidden) el("exam-rep-from").focus();
   }
-  // リテラル（非正規表現）で全置換し、件数も返す
-  function replaceCount(text, from, to) {
+  // 全置換し件数も返す。re を渡せば正規表現、無ければ from をリテラルとして扱う。
+  function replaceCount(text, from, to, re) {
     var s = String(text == null ? "" : text);
+    if (re) {
+      var m = s.match(re);
+      return { text: s.replace(re, to), count: m ? m.length : 0 };
+    }
     if (!from) return { text: s, count: 0 };
     var parts = s.split(from);
     return { text: parts.join(to), count: parts.length - 1 };
@@ -559,12 +564,18 @@
     var from = el("exam-rep-from").value;
     var to = el("exam-rep-to").value;
     if (!from) { UI.toast("検索（from）を入力してください", "err"); return; }
+    var useRegex = el("exam-rep-regex") && el("exam-rep-regex").checked;
+    var re = null;
+    if (useRegex) {
+      try { re = new RegExp(from, "g"); }
+      catch (e) { UI.toast("正規表現が不正です: " + (e.message || ""), "err"); return; }
+    }
 
     var total = 0;
     var payload = view.questions.map(function (q) {
-      var p = replaceCount(q.problem_text, from, to);
-      var a = replaceCount(q.answer_text, from, to);
-      var c = replaceCount(q.commentary_text, from, to);
+      var p = replaceCount(q.problem_text, from, to, re);
+      var a = replaceCount(q.answer_text, from, to, re);
+      var c = replaceCount(q.commentary_text, from, to, re);
       total += p.count + a.count + c.count;
       return {
         questionNumber: q.question_number,

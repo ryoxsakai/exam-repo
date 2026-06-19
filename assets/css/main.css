@@ -354,6 +354,7 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
 }
 .exam-replace-bar input:focus { border-color: var(--emerald); box-shadow: 0 0 0 3px rgba(5,150,105,.12); outline: none; }
 .exam-replace-bar .exam-rep-arrow { color: var(--muted); flex: 0 0 auto; font-size: 12px; }
+.exam-replace-bar .exam-rep-re { flex: 0 0 auto; white-space: nowrap; font-size: 12.5px; color: var(--ink-soft); }
 /* Modal tabs */
 .modal .tabs { margin: 0 0 18px; }
 

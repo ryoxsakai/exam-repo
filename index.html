@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="assets/css/main.css?v=20260619c" />
+  <link rel="stylesheet" href="assets/css/main.css?v=20260619d" />
 </head>
 <body>
   <!-- ===== Topbar ===== -->
@@ -223,7 +223,8 @@
       <div class="exam-replace-bar" id="exam-replace-bar" hidden>
         <input type="text" id="exam-rep-from" placeholder="検索（from）" />
         <i class="fa-solid fa-arrow-right exam-rep-arrow"></i>
-        <input type="text" id="exam-rep-to" placeholder="置換（to）" />
+        <input type="text" id="exam-rep-to" placeholder="置換（to。正規表現時は $1 可）" />
+        <label class="exam-rep-re check-inline" title="正規表現として検索（フラグ g）"><input type="checkbox" id="exam-rep-regex"> <span>正規表現</span></label>
         <button class="icon-btn primary" id="exam-rep-apply" title="この問題のみ置換"><i class="fa-solid fa-check"></i></button>
       </div>
       <div class="modal-foot" id="exam-modal-foot">
@@ -245,6 +246,6 @@
   <script src="assets/js/ui.js?v=20260612z"></script>
   <script src="assets/js/markup.js?v=20260619a"></script>
   <script src="assets/js/corpus.js?v=20260613j"></script>
-  <script src="assets/js/viewer.js?v=20260619c"></script>
+  <script src="assets/js/viewer.js?v=20260619d"></script>
 </body>
 </html>
