@@ -647,19 +647,32 @@
   }
 
   /* ================= タブ: 登録データ置換（grep replace） ================= */
-  var BULK_EXAMPLE = [
-    { from: "，", to: "、", regex: false },
-    { from: "．", to: "。", regex: false }
+  // よく使う置換ルールのテンプレート。プルダウンで選んで「テンプレを挿入」で追加。
+  var BULK_TEMPLATES = [
+    { name: "全角句読点を和文に（，→、 / ．→。）", rules: [
+      { from: "，", to: "、", regex: false },
+      { from: "．", to: "。", regex: false }
+    ] },
+    { name: "下付き番号を下線の前へ（__…__~~(n)~~ → ~~(n)~~__…__）", rules: [
+      { from: "__([^_]+)__~~([(（][^~]*[)）])~~", to: "~~$2~~__$1__", regex: true }
+    ] }
   ];
   function wireReplaceTab() {
     if (!el("bulk-add")) return;
     state.bulk = Store.getReplaceRules();
+    // テンプレート選択肢を生成
+    var sel = el("bulk-template");
+    if (sel) {
+      sel.innerHTML = BULK_TEMPLATES.map(function (t, i) { return '<option value="' + i + '">' + esc(t.name) + "</option>"; }).join("");
+    }
     el("bulk-add").addEventListener("click", function () { readBulkFromDom(); state.bulk.push({ from: "", to: "", regex: false }); renderBulkList(); });
-    el("bulk-example").addEventListener("click", function () {
+    el("bulk-tpl-add").addEventListener("click", function () {
       readBulkFromDom();
-      BULK_EXAMPLE.forEach(function (r) { state.bulk.push({ from: r.from, to: r.to, regex: r.regex }); });
+      var t = BULK_TEMPLATES[Number(el("bulk-template").value) || 0];
+      if (!t) return;
+      t.rules.forEach(function (r) { state.bulk.push({ from: r.from, to: r.to, regex: !!r.regex }); });
       renderBulkList();
-      toast("推奨例を追加しました", "ok");
+      toast("テンプレートを挿入しました（" + t.rules.length + " 件）", "ok");
     });
     el("bulk-preview").addEventListener("click", function () { runBulk(true); });
     el("bulk-run").addEventListener("click", function () {
