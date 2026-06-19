@@ -107,9 +107,6 @@
     el("exam-show-all").addEventListener("click", function () {
       if (state.nav.examId != null) openExam(state.nav.examId, null);
     });
-    el("exam-replace").addEventListener("click", toggleReplaceBar);
-    el("exam-rep-apply").addEventListener("click", applyExamReplace);
-    el("exam-rep-to").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); applyExamReplace(); } });
 
     // ツリー検索 再読み込み
     var treeRefresh = el("btn-tree-refresh");
@@ -479,8 +476,6 @@
   /* ---------------- 入試問題 表示モーダル ---------------- */
   function openExam(examId, qnum) {
     state.nav = { examId: examId, qnum: qnum };
-    state.examView = null;
-    hideReplaceBar();
     updateExamNav();
     saveOpenExam(examId, qnum);
     UI.openModal(el("exam-modal"));
@@ -496,8 +491,6 @@
       if (qnum != null) {
         questions = questions.filter(function (q) { return q.question_number === qnum; });
       }
-      // 「この問題内を置換」用に、表示中の大問データを保持
-      state.examView = { examId: examId, qnum: qnum, questions: questions };
 
       var body = "";
       var showQHead = qnum == null && questions.length > 1;
@@ -531,69 +524,6 @@
     }).catch(function (e) {
       el("exam-modal-body").innerHTML = '<div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div>";
     });
-  }
-
-  /* ---- 閲覧中の大問のみテキスト置換 ---- */
-  function hideReplaceBar() {
-    var bar = el("exam-replace-bar");
-    if (bar) bar.hidden = true;
-    if (el("exam-rep-from")) el("exam-rep-from").value = "";
-    if (el("exam-rep-to")) el("exam-rep-to").value = "";
-    if (el("exam-rep-regex")) el("exam-rep-regex").checked = false;
-  }
-  function toggleReplaceBar() {
-    var bar = el("exam-replace-bar");
-    if (!bar) return;
-    bar.hidden = !bar.hidden;
-    if (!bar.hidden) el("exam-rep-from").focus();
-  }
-  // 全置換し件数も返す。re を渡せば正規表現、無ければ from をリテラルとして扱う。
-  function replaceCount(text, from, to, re) {
-    var s = String(text == null ? "" : text);
-    if (re) {
-      var m = s.match(re);
-      return { text: s.replace(re, to), count: m ? m.length : 0 };
-    }
-    if (!from) return { text: s, count: 0 };
-    var parts = s.split(from);
-    return { text: parts.join(to), count: parts.length - 1 };
-  }
-  function applyExamReplace() {
-    var view = state.examView;
-    if (!view || !view.questions || !view.questions.length) { UI.toast("対象の問題がありません", "err"); return; }
-    var from = el("exam-rep-from").value;
-    var to = el("exam-rep-to").value;
-    if (!from) { UI.toast("検索（from）を入力してください", "err"); return; }
-    var useRegex = el("exam-rep-regex") && el("exam-rep-regex").checked;
-    var re = null;
-    if (useRegex) {
-      try { re = new RegExp(from, "g"); }
-      catch (e) { UI.toast("正規表現が不正です: " + (e.message || ""), "err"); return; }
-    }
-
-    var total = 0;
-    var payload = view.questions.map(function (q) {
-      var p = replaceCount(q.problem_text, from, to, re);
-      var a = replaceCount(q.answer_text, from, to, re);
-      var c = replaceCount(q.commentary_text, from, to, re);
-      total += p.count + a.count + c.count;
-      return {
-        questionNumber: q.question_number,
-        category: q.category || "",
-        problemText: p.text, answerText: a.text, commentaryText: c.text
-      };
-    });
-    if (!total) { UI.toast("「" + from + "」は見つかりませんでした", "err"); return; }
-    if (!window.confirm("この問題内の「" + from + "」を「" + to + "」に置換します（" + total + " 箇所）。よろしいですか？")) return;
-
-    var btn = el("exam-rep-apply");
-    btn.disabled = true;
-    Api.updateExam(view.examId, { questions: payload }).then(function () {
-      UI.toast(total + " 箇所を置換しました", "ok");
-      openExam(view.examId, view.qnum);  // 再取得して表示更新（バーは閉じる）
-    }).catch(function (e) {
-      UI.toast(e.message || "置換に失敗しました", "err");
-    }).then(function () { btn.disabled = false; });
   }
 
   // 文字サイズ切替（小→中→大の循環。localStorage に保存し印刷にも反映）

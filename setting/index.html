@@ -392,11 +392,19 @@
         <button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="modal-body" id="exam-modal-body"></div>
+      <div class="exam-replace-bar" id="exam-replace-bar" hidden>
+        <input type="text" id="exam-rep-from" placeholder="検索（from）" />
+        <i class="fa-solid fa-arrow-right exam-rep-arrow"></i>
+        <input type="text" id="exam-rep-to" placeholder="置換（to。正規表現時は $1 可）" />
+        <label class="exam-rep-re check-inline" title="正規表現として検索（フラグ g）"><input type="checkbox" id="exam-rep-regex"> <span>正規表現</span></label>
+        <button class="icon-btn primary" id="exam-rep-apply" title="この問題のみ置換"><i class="fa-solid fa-check"></i></button>
+      </div>
       <div class="modal-foot" id="exam-modal-foot">
         <button class="icon-btn" id="exam-prev" title="前の大問"><i class="fa-solid fa-angle-left"></i></button>
         <span id="exam-nav-label"></span>
         <button class="icon-btn" id="exam-next" title="次の大問"><i class="fa-solid fa-angle-right"></i></button>
         <span class="spacer"></span>
+        <button class="icon-btn" id="exam-replace" title="この問題内を置換"><i class="fa-solid fa-right-left"></i></button>
         <button class="icon-btn" id="exam-edit" title="編集"><i class="fa-solid fa-pen"></i></button>
         <button class="icon-btn danger" id="exam-del" title="削除"><i class="fa-solid fa-trash"></i></button>
         <button class="icon-btn" id="exam-show-all" title="全ての問題を表示"><i class="fa-solid fa-arrow-up-right-from-square"></i></button>
@@ -460,6 +468,6 @@
   <script src="../assets/js/api.js?v=20260618d"></script>
   <script src="../assets/js/ui.js?v=20260612z"></script>
   <script src="../assets/js/markup.js?v=20260619a"></script>
-  <script src="../assets/js/settings.js?v=20260619b"></script>
+  <script src="../assets/js/settings.js?v=20260619e"></script>
 </body>
 </html>
