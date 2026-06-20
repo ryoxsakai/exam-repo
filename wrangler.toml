@@ -1,3 +1,4 @@
+# 画像用 R2 バケット medical-exam-images を作成後に再デプロイ（このコメントは再デプロイ誘発用）
 name = "medical-exam-worker"
 main = "worker/index.ts"
 compatibility_date = "2024-01-01"
