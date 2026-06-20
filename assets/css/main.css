@@ -497,14 +497,13 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
 .exam-doc u { text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
 .exam-hr { border: 0; height: 1px; background: linear-gradient(to right, transparent, var(--line), transparent); margin: 16px 0; }
 
-/* 表（Markdown 記法） */
+/* 表（Markdown 記法）— 枠線のみ。太字・背景・色は付けない */
 .exam-table-wrap { overflow-x: auto; margin: 14px 0; }
 .exam-table { border-collapse: collapse; width: auto; min-width: min(100%, 320px); font-size: .92em; }
 .exam-table th, .exam-table td {
   border: 1px solid var(--line); padding: .4em .8em; text-align: left; vertical-align: top; line-height: 1.6;
 }
-.exam-table thead th { background: var(--grad-chip); color: var(--emerald-dark); font-weight: 700; font-family: var(--sans); }
-.exam-table tbody tr:nth-child(even) td { background: var(--line-soft); }
+.exam-table th { font-weight: inherit; }
 
 /* 問題に貼る画像（写真・グラフ） */
 .exam-doc .exam-img {
@@ -716,14 +715,10 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area mark.hl { color: #000 !important; }
   /* 画像はページ幅に収め、途中で改ページしない */
   #print-area .exam-img { max-width: 100%; height: auto; break-inside: avoid; page-break-inside: avoid; }
-  /* 表は枠線を黒で保持し、途中で改ページしない */
+  /* 表は枠線（黒）のみ。背景・太字は付けず、途中で改ページしない */
   #print-area .exam-table { break-inside: avoid; page-break-inside: avoid; }
-  #print-area .exam-table th, #print-area .exam-table td { border: 1px solid #000 !important; color: #000 !important; }
-  #print-area .exam-table thead th {
-    -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    background: #f2f4f8 !important;
-  }
-  #print-area .exam-table tbody tr:nth-child(even) td { background: #fff !important; }
+  #print-area .exam-table th, #print-area .exam-table td { border: 1px solid #000 !important; color: #000 !important; background: #fff !important; }
+  #print-area .exam-table th { font-weight: inherit; }
   /* 問題印刷タブの出力: 表紙→問題面→解答面を改ページ */
   #print-area.print-out .print-cover {
     height: 92vh; display: flex; flex-direction: column; justify-content: center;
