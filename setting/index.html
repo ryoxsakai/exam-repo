@@ -120,6 +120,21 @@
         </div>
         <p class="hint" style="margin-top:8px">「PDF取り込み」タブの自動解析で使用します。キーはこの端末のブラウザ（localStorage）にのみ保存され、解析時に Worker 経由で Anthropic へ送信されます。共有端末では使用後に空欄で保存してください。</p>
       </div>
+
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-image ic"></i> 画像ストレージ（R2）</h3></div>
+        <p class="hint">問題に貼る写真・グラフは Cloudflare R2 に保存されます。利用前に R2 バケットを<strong>1回だけ</strong>作成してください（無料枠あり）。<br>
+          <strong>作成方法（どちらか）:</strong><br>
+          ・Cloudflare ダッシュボード → R2 →「Create bucket」→ 名前を <code>medical-exam-images</code> にして作成。<br>
+          ・または CLI: <code>npx wrangler r2 bucket create medical-exam-images</code><br>
+          ※ バケット名は <code>wrangler.toml</code> と一致が必須。作成後、Worker を再デプロイすると有効になります。</p>
+        <div class="toolbar" style="margin-top:14px">
+          <button class="btn blue" id="r2-test"><i class="fa-solid fa-satellite-dish"></i> アップロードテスト</button>
+          <span class="spacer"></span>
+          <span class="hint" id="r2-status"></span>
+        </div>
+        <p class="hint" style="margin-top:8px">「アップロードテスト」は 1×1 の小さな画像を実際に送信し、R2 への保存・配信が有効かを確認します。</p>
+      </div>
     </section>
 
     <!-- ===== タブ3: 入試問題一覧 ===== -->
@@ -468,6 +483,6 @@
   <script src="../assets/js/api.js?v=20260619g"></script>
   <script src="../assets/js/ui.js?v=20260612z"></script>
   <script src="../assets/js/markup.js?v=20260619g"></script>
-  <script src="../assets/js/settings.js?v=20260619g"></script>
+  <script src="../assets/js/settings.js?v=20260619h"></script>
 </body>
 </html>

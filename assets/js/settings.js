@@ -214,6 +214,22 @@
         toast("接続テストに失敗しました", "err");
       });
     });
+    // R2 画像ストレージのアップロードテスト（1x1 PNG を実送信）
+    if (el("r2-test")) el("r2-test").addEventListener("click", function () {
+      if (!Store.getWorkerUrl()) { el("r2-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> Worker URL が未設定です</span>'; return; }
+      el("r2-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> テスト中…';
+      var b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      var bin = atob(b64), arr = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      var blob = new Blob([arr], { type: "image/png" });
+      Api.uploadImage(blob).then(function (r) {
+        el("r2-status").innerHTML = '<span style="color:var(--emerald-dark)"><i class="fa-solid fa-circle-check"></i> OK（R2 への保存・配信が有効です）</span>';
+        toast("R2 アップロードテスト成功", "ok");
+      }).catch(function (e) {
+        el("r2-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
+        toast("R2 テストに失敗しました", "err");
+      });
+    });
   }
 
   /* ================= タブ: PDF取り込み（自動解析） ================= */
