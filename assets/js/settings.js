@@ -36,6 +36,7 @@
     el("site-subtitle").textContent = Store.getSiteSubtitle();
     document.title = "設定 — " + Store.getSiteTitle();
     UI.applyDomainLinks();
+    if (Markup.setImageBase) Markup.setImageBase(Store.getWorkerUrl() || "");
 
     var order = Store.getTabOrder("setting", SET_ORDER);
     var active = Store.getLastTab("setting");
@@ -473,6 +474,7 @@
     MK_DEFS.forEach(function (bn, k) {
       h += '<button class="btn sm" data-imk="' + key + ":" + k + '" title="' + esc(bn.t) + '">' + esc(bn.l) + "</button>";
     });
+    h += '<button class="btn sm" data-imkimg="' + key + '" title="画像を挿入（アップロード）"><i class="fa-solid fa-image"></i> 画像</button>';
     h += '<button class="btn sm link" data-syntax="1" title="記法の一覧と見え方"><i class="fa-solid fa-circle-question"></i> 記法一覧</button>';
     h += "</div>";
     return h;
@@ -533,6 +535,14 @@
         if (!ta) return;
         insertMarkup(ta, MK_DEFS[+p[2]].b, MK_DEFS[+p[2]].a, MK_DEFS[+p[2]].ls);
         state.ing.questions[+p[0]].sections[+p[1]].text = ta.value;
+      });
+    });
+    $all("[data-imkimg]", root).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var p = b.getAttribute("data-imkimg").split(":");
+        var ta = $('[data-isectext="' + p[0] + ":" + p[1] + '"]', root);
+        if (!ta) return;
+        pickImageInto(ta, function (val) { state.ing.questions[+p[0]].sections[+p[1]].text = val; });
       });
     });
     $all("[data-syntax]", root).forEach(function (b) { b.addEventListener("click", openSyntaxModal); });
@@ -1361,9 +1371,27 @@
     MK_DEFS.forEach(function (bn, k) {
       h += '<button class="btn sm" data-mk="' + i + ":" + k + '" title="' + esc(bn.t) + '">' + esc(bn.l) + "</button>";
     });
+    h += '<button class="btn sm" data-mkimg="' + i + '" title="画像を挿入（アップロード）"><i class="fa-solid fa-image"></i> 画像</button>';
     h += '<button class="btn sm link" data-syntax="1" title="記法の一覧と見え方"><i class="fa-solid fa-circle-question"></i> 記法一覧</button>';
     h += "</div>";
     return h;
+  }
+  // 画像ファイルを選択→R2へアップロード→記法 ![図](/api/image/..) を ta に挿入
+  function pickImageInto(ta, onDone) {
+    if (!Store.getWorkerUrl()) { toast("Worker URL が未設定です（接続設定タブ）", "err"); return; }
+    var inp = document.createElement("input");
+    inp.type = "file"; inp.accept = "image/*";
+    inp.addEventListener("change", function () {
+      var f = inp.files && inp.files[0];
+      if (!f) return;
+      toast("画像をアップロード中…", "ok");
+      Api.uploadImage(f).then(function (r) {
+        insertMarkup(ta, "![図](" + r.path + ")", "");
+        if (onDone) onDone(ta.value);
+        toast("画像を挿入しました", "ok");
+      }).catch(function (e) { toast(e.message || "アップロードに失敗しました", "err"); });
+    });
+    inp.click();
   }
   function wireRegSection() {
     var c = el("reg-sections");
@@ -1388,6 +1416,13 @@
         insertMarkup(ta, MK_DEFS[k].b, MK_DEFS[k].a, MK_DEFS[k].ls);
         state.reg.sections[i].text = ta.value;
         saveDraft();
+      });
+    });
+    $all("[data-mkimg]", c).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var i = Number(b.getAttribute("data-mkimg"));
+        var ta = $('[data-sectext="' + i + '"]', c);
+        pickImageInto(ta, function (val) { state.reg.sections[i].text = val; saveDraft(); });
       });
     });
     $all("[data-syntax]", c).forEach(function (b) { b.addEventListener("click", openSyntaxModal); });
@@ -1417,7 +1452,8 @@
     { code: "((A)) apple\n((B)) a very long choice that wraps neatly onto the next line", desc: "選択肢（行頭。折り返しも整形）" },
     { code: "----", desc: "区切り線" },
     { code: "@@The quick brown fox jumps.", desc: "@@ — 行頭に付けると段落インデントを抑制" },
-    { code: "| 語 | 意味 |\n| --- | --- |\n| apple | りんご |\n| orange | オレンジ |", desc: "表（Markdown記法。1行目=見出し、2行目=区切り |---|、以降が中身。:--- 左 / :--: 中央 / ---: 右寄せ）" }
+    { code: "| 語 | 意味 |\n| --- | --- |\n| apple | りんご |\n| orange | オレンジ |", desc: "表（Markdown記法。1行目=見出し、2行目=区切り |---|、以降が中身。:--- 左 / :--: 中央 / ---: 右寄せ）" },
+    { code: "![図](/api/image/sample.png)", desc: "画像（写真・グラフ）。記法ボタンの「画像」からアップロードすると自動挿入。外部URLも可: ![説明](https://...)" }
   ];
   function openSyntaxModal() {
     var h = "";

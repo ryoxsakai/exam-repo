@@ -506,6 +506,12 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
 .exam-table thead th { background: var(--grad-chip); color: var(--emerald-dark); font-weight: 700; font-family: var(--sans); }
 .exam-table tbody tr:nth-child(even) td { background: var(--line-soft); }
 
+/* 問題に貼る画像（写真・グラフ） */
+.exam-doc .exam-img {
+  display: block; max-width: 100%; height: auto; margin: 12px auto;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+
 /* Answer choices — clean wrapping for long options */
 .answer-choice {
   display: flex; align-items: baseline; gap: .5em; margin: .3em 0; padding-left: .25em;
@@ -708,6 +714,8 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area .hl-aqua   { background: #a5f3fc !important; }
   /* ハイライトの文字色は黒に統一（リセットで上書き済みだが明示） */
   #print-area mark.hl { color: #000 !important; }
+  /* 画像はページ幅に収め、途中で改ページしない */
+  #print-area .exam-img { max-width: 100%; height: auto; break-inside: avoid; page-break-inside: avoid; }
   /* 表は枠線を黒で保持し、途中で改ページしない */
   #print-area .exam-table { break-inside: avoid; page-break-inside: avoid; }
   #print-area .exam-table th, #print-area .exam-table td { border: 1px solid #000 !important; color: #000 !important; }

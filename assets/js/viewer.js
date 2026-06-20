@@ -59,6 +59,8 @@
 
     // ナビリンクを独自ドメイン基準に（リンク切れ防止）
     UI.applyDomainLinks();
+    // 画像記法 ![](/api/image/..) の解決基準を Worker URL に
+    if (Markup.setImageBase) Markup.setImageBase(Store.getWorkerUrl() || "");
 
     // タブ構築
     var order = Store.getTabOrder("main", DEFAULT_ORDER);

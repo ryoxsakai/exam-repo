@@ -11,6 +11,12 @@ binding = "DB"
 database_name = "medical-exam-db"
 database_id = "1dff243d-4819-43cd-bf10-8538042d03ea"
 
+# R2 bucket binding（問題に貼る画像の保存先）。先にバケットを作成:
+#   wrangler r2 bucket create medical-exam-images
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "medical-exam-images"
+
 [dev]
 port = 8787
 local_protocol = "http"

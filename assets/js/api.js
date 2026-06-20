@@ -51,6 +51,26 @@
     deleteQuestion:   function (examId, qnum) { return call("/api/questions/" + examId + "/" + qnum, { method: "DELETE" }); },
     search:           function (p) { return call("/api/search" + qs(p)); },
     getCorpus:        function () { return call("/api/corpus"); },
+    // 画像を R2 へアップロード（生バイトを送信）。{ key, path } を返す。
+    uploadImage:      async function (file) {
+      var b = base();
+      var res;
+      try {
+        res = await fetch(b + "/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": file.type || "application/octet-stream" },
+          body: file
+        });
+      } catch (e) { throw new Error("アップロードに失敗しました（通信エラー）。"); }
+      if (!res.ok) {
+        var data = {};
+        try { data = await res.json(); } catch (e) {}
+        throw new Error(data.error || data.message || ("アップロード失敗 " + res.status));
+      }
+      return res.json();
+    },
+    // 画像の表示用フルURL（保存された path から組み立て）
+    imageUrl:         function (path) { return base().replace(/\/+$/, "") + path; },
     // PDF取り込み：SSE でフェーズを逐次受信。onEvent({phase, ...}) を都度呼ぶ。
     // 戻り値の Promise はストリーム終了時に解決（ネットワーク失敗時は reject）。
     ingestPdfStream:  function (d, apiKey, onEvent) {

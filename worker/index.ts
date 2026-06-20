@@ -1,5 +1,6 @@
 export interface Env {
   DB: D1Database;
+  IMAGES?: R2Bucket;  // 問題画像の保存先（wrangler.toml の [[r2_buckets]] binding=IMAGES）
 }
 
 function cors(origin?: string | null) {
@@ -449,6 +450,41 @@ export default {
     }
 
     try {
+      // ── GET /api/image/:key（R2 から画像配信。DB に触れないので最初に処理） ──
+      if (path.startsWith("/api/image/") && request.method === "GET") {
+        if (!env.IMAGES) return json({ error: "画像ストレージ（R2）が未設定です。" }, 503, origin);
+        const key = decodeURIComponent(path.slice("/api/image/".length));
+        if (!key) return json({ error: "key がありません。" }, 400, origin);
+        const obj = await env.IMAGES.get(key);
+        if (!obj) return json({ error: "画像が見つかりません。" }, 404, origin);
+        return new Response(obj.body, {
+          headers: {
+            "Content-Type": obj.httpMetadata?.contentType || "application/octet-stream",
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Access-Control-Allow-Origin": origin || "*",
+          },
+        });
+      }
+
+      // ── POST /api/upload（画像を R2 に保存） ───────────────────────
+      if (path === "/api/upload" && request.method === "POST") {
+        if (!env.IMAGES) return json({ error: "画像ストレージ（R2）が未設定です。wrangler.toml の R2 バインディングとデプロイをご確認ください。" }, 503, origin);
+        const ct = request.headers.get("Content-Type") || "application/octet-stream";
+        if (!/^image\//.test(ct)) return json({ error: "画像ファイル（image/*）のみアップロードできます。" }, 400, origin);
+        const buf = await request.arrayBuffer();
+        if (!buf.byteLength) return json({ error: "ファイルが空です。" }, 400, origin);
+        if (buf.byteLength > 10 * 1024 * 1024) return json({ error: "画像が大きすぎます（上限 10MB）。" }, 413, origin);
+        const extMap: Record<string, string> = {
+          "image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg",
+          "image/gif": "gif", "image/webp": "webp", "image/svg+xml": "svg",
+        };
+        const ext = extMap[ct.toLowerCase()] || "img";
+        const rand = Math.random().toString(36).slice(2, 10);
+        const key = `img/${Date.now()}-${rand}.${ext}`;
+        await env.IMAGES.put(key, buf, { httpMetadata: { contentType: ct } });
+        return json({ key, path: "/api/image/" + key }, 201, origin);
+      }
+
       await fixZeroQuestionNumbers(env);
 
       // ── GET /api/universities ──────────────────────────────────────

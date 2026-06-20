@@ -29,6 +29,7 @@
 | `((A)) 本文` | 選択肢（行頭。丸ラベル＋本文。長い選択肢は綺麗に折り返す） |
 | `[1]` | 段落番号。全セクションでバッジ化（行頭でも行中でも可。空所 `[[ ]]` とは別）。字下げは本文・和訳セクションの段落先頭バッジのみ（バッジの無い段落を字下げ） |
 | `\| a \| b \|`＋`\| --- \| --- \|` | 表（Markdown記法。見出し行＋区切り行＋中身。`:--:`等で寄せ指定、`\|`でセル内パイプ） |
+| `![説明](URL)` | 画像（写真・グラフ）。相対 `/api/image/KEY` は Worker 基準で解決。登録/取り込み編集の「画像」ボタンでR2へアップロードし自動挿入 |
 | `----` | 区切り線 |
 | 空行 | 段落間隔 |
 
@@ -46,6 +47,7 @@
 | `GET/PUT/DELETE /api/exams/:id` | 試験詳細 / 更新 / 削除 |
 | `GET /api/search` | 全文検索（word,universityName,year,schedule。出現回数つき） |
 | `GET /api/corpus` | **全大問の英文テキスト一括取得**（クライアント側コーパス分析用） |
+| `POST /api/upload` / `GET /api/image/:key` | 問題画像を R2 へ保存 / 配信（`wrangler.toml` の `[[r2_buckets]] binding=IMAGES`） |
 
 データモデル: `universities` 1—N `exams`(year, schedule) 1—N `questions`(question_number, problem_text, answer_text, commentary_text)。
 

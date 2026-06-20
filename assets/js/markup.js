@@ -26,6 +26,15 @@
 
   var VALID_COLORS = ["yellow", "blue", "red", "purple", "pink", "green", "aqua"];
 
+  // 画像URLの基準（Worker のベースURL）。![alt](/api/image/KEY) のような相対参照を解決する。
+  var imageBase = "";
+  function resolveImg(u) {
+    u = String(u || "").trim();
+    if (/^(https?:|data:)/i.test(u)) return u;           // 絶対URL・データURLはそのまま
+    var b = imageBase.replace(/\/+$/, "");
+    return b + (u.charAt(0) === "/" ? u : "/" + u);       // 相対は imageBase を前置
+  }
+
   // 「. 」の後を広げない略語（+ 単独の大文字イニシャル: J. K. Rowling など）
   var ABBREV = /^(?:Mr|Mrs|Ms|Dr|Prof|St|Mt|Jr|Sr|vs|etc|No|Vol|Fig|cf|ca|pp|[A-Z])$/;
 
@@ -66,6 +75,12 @@
         footnotes.push({ index: idx, word: m[1], translation: m[2] });
         out += '<span title="' + esc(m[1] + ": " + m[2]) + '">' + esc(m[1]) +
                '<sup class="footnote-number">*' + idx + "</sup></span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ![説明](URL) 画像（Markdown記法）
+      if ((m = rem.match(/^!\[([^\]]*)\]\(([^)\s]+)\)/))) {
+        out += '<img class="exam-img" src="' + esc(resolveImg(m[2])) + '" alt="' + esc(m[1]) +
+               '"' + (m[1] ? ' title="' + esc(m[1]) + '"' : "") + ">";
         rem = rem.slice(m[0].length); continue;
       }
       // !!!!出典!!!!（右寄せ・グレー・小）
@@ -286,6 +301,7 @@
     t = t.replace(/\[\[[^\]]*\]\]/g, " ");          // 空所
     t = t.replace(/^\s*\[[^\[\]]+\]\s?/gm, "");     // 段落番号 [1]（行頭・単角括弧）
     t = t.replace(/##([^:#]+)::[^#]+##/g, "$1");    // 脚注 → 語のみ残す
+    t = t.replace(/!\[[^\]]*\]\([^)\s]+\)/g, " ");   // 画像 → 除去
     t = t.replace(/!!!!([\s\S]+?)!!!!/g, " ");      // 出典 → 除去
     t = t.replace(/\|\|\|\|([\s\S]+?)\|\|\|\|/g, "$1"); // 斜字 → テキスト残す
     t = t.replace(/^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/gm, " "); // 表の区切り行
@@ -323,5 +339,6 @@
     return sections;
   }
 
-  global.Markup = { render: render, strip: strip, escape: esc, parseSections: parseSections };
+  function setImageBase(b) { imageBase = String(b || ""); }
+  global.Markup = { render: render, strip: strip, escape: esc, parseSections: parseSections, setImageBase: setImageBase };
 })(window);
