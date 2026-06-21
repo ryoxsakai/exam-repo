@@ -46,8 +46,15 @@
     printSel: { uni: "", year: "", sched: "" },  // 印刷タブで選んだ大学/年度/方式
     printTreeLoaded: false,
     treeLoaded: false,   // ツリー検索を読み込み済みか
+    uniReading: {},      // 大学名 → よみがな（五十音ソート用）
     charts: {}
   };
+
+  // 大学名の並び替え比較（よみがな優先 → 名前。ともに ja ロケール）
+  function uniCmp(a, b) {
+    var ra = state.uniReading[a] || a, rb = state.uniReading[b] || b;
+    return ra.localeCompare(rb, "ja") || a.localeCompare(b, "ja");
+  }
 
   /* ---------------- 初期化 ---------------- */
   function init() {
@@ -379,6 +386,7 @@
       var u = e.university_name || "（大学名なし）";
       var y = String(e.year);
       var s = e.schedule || "（方式なし）";
+      if (e.university_reading) state.uniReading[u] = e.university_reading;
       if (!unis[u]) unis[u] = {};
       if (!unis[u][y]) unis[u][y] = {};
       if (!unis[u][y][s]) unis[u][y][s] = [];
@@ -403,7 +411,7 @@
   }
 
   function renderTree(unis) {
-    var uniNames = Object.keys(unis).sort(function (a, b) { return a.localeCompare(b, "ja"); });
+    var uniNames = Object.keys(unis).sort(uniCmp);
     var html = '<div class="tree card">';
     uniNames.forEach(function (u) {
       html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
@@ -737,12 +745,13 @@
       var unis = {};
       exams.forEach(function (e) {
         var u = e.university_name || "（大学名なし）", y = String(e.year), s = e.schedule || "（方式なし）";
+        if (e.university_reading) state.uniReading[u] = e.university_reading;
         if (!unis[u]) unis[u] = {};
         if (!unis[u][y]) unis[u][y] = {};
         unis[u][y][s] = true;
       });
       var html = '<div class="tree">';
-      Object.keys(unis).sort(function (a, b) { return a.localeCompare(b, "ja"); }).forEach(function (u) {
+      Object.keys(unis).sort(uniCmp).forEach(function (u) {
         html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
         Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
           html += '<div class="tree-node">' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';

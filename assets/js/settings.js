@@ -1079,8 +1079,9 @@
       unis[u][y][s].push(r);
     });
     var flat = [];  // ツリー表示順（モーダルの前/次ナビ用）
+    var rdg = {}; (state.universities || []).forEach(function (u) { if (u && u.name) rdg[u.name] = u.reading || ""; });
     var html = '<div class="tree card">';
-    Object.keys(unis).sort(function (a, b) { return a.localeCompare(b, "ja"); }).forEach(function (u) {
+    Object.keys(unis).sort(function (a, b) { return (rdg[a] || a).localeCompare(rdg[b] || b, "ja") || a.localeCompare(b, "ja"); }).forEach(function (u) {
       html += '<div class="tree-node">' + treeRowS("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
       Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
         html += '<div class="tree-node">' + treeRowS("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
@@ -1682,21 +1683,26 @@
   /* ---- 年度/方式/大学/種別 編集モーダル（汎用） ---- */
   function openEditModal(title, items, onSave, opts) {
     opts = opts || {};
-    // editable=true のときは items を { id, name } オブジェクト配列として扱い、名前を直接編集可能にする
-    state.editCtx = { items: items.slice(), onSave: onSave, editable: !!opts.editable };
+    // editable=true のときは items を { id, name } オブジェクト配列として扱い、名前を直接編集可能にする。
+    // withReading=true のときは「よみがな」欄も表示し、{ id, name, reading } を扱う。
+    state.editCtx = { items: items.slice(), onSave: onSave, editable: !!opts.editable, withReading: !!opts.withReading };
     el("edit-modal-title").textContent = title;
     el("edit-new").value = "";
     renderEditList();
     UI.openModal(el("edit-modal"));
   }
   function renderEditList() {
-    var items = state.editCtx.items, c = el("edit-list"), editable = state.editCtx.editable;
+    var items = state.editCtx.items, c = el("edit-list"), editable = state.editCtx.editable, withReading = state.editCtx.withReading;
     c.innerHTML = "";
     if (!items.length) c.innerHTML = '<li class="hint">項目がありません。上で追加してください。</li>';
     items.forEach(function (it, i) {
-      var label = editable
-        ? '<input class="edit-item-input" type="text" data-edit="' + i + '" value="' + esc(it.name) + '" />'
-        : '<span class="label">' + esc(it) + "</span>";
+      var label;
+      if (editable) {
+        label = '<input class="edit-item-input" type="text" data-edit="' + i + '" value="' + esc(it.name) + '" placeholder="名称" />';
+        if (withReading) label += '<input class="edit-item-input edit-item-reading" type="text" data-editr="' + i + '" value="' + esc(it.reading || "") + '" placeholder="よみがな（五十音順用・任意）" />';
+      } else {
+        label = '<span class="label">' + esc(it) + "</span>";
+      }
       var li = create("li", { class: "sort-item" },
         label + "<span class='move'>" +
         '<button class="icon-btn sm" data-up="' + i + '"' + (i === 0 ? " disabled" : "") + '><i class="fa-solid fa-arrow-up"></i></button>' +
@@ -1708,6 +1714,7 @@
     $all("[data-down]", c).forEach(function (b) { b.addEventListener("click", function () { var i = +b.getAttribute("data-down"); swap(state.editCtx.items, i, i + 1); renderEditList(); }); });
     $all("[data-del]", c).forEach(function (b) { b.addEventListener("click", function () { state.editCtx.items.splice(+b.getAttribute("data-del"), 1); renderEditList(); }); });
     $all("[data-edit]", c).forEach(function (inp) { inp.addEventListener("input", function () { state.editCtx.items[+inp.getAttribute("data-edit")].name = inp.value; }); });
+    $all("[data-editr]", c).forEach(function (inp) { inp.addEventListener("input", function () { state.editCtx.items[+inp.getAttribute("data-editr")].reading = inp.value; }); });
   }
   function swap(arr, i, j) { if (j < 0 || j >= arr.length) return; var t = arr[i]; arr[i] = arr[j]; arr[j] = t; }
 
@@ -1724,36 +1731,37 @@
     return Api.updateConfig({ question_categories: items }).then(function () { state.config.question_categories = items; fillRegSelects(); });
   }); }
   function openUniversityEdit() {
-    // 大学は API 由来。名前は直接編集（リネーム）可能。リネーム・削除は API、追加はローカル保持（登録時に自動作成）。
-    var startItems = state.universities.map(function (u) { return { id: u.id, name: u.name }; });
-    openEditModal("大学名の編集", startItems, function (items) {
+    // 大学は API 由来。名前・よみがなは直接編集可能。更新・削除は API、追加はローカル保持（登録時に自動作成）。
+    // よみがな（reading）は五十音順ソートに使う。
+    var startItems = state.universities.map(function (u) { return { id: u.id, name: u.name, reading: u.reading || "" }; });
+    openEditModal("大学名・よみがなの編集", startItems, function (items) {
       var existing = state.universities.filter(function (u) { return u.id != null; });
       var byId = {}; existing.forEach(function (u) { byId[u.id] = u; });
       var keptIds = {}, ops = [];
-      // リネーム: id があり名前が変わったもの
+      // 更新: id があり 名前 or よみがな が変わったもの
       items.forEach(function (it) {
         if (it.id == null) return;
         keptIds[it.id] = true;
-        var orig = byId[it.id], name = (it.name || "").trim();
-        if (orig && name && name !== orig.name) ops.push(Api.updateUniversity(it.id, name));
+        var orig = byId[it.id], name = (it.name || "").trim(), reading = (it.reading || "").trim();
+        if (orig && name && (name !== orig.name || reading !== (orig.reading || ""))) ops.push(Api.updateUniversity(it.id, name, reading));
       });
       // 削除: 元々あって items から消えた id（試験があるとAPI側で弾かれるので catch）
       existing.forEach(function (u) { if (!keptIds[u.id]) ops.push(Api.deleteUniversity(u.id).catch(function () {})); });
       return Promise.all(ops)
         .then(function () { return Api.getUniversities().catch(function () { return { universities: existing }; }); })
         .then(function (res) {
-          state.universities = (res.universities || []).map(function (u) { return { id: u.id, name: u.name }; });
+          state.universities = (res.universities || []).map(function (u) { return { id: u.id, name: u.name, reading: u.reading || "" }; });
           // 新規追加（id:null）のローカル名は登録時に作成されるため末尾に保持
           items.forEach(function (it) {
             var name = (it.name || "").trim();
             if (it.id == null && name && !state.universities.some(function (u) { return u.name === name; })) {
-              state.universities.push({ id: null, name: name });
+              state.universities.push({ id: null, name: name, reading: (it.reading || "").trim() });
             }
           });
           fillRegSelects();
           fillSelect(el("sm-university"), state.universities.map(function (u) { return u.name; }), "指定なし");
         });
-    }, { editable: true });
+    }, { editable: true, withReading: true });
   }
 
   /* ================= タブ5: コーパス検索設定 ================= */

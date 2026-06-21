@@ -28,6 +28,15 @@ async function ensureCategoryColumn(env: Env) {
   }
 }
 
+// universities テーブルに reading（よみがな。五十音ソート用）列が無い既存DBへの後方互換マイグレーション
+async function ensureUniversityReadingColumn(env: Env) {
+  try {
+    await env.DB.exec("ALTER TABLE universities ADD COLUMN reading TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // 既に列が存在する場合は無視
+  }
+}
+
 // question_number = 0 のレコードを修正（各 exam 内で id 順に 1 始まりで採番）
 async function fixZeroQuestionNumbers(env: Env) {
   const zeros = await env.DB.prepare(
@@ -489,6 +498,7 @@ export default {
 
       // ── GET /api/universities ──────────────────────────────────────
       if (path === "/api/universities" && request.method === "GET") {
+        await ensureUniversityReadingColumn(env);
         const { results } = await env.DB.prepare(
           "SELECT * FROM universities ORDER BY name ASC"
         ).all();
@@ -569,22 +579,25 @@ export default {
         return json({ success: true }, 200, origin);
       }
 
-      // ── PUT /api/universities/:id（大学名のリネーム） ───────────────
+      // ── PUT /api/universities/:id（大学名のリネーム・よみがな更新） ───
       const putUniMatch = path.match(/^\/api\/universities\/(\d+)$/);
       if (putUniMatch && request.method === "PUT") {
+        await ensureUniversityReadingColumn(env);
         const uniId = Number(putUniMatch[1]);
-        const body = await request.json<{ name?: string }>().catch(() => ({}));
+        const body = await request.json<{ name?: string; reading?: string }>().catch(() => ({}));
         const name = (body.name || "").trim();
+        const reading = (body.reading || "").trim();
         if (!name) return json({ error: "大学名を入力してください。" }, 400, origin);
+        const cur = await env.DB.prepare("SELECT id FROM universities WHERE id = ?").bind(uniId).first<{ id: number }>();
+        if (!cur) return json({ error: "対象の大学が見つかりません。" }, 404, origin);
         const exists = await env.DB.prepare(
           "SELECT id FROM universities WHERE name = ? AND id != ?"
         ).bind(name, uniId).first<{ id: number }>();
         if (exists) return json({ error: `「${name}」は既に登録されています。` }, 400, origin);
-        const res = await env.DB.prepare(
-          "UPDATE universities SET name = ? WHERE id = ?"
-        ).bind(name, uniId).run();
-        if (!res.meta.changes) return json({ error: "対象の大学が見つかりません。" }, 404, origin);
-        return json({ success: true, id: uniId, name }, 200, origin);
+        await env.DB.prepare(
+          "UPDATE universities SET name = ?, reading = ? WHERE id = ?"
+        ).bind(name, reading, uniId).run();
+        return json({ success: true, id: uniId, name, reading }, 200, origin);
       }
 
       // ── DELETE /api/universities/:id ───────────────────────────────
@@ -606,13 +619,14 @@ export default {
 
       // ── GET /api/exams ─────────────────────────────────────────────
       if (path === "/api/exams" && request.method === "GET") {
+        await ensureUniversityReadingColumn(env);
         const uname = url.searchParams.get("universityName");
         const year = url.searchParams.get("year");
         const schedule = url.searchParams.get("schedule");
 
         let sql = `
           SELECT e.id, e.year, e.schedule, e.created_at,
-                 u.name AS university_name
+                 u.name AS university_name, u.reading AS university_reading
           FROM exams e
           JOIN universities u ON e.university_id = u.id
           WHERE 1=1`;

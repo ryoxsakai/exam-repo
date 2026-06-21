@@ -393,6 +393,7 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
   border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink);
 }
 .sort-item .edit-item-input:focus { border-color: var(--emerald); box-shadow: 0 0 0 3px rgba(5,150,105,.12); outline: none; }
+.sort-item .edit-item-reading { flex: 0 1 40%; font-size: 13px; color: var(--ink-soft); }
 .sort-item .move { display: flex; gap: 4px; }
 
 /* ---------- Registration builder ---------- */
