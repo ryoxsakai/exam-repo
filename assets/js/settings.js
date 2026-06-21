@@ -45,7 +45,7 @@
     UI.setActiveTab(el("set-tabs"), active);
 
     // モーダル配線
-    ["edit-modal", "search-modal", "exam-modal", "wordlist-modal", "preview-modal", "syntax-modal"].forEach(function (id) { UI.wireModal(el(id)); });
+    ["edit-modal", "search-modal", "exam-modal", "wordlist-modal", "preview-modal", "syntax-modal", "regex-help-modal"].forEach(function (id) { UI.wireModal(el(id)); });
 
     wireMain();
     wireConn();
@@ -692,6 +692,7 @@
       sel.innerHTML = BULK_TEMPLATES.map(function (t, i) { return '<option value="' + i + '">' + esc(t.name) + "</option>"; }).join("");
     }
     el("bulk-add").addEventListener("click", function () { readBulkFromDom(); state.bulk.push({ from: "", to: "", regex: false }); renderBulkList(); });
+    if (el("bulk-regex-help")) el("bulk-regex-help").addEventListener("click", openRegexHelp);
     el("bulk-tpl-add").addEventListener("click", function () {
       readBulkFromDom();
       var t = BULK_TEMPLATES[Number(el("bulk-template").value) || 0];
@@ -999,6 +1000,7 @@
     });
     // モーダル下部：この問題のみ置換
     el("exam-replace").addEventListener("click", toggleReplaceBar);
+    if (el("exam-regex-help")) el("exam-regex-help").addEventListener("click", openRegexHelp);
     el("exam-rep-apply").addEventListener("click", applyExamReplace);
     el("exam-rep-to").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); applyExamReplace(); } });
     // モーダル下部：編集・削除（表示中の大問が対象）
@@ -1483,6 +1485,55 @@
     el("syntax-body").innerHTML = h;
     UI.openModal(el("syntax-modal"));
   }
+
+  /* ---- 正規表現 早見表モーダル ---- */
+  // [パターン, 意味, 例]
+  var REGEX_BASICS = [
+    [".", "任意の1文字", "a.c → abc, a7c"],
+    ["*", "直前を0回以上くり返し", "ab* → a, ab, abbb"],
+    ["+", "直前を1回以上くり返し", "go+gle → gogle, google"],
+    ["?", "直前が0または1回（任意）", "colou?r → color, colour"],
+    ["\\d", "数字1文字（0-9）", "\\d+ → 2024"],
+    ["\\D", "数字以外の1文字", ""],
+    ["\\w", "英数字または _ の1文字", ""],
+    ["\\s", "空白文字（スペース・タブ・改行）", "\\s+ → 連続する空白"],
+    ["[ABC]", "かっこ内のいずれか1文字", "[abc] → a か b か c"],
+    ["[A-Z]", "範囲指定の1文字", "[0-9] 数字 / [ぁ-ん] ひらがな"],
+    ["[^ABC]", "かっこ内『以外』の1文字", ""],
+    ["^ / $", "文字列の先頭 / 末尾", "※行ごとではなく全体の先頭・末尾"],
+    ["( )", "グループ化＋キャプチャ", "置換側で $1 として使える"],
+    ["|", "または（OR）", "前期|後期 → 前期 か 後期"],
+    ["{n} {n,} {n,m}", "回数の指定", "\\d{4} → 数字ちょうど4桁"],
+    ["\\", "記号をただの文字に（エスケープ）", "\\. は『.』 / \\( は『(』 / \\| は『|』"],
+  ];
+  // [検索(from), 置換(to), 説明]
+  var REGEX_EXAMPLES = [
+    ["\\s+", "（半角スペース1つ）", "連続する空白を1つにまとめる"],
+    ["，", "、", "全角カンマを読点に（リテラルでも可）"],
+    ["(\\d+)年", "$1", "『2024年』→『2024』（「年」を消す）"],
+    ["（[^）]*）", "（空欄）", "全角かっこの注記をまるごと削除"],
+    ["__([^_]+)__~~(\\([^~]*\\))~~", "~~$2~~__$1__", "下線の直後の下付き番号を前へ入れ替え"],
+  ];
+  function openRegexHelp() {
+    function rows(arr, headers) {
+      var h = '<table class="rx-table"><thead><tr>';
+      headers.forEach(function (x) { h += "<th>" + esc(x) + "</th>"; });
+      h += "</tr></thead><tbody>";
+      arr.forEach(function (r) {
+        h += "<tr><td><code>" + esc(r[0]) + "</code></td><td>" + esc(r[1]) + "</td>" +
+             (r.length > 2 ? "<td>" + esc(r[2]) + "</td>" : "") + "</tr>";
+      });
+      return h + "</tbody></table>";
+    }
+    var body =
+      '<p class="hint" style="margin-bottom:10px">「正規表現」をオンにしたときに使える書き方の早見表です。検索（from）にパターン、置換（to）で <code>$1</code> <code>$2</code>（グループの中身）を使えます。マッチは全体（フラグ g）で行われます。</p>' +
+      '<div class="exam-section-title">基本パターン</div>' + rows(REGEX_BASICS, ["パターン", "意味", "例"]) +
+      '<div class="exam-section-title" style="margin-top:16px">置換でよく使う例</div>' + rows(REGEX_EXAMPLES, ["検索 (from)", "置換 (to)", "説明"]) +
+      '<p class="hint" style="margin-top:12px"><i class="fa-solid fa-triangle-exclamation"></i> 注意: <code>^</code> <code>$</code> は各行ではなく<strong>文字列全体</strong>の先頭・末尾に一致します。記号（<code>. ( ) [ ] | * + ? \\</code> など）をそのままの文字として探したいときは前に <code>\\</code> を付けてください（例: <code>\\.</code>）。</p>';
+    el("regex-help-body").innerHTML = body;
+    UI.openModal(el("regex-help-modal"));
+  }
+
   function moveSection(i, delta) {
     var j = i + delta; if (j < 0 || j >= state.reg.sections.length) return;
     var tmp = state.reg.sections[i]; state.reg.sections[i] = state.reg.sections[j]; state.reg.sections[j] = tmp;

@@ -505,6 +505,12 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
 }
 .exam-table th { font-weight: inherit; }
 
+/* 正規表現ヘルプの早見表 */
+.rx-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.rx-table th, .rx-table td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+.rx-table thead th { background: var(--grad-chip); font-weight: 700; color: var(--ink-soft); }
+.rx-table code { background: var(--line-soft); padding: 1px 5px; border-radius: 5px; font-size: 12.5px; white-space: nowrap; }
+
 /* 問題に貼る画像（写真・グラフ） */
 .exam-doc .exam-img {
   display: block; max-width: 100%; height: auto; margin: 12px auto;
