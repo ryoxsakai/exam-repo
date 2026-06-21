@@ -66,7 +66,7 @@
       }
       // [N] 段落番号バッジ（行中。空所 [[ ]] とは別の単角括弧。[[ は上で処理済み）
       if ((m = rem.match(/^\[([^\[\]]+)\]/))) {
-        out += '<span class="para-badge">' + esc(m[1]) + "</span>";
+        out += '<span class="para-badge para-badge-inline">' + esc(m[1]) + "</span>";
         rem = rem.slice(m[0].length); continue;
       }
       // ##語::訳## 脚注

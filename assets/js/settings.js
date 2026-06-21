@@ -9,6 +9,7 @@
     main:     { id: "main",     label: "メイン設定",       icon: "fa-sliders" },
     conn:     { id: "conn",     label: "接続設定",         icon: "fa-plug" },
     list:     { id: "list",     label: "入試問題一覧",     icon: "fa-table-list" },
+    uniyomi:  { id: "uniyomi",  label: "大学のよみがな",   icon: "fa-arrow-down-a-z" },
     register: { id: "register", label: "問題登録",         icon: "fa-pen-to-square" },
     ingest:    { id: "ingest",    label: "PDF取り込み",      icon: "fa-file-import" },
     ingestcfg: { id: "ingestcfg", label: "取り込み設定",      icon: "fa-wand-magic-sparkles" },
@@ -16,7 +17,7 @@
     extllm:    { id: "extllm",    label: "外部LLM取り込み",  icon: "fa-robot" },
     corpus:    { id: "corpus",    label: "コーパス検索設定", icon: "fa-language" }
   };
-  var SET_ORDER = ["main", "conn", "list", "register", "ingest", "ingestcfg", "replace", "extllm", "corpus"];
+  var SET_ORDER = ["main", "conn", "list", "uniyomi", "register", "ingest", "ingestcfg", "replace", "extllm", "corpus"];
   var MAIN_TABS = { tree: { label: "ツリー検索", icon: "fa-sitemap" }, search: { label: "通常検索", icon: "fa-table-list" }, corpus: { label: "コーパス検索", icon: "fa-language" }, print: { label: "問題印刷", icon: "fa-print" } };
   var MAIN_ORDER = ["tree", "search", "corpus", "print"];
 
@@ -50,6 +51,7 @@
     wireMain();
     wireConn();
     wireList();
+    wireUniYomi();
     wireRegister();
     wireIngest();
     wireIngestConfig();
@@ -75,6 +77,7 @@
 
   function onTab(id) {
     if (id === "list") loadList();
+    if (id === "uniyomi") loadUniYomi();
     if (id === "register") renderReg();
     if (id === "replace") renderBulkList();
     if (id === "extllm") loadExtPrompt();
@@ -1762,6 +1765,63 @@
           fillSelect(el("sm-university"), state.universities.map(function (u) { return u.name; }), "指定なし");
         });
     }, { editable: true, withReading: true });
+  }
+
+  /* ================= タブ: 大学のよみがな ================= */
+  var uniYomiRows = [];  // [{ id, name, reading }]（編集中の値）
+  function wireUniYomi() {
+    if (el("uniyomi-save")) el("uniyomi-save").addEventListener("click", saveUniYomi);
+    if (el("uniyomi-reload")) el("uniyomi-reload").addEventListener("click", loadUniYomi);
+  }
+  function loadUniYomi() {
+    var box = el("uniyomi-list");
+    if (!box) return;
+    if (!Store.getWorkerUrl()) { box.innerHTML = noWorker(); return; }
+    box.innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';
+    Api.getUniversities().then(function (d) {
+      var us = (d.universities || []).slice();
+      us.sort(function (a, b) { return (a.reading || a.name).localeCompare(b.reading || b.name, "ja") || a.name.localeCompare(b.name, "ja"); });
+      state.universities = us.map(function (u) { return { id: u.id, name: u.name, reading: u.reading || "" }; });
+      uniYomiRows = state.universities.map(function (u) { return { id: u.id, name: u.name, reading: u.reading }; });
+      renderUniYomi();
+    }).catch(function (e) {
+      box.innerHTML = '<div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div>";
+    });
+  }
+  function renderUniYomi() {
+    var box = el("uniyomi-list");
+    if (!uniYomiRows.length) { box.innerHTML = '<p class="hint">登録された大学がありません。</p>'; return; }
+    var h = '<ul class="sort-list">';
+    uniYomiRows.forEach(function (u, i) {
+      h += '<li class="sort-item">' +
+        '<span class="label">' + esc(u.name) + "</span>" +
+        '<input class="edit-item-input edit-item-reading" type="text" data-yomi="' + i + '" value="' + esc(u.reading) + '" placeholder="よみがな（ひらがな）" />' +
+        "</li>";
+    });
+    box.innerHTML = h + "</ul>";
+    $all("[data-yomi]", box).forEach(function (inp) {
+      inp.addEventListener("input", function () { uniYomiRows[+inp.getAttribute("data-yomi")].reading = inp.value; });
+    });
+  }
+  function saveUniYomi() {
+    if (!Store.getWorkerUrl()) { toast("Worker URL が未設定です（接続設定タブ）", "err"); return; }
+    var orig = {}; (state.universities || []).forEach(function (u) { orig[u.id] = u.reading || ""; });
+    var ops = [];
+    uniYomiRows.forEach(function (u) {
+      if (u.id != null && (u.reading || "").trim() !== (orig[u.id] || "")) {
+        ops.push(Api.updateUniversity(u.id, u.name, (u.reading || "").trim()));
+      }
+    });
+    if (!ops.length) { toast("変更はありません", "ok"); return; }
+    el("uniyomi-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> 保存中…';
+    Promise.all(ops).then(function () {
+      el("uniyomi-status").textContent = "";
+      toast(ops.length + " 件のよみがなを保存しました", "ok");
+      loadUniYomi();
+    }).catch(function (e) {
+      el("uniyomi-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
+      toast(e.message, "err");
+    });
   }
 
   /* ================= タブ5: コーパス検索設定 ================= */

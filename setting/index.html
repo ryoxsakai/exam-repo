@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="../assets/css/main.css?v=20260619j" />
+  <link rel="stylesheet" href="../assets/css/main.css?v=20260619k" />
 </head>
 <body>
   <header class="topbar">
@@ -146,6 +146,24 @@
         <button class="btn ghost sm" id="list-clear"><i class="fa-solid fa-rotate-left"></i> 条件クリア</button>
       </div>
       <div id="list-area"></div>
+    </section>
+
+    <!-- ===== タブ: 大学のよみがな ===== -->
+    <section data-panel="uniyomi" class="panel">
+      <div class="card">
+        <div class="card-head">
+          <h3><i class="fa-solid fa-arrow-down-a-z ic"></i> 大学のよみがな（五十音順ソート用）</h3>
+          <span class="spacer"></span>
+          <button class="icon-btn" id="uniyomi-reload" title="再読み込み"><i class="fa-solid fa-rotate-right"></i></button>
+        </div>
+        <p class="hint">登録済みの大学に「よみがな」を設定すると、ツリー検索などの大学の並びが正しい五十音順になります（例: 杏林 → <code>きょうりん</code>）。空欄の大学は漢字コード順のままです。ひらがなで入力してください。</p>
+        <div id="uniyomi-list" style="margin-top:12px"></div>
+        <div class="toolbar" style="margin-top:14px">
+          <button class="btn primary" id="uniyomi-save"><i class="fa-solid fa-floppy-disk"></i> よみがなを保存</button>
+          <span class="spacer"></span>
+          <span class="hint" id="uniyomi-status"></span>
+        </div>
+      </div>
     </section>
 
     <!-- ===== タブ4: 問題登録 ===== -->
@@ -495,7 +513,7 @@
   <script src="../assets/js/store.js?v=20260616b"></script>
   <script src="../assets/js/api.js?v=20260619j"></script>
   <script src="../assets/js/ui.js?v=20260612z"></script>
-  <script src="../assets/js/markup.js?v=20260619g"></script>
-  <script src="../assets/js/settings.js?v=20260619j"></script>
+  <script src="../assets/js/markup.js?v=20260619k"></script>
+  <script src="../assets/js/settings.js?v=20260619k"></script>
 </body>
 </html>

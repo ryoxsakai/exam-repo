@@ -488,6 +488,8 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
   font-size: .6em; font-family: var(--sans); font-weight: 400; vertical-align: .28em; line-height: 1;
   text-indent: 0; overflow: hidden;
 }
+/* 行中（インライン）の段落番号は右の2emマージンを付けない */
+.para-badge-inline { margin-right: 0; }
 /* 出典表記（右寄せ・グレー・小） */
 .exam-doc .cite { display: block; text-align: right; color: #94a3b8; font-size: .8em; text-indent: 0; }
 /* 斜字（イタリック） */
