@@ -145,10 +145,11 @@
         end++;
       }
       var plain = esc(smartQuotes(rem.slice(0, end)));
-      // ピリオドの直後に大文字が来る場合、スペースを2つ分に広げる
-      // （Dr. / Mr. / Mt. などの略語・イニシャルの後は除外）
-      plain = plain.replace(/([A-Za-z]*)\. (?=[A-Z])/g, function (full, w) {
-        return ABBREV.test(w) ? full : w + ".&emsp;";
+      // 文末の . ? ! の直後に大文字が来る場合、スペースを2つ分に広げる
+      // （. のときのみ Dr. / Mr. / Mt. などの略語・イニシャルは除外）
+      plain = plain.replace(/([A-Za-z]*)([.?!]) (?=[A-Z])/g, function (full, w, p) {
+        if (p === "." && ABBREV.test(w)) return full;
+        return w + p + "&emsp;";
       });
       // em dash → 2em幅（隙間なし）
       plain = plain.replace(/—/g, '<span class="em-dash">——</span>');
