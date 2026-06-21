@@ -249,9 +249,11 @@
         continue;
       }
 
-      // ((A)) 本文 → 選択肢
+      // ((A)) 本文 → 選択肢（行頭）。ただし 1行に (()) が複数ある場合は
+      // ブロック化せず通常行として描画し、先頭も含めて全てインライン丸ラベルにする。
       var cm = line.match(/^\s*\(\(([^)]+)\)\)\s*([\s\S]*)/);
-      if (cm) {
+      var choiceCount = (line.match(/\(\([^)]+\)\)/g) || []).length;
+      if (cm && choiceCount === 1) {
         html += '<div class="answer-choice"><span class="answer-choice-label">' + esc(cm[1]) +
                 '</span><span class="answer-choice-text">' +
                 (cm[2] ? inline(cm[2], footnotes) : "") + "</span></div>";
