@@ -65,7 +65,9 @@
         continue;
       }
       // [N] 段落番号バッジ（行中。空所 [[ ]] とは別の単角括弧。[[ は上で処理済み）
+      // 中身が3文字以上のときはバッジ化せずリテラル [..] として出力
       if ((m = rem.match(/^\[([^\[\]]+)\]/))) {
+        if (m[1].length >= 3) { out += esc("[" + m[1] + "]"); rem = rem.slice(m[0].length); continue; }
         out += '<span class="para-badge para-badge-inline">' + esc(m[1]) + "</span>";
         rem = rem.slice(m[0].length); continue;
       }
@@ -263,10 +265,11 @@
       }
 
       // 段落先頭の [1] [2]（単角括弧。空所 [[ ]] とは別）を段落番号バッジに（全セクションで有効）
+      // 中身が3文字以上のときはバッジ化しない（[図] [グラフ] などをそのまま表示）
       var badgeNum = "";
       if (paraStart) {
         var pm = trimmed.match(/^\[([^\[\]]+)\]\s?/);
-        if (pm) {
+        if (pm && pm[1].length < 3) {
           badgeNum = pm[1];
           line = line.replace(/^\s*\[[^\[\]]+\]\s?/, "");
           trimmed = line.trim();
