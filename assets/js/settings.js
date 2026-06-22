@@ -773,9 +773,12 @@
   }
 
   /* ---- 年度/方式/大学/種別 編集モーダル（汎用） ---- */
-  function openEditModal(title, items, onSave) {
-    state.editCtx = { items: items.slice(), onSave: onSave };
+  function openEditModal(title, items, onSave, options) {
+    options = options || {};
+    state.editCtx = { items: items.slice(), onSave: onSave, kind: options.kind || "default" };
     el("edit-modal-title").textContent = title;
+    el("edit-modal").classList.toggle("university-edit-modal", state.editCtx.kind === "university");
+    el("edit-new-label").textContent = state.editCtx.kind === "university" ? "大学名" : "項目名";
     el("edit-new").value = "";
     renderEditList();
     UI.openModal(el("edit-modal"));
@@ -785,11 +788,18 @@
     c.innerHTML = "";
     if (!items.length) c.innerHTML = '<li class="hint">項目がありません。上で追加してください。</li>';
     items.forEach(function (it, i) {
-      var li = create("li", { class: "sort-item" },
-        '<span class="label">' + esc(it) + "</span><span class='move'>" +
-        '<button class="icon-btn sm" data-up="' + i + '"' + (i === 0 ? " disabled" : "") + '><i class="fa-solid fa-arrow-up"></i></button>' +
-        '<button class="icon-btn sm" data-down="' + i + '"' + (i === items.length - 1 ? " disabled" : "") + '><i class="fa-solid fa-arrow-down"></i></button>' +
-        '<button class="icon-btn sm danger" data-del="' + i + '"><i class="fa-solid fa-trash"></i></button></span>');
+      var controls =
+        '<span class="move">' +
+        '<button class="icon-btn sm" data-up="' + i + '" title="上へ"' + (i === 0 ? " disabled" : "") + '><i class="fa-solid fa-arrow-up"></i></button>' +
+        '<button class="icon-btn sm" data-down="' + i + '" title="下へ"' + (i === items.length - 1 ? " disabled" : "") + '><i class="fa-solid fa-arrow-down"></i></button>' +
+        '<button class="icon-btn sm danger" data-del="' + i + '" title="削除"><i class="fa-solid fa-trash"></i></button></span>';
+      var body = state.editCtx.kind === "university"
+        ? '<label class="sort-item-field">' +
+          '<span class="field-label">大学名</span>' +
+          '<input type="text" class="label" value="' + esc(it) + '" placeholder="大学名" readonly />' +
+          "</label>" + controls
+        : '<span class="label">' + esc(it) + "</span>" + controls;
+      var li = create("li", { class: "sort-item" + (state.editCtx.kind === "university" ? " university-sort-item" : "") }, body);
       c.appendChild(li);
     });
     $all("[data-up]", c).forEach(function (b) { b.addEventListener("click", function () { var i = +b.getAttribute("data-up"); swap(state.editCtx.items, i, i - 1); renderEditList(); }); });
@@ -823,7 +833,7 @@
         state.universities = items.map(function (n) { return byName[n] || { id: null, name: n }; });
         fillRegSelects(); fillSelect(el("sm-university"), items, "指定なし");
       });
-    });
+    }, { kind: "university" });
   }
 
   /* ================= タブ5: コーパス検索設定 ================= */
@@ -973,6 +983,12 @@
     });
     el("edit-new").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); el("edit-add").click(); } });
     el("edit-save").addEventListener("click", function () {
+      var seen = {};
+      state.editCtx.items = state.editCtx.items.map(function (it) { return String(it || "").trim(); }).filter(function (it) {
+        if (!it || seen[it]) return false;
+        seen[it] = true;
+        return true;
+      });
       var r = state.editCtx.onSave(state.editCtx.items);
       Promise.resolve(r).then(function () { UI.closeModal(el("edit-modal")); toast("保存しました", "ok"); })
         .catch(function (e) { toast(e.message || "保存に失敗しました", "err"); });
