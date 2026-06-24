@@ -3,6 +3,7 @@
    既存 parser.tsx と同じ記法を踏襲:
      {{問N}}        … 大問見出しバッジ
      [[N]] [[A]]    … 空所バッジ
+     [[-- --]]      … 3倍幅の空欄（中身がダッシュ＋空白のみ）
      ##語::訳##     … 脚注（語注）
      ==語== :色     … ハイライト（色: yellow/blue/red/purple/pink/green/aqua）
      __語__         … 下線
@@ -59,7 +60,12 @@
       // スペースを消すため CSS マージンより自然に揃う）
       if ((m = rem.match(/^\[\[([^\]]+)\]\]/))) {
         if (out && !/[\s(\[{「『（【]$/.test(out)) out += " ";
-        out += '<span class="blank-badge">' + esc(m[1]) + "</span>";
+        // 中身がダッシュ＋空白のみ（[[-- --]] 等）は通常の3倍幅の空欄（中身は非表示）
+        if (/^[-\s]+$/.test(m[1])) {
+          out += '<span class="blank-badge blank-badge-wide"></span>';
+        } else {
+          out += '<span class="blank-badge">' + esc(m[1]) + "</span>";
+        }
         rem = rem.slice(m[0].length);
         if (rem.length && !/^[\s.,;:!?\]）」』】。、！？]/.test(rem)) out += " ";
         continue;
