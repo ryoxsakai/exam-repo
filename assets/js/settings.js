@@ -673,6 +673,35 @@
       ta.value = ta.value.trim() ? ta.value.replace(/\s*$/, "") + "\n" + PROMPT_EXAMPLE : PROMPT_EXAMPLE;
       toast("推奨例を挿入しました（保存で確定）", "ok");
     });
+
+    // 大学ごとの注意点：大学選択でその注意点を読み込み、保存で Worker(config) へ
+    if (el("uni-note-select")) {
+      el("uni-note-select").addEventListener("change", function () {
+        var name = el("uni-note-select").value;
+        el("uni-note-text").value = (state.config.university_notes && state.config.university_notes[name]) || "";
+        el("uni-note-status").textContent = "";
+      });
+    }
+    if (el("uni-note-save")) {
+      el("uni-note-save").addEventListener("click", function () {
+        if (!Store.getWorkerUrl()) { toast("Worker URL が未設定です（接続設定タブ）", "err"); return; }
+        var name = el("uni-note-select").value;
+        if (!name) { toast("大学を選択してください", "err"); return; }
+        var notes = Object.assign({}, state.config.university_notes || {});
+        var v = el("uni-note-text").value;
+        if (v.trim()) notes[name] = v; else delete notes[name];
+        el("uni-note-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> 保存中…';
+        Api.updateConfig({ university_notes: notes }).then(function () {
+          state.config.university_notes = notes;
+          extPromptLoaded = false;  // 外部LLM用プロンプトを次回再取得
+          el("uni-note-status").innerHTML = '<span style="color:var(--emerald-dark)"><i class="fa-solid fa-circle-check"></i> 保存しました</span>';
+          toast(name + " の注意点を保存しました", "ok");
+        }).catch(function (e) {
+          el("uni-note-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
+          toast(e.message, "err");
+        });
+      });
+    }
   }
 
   /* ================= タブ: 登録データ置換（grep replace） ================= */
@@ -795,6 +824,10 @@
     });
     el("ext-clear").addEventListener("click", function () { el("ext-json").value = ""; el("ext-status").innerHTML = ""; });
     el("ext-load").addEventListener("click", loadExtJson);
+    // 大学選択でプロンプトを取り直し（その大学の注意点を反映）
+    if (el("ext-uni-select")) {
+      el("ext-uni-select").addEventListener("change", function () { loadExtPrompt(true); });
+    }
   }
   // 外部LLM用プロンプトを Worker から取得して表示（初回のみ）
   function loadExtPrompt(force) {
@@ -804,12 +837,18 @@
       el("ext-prompt-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> Worker URL が未設定です（接続設定タブ）。</span>';
       return;
     }
+    var uni = el("ext-uni-select") ? el("ext-uni-select").value : "";
     el("ext-prompt").value = "";
     el("ext-prompt").placeholder = "読み込み中…";
     el("ext-prompt-status").textContent = "";
-    Api.getIngestPrompt().then(function (d) {
+    Api.getIngestPrompt(uni).then(function (d) {
       el("ext-prompt").value = (d && d.prompt) || "";
       extPromptLoaded = true;
+      if (el("ext-uni-status")) {
+        el("ext-uni-status").innerHTML = uni
+          ? '<i class="fa-solid fa-circle-check"></i> ' + esc(uni) + ' を選択中（注意点が登録されていればプロンプトに反映されます）。'
+          : "";
+      }
     }).catch(function (e) {
       el("ext-prompt-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
     });
@@ -937,6 +976,7 @@
       Store.setSectionTypes(state.config.section_types);
       // 取り込み設定（追加プロンプト）を反映
       if (el("cfg-ingest-prompt")) el("cfg-ingest-prompt").value = state.config.ingest_prompt || "";
+      if (!state.config.university_notes || typeof state.config.university_notes !== "object") state.config.university_notes = {};
       state.universities = (res[1] && res[1].universities) || [];
       // サブタイトル（Worker 側にあれば反映）
       if (state.config.site_subtitle) {
@@ -956,6 +996,13 @@
       fillSelect(el("sm-schedule"), state.config.schedules, "指定なし");
       fillSelect(el("sm-university"), state.universities.map(function (u) { return u.name; }), "指定なし");
       fillSelect(el("sm-category"), state.config.question_categories || [], "指定なし");
+      // 大学ごとの注意点 / 外部LLM用 大学選択プルダウン
+      var uniNames = state.universities.map(function (u) { return u.name; });
+      fillSelect(el("uni-note-select"), uniNames, "— 大学を選択 —");
+      fillSelect(el("ext-uni-select"), uniNames, "— 指定なし —");
+      if (el("uni-note-select") && el("uni-note-text")) {
+        el("uni-note-text").value = state.config.university_notes[el("uni-note-select").value] || "";
+      }
       // 登録フォーム
       fillRegSelects();
     });
