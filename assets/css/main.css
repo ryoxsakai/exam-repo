@@ -475,7 +475,7 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
      行頭ではブラウザがスペースを消すため、折り返し時に左端へぴったり揃う */
   width: 4em; box-sizing: border-box; padding: calc(.2em + 1px) 0; margin: 0;
   /* 中身が空（[[]] [[----]] 等）でも縦につぶれないよう最小高を確保 */
-  min-height: 1em;
+  min-height: 2em;
   background: #fff; color: #000; border: 1.5px solid #000; border-radius: 3px;
   font-size: .82em; font-family: var(--sans); font-weight: 600; vertical-align: .04em; line-height: 1;
   text-indent: 0; overflow: hidden;

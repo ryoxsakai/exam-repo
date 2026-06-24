@@ -4,7 +4,7 @@
      {{問N}}        … 大問見出しバッジ
      [[N]] [[A]]    … 空所バッジ
      [[-- --]] [[--A--]] … 3倍幅の空欄（ダッシュで囲む。囲んだ中身はラベル表示）
-     ##語::訳##     … 脚注（語注）
+     ##語::訳##     … 脚注（語注）。語中の ^ は注のみ直前文字を小文字化（M^isdiagnosis → 本文Misdiagnosis/注misdiagnosis）
      ==語== :色     … ハイライト（色: yellow/blue/red/purple/pink/green/aqua）
      __語__         … 下線
      **語**         … 太字
@@ -80,10 +80,14 @@
         rem = rem.slice(m[0].length); continue;
       }
       // ##語::訳## 脚注
+      // 語中の ^ は「本文では除去（大小はそのまま）、注では ^ の直前の文字を小文字化」する
+      // マーカー。例: ##M^isdiagnosis::誤診## → 本文「Misdiagnosis」/ 注「misdiagnosis」
       if ((m = rem.match(/^##([^:#]+)::([^#]+)##/))) {
         var idx = footnotes.length + 1;
-        footnotes.push({ index: idx, word: m[1], translation: m[2] });
-        out += '<span title="' + esc(m[1] + ": " + m[2]) + '">' + esc(m[1]) +
+        var dispWord = m[1].replace(/\^/g, "");
+        var footWord = m[1].replace(/(.)\^/g, function (_, ch) { return ch.toLowerCase(); }).replace(/\^/g, "");
+        footnotes.push({ index: idx, word: footWord, translation: m[2] });
+        out += '<span title="' + esc(footWord + ": " + m[2]) + '">' + esc(dispWord) +
                '<sup class="footnote-number">*' + idx + "</sup></span>";
         rem = rem.slice(m[0].length); continue;
       }
@@ -314,7 +318,7 @@
     t = t.replace(/\{\{[^}]*\}\}/g, " ");           // 問見出し
     t = t.replace(/\[\[[^\]]*\]\]/g, " ");          // 空所
     t = t.replace(/^\s*\[[^\[\]]+\]\s?/gm, "");     // 段落番号 [1]（行頭・単角括弧）
-    t = t.replace(/##([^:#]+)::[^#]+##/g, "$1");    // 脚注 → 語のみ残す
+    t = t.replace(/##([^:#]+)::[^#]+##/g, function (_, w) { return w.replace(/\^/g, ""); }); // 脚注 → 語のみ残す（^マーカー除去）
     t = t.replace(/!\[[^\]]*\]\([^)\s]+\)/g, " ");   // 画像 → 除去
     t = t.replace(/!!!!([\s\S]+?)!!!!/g, " ");      // 出典 → 除去
     t = t.replace(/\|\|\|\|([\s\S]+?)\|\|\|\|/g, "$1"); // 斜字 → テキスト残す

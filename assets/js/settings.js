@@ -1465,6 +1465,7 @@
     { code: "Fill in [[1]] and [[A]].", desc: "空所バッジ" },
     { code: "Write here: [[-- --]] / [[--A--]]", desc: "3倍幅の空欄（ダッシュで囲む。囲んだ中身はラベル表示）" },
     { code: "The ##immune::免疫## system.", desc: "語注（末尾に訳一覧）" },
+    { code: "##M^isdiagnosis::誤診##", desc: "語注の ^ は注のみ直前文字を小文字化（本文Misdiagnosis／注misdiagnosis）" },
     { code: "[1] In the first paragraph...\n\n[2] The second paragraph follows.", desc: "段落番号（本文・和訳の段落先頭に [1] [2]。空所 [[ ]] とは別）", body: true },
     { code: "He felt ||||déjà vu||||.", desc: "斜字（イタリック）" },
     { code: "!!!!出典: The Economist (2023)!!!!", desc: "出典（右寄せ・グレー・小）" },
