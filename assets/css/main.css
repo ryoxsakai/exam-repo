@@ -480,6 +480,9 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
   font-size: .82em; font-family: var(--sans); font-weight: 600; vertical-align: .04em; line-height: 1;
   text-indent: 0; overflow: hidden;
 }
+/* 中身が空でもテキストのベースラインを確保し、文字入りと縦位置を揃える
+   （ゼロ幅スペース。空の inline-flex はベースラインが下端になり上に浮くため） */
+.blank-badge::before { content: "\200B"; }
 /* [[-- --]] [[--A--]] … 通常空所の3倍幅の空欄。中身の空白を保持（pre） */
 .blank-badge-wide { width: 12em; white-space: pre; }
 /* 段落番号バッジ（空所と同じ丸み・正方形・右に2emマージン）
