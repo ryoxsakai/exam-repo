@@ -996,8 +996,10 @@
       fillSelect(el("sm-schedule"), state.config.schedules, "指定なし");
       fillSelect(el("sm-university"), state.universities.map(function (u) { return u.name; }), "指定なし");
       fillSelect(el("sm-category"), state.config.question_categories || [], "指定なし");
-      // 大学ごとの注意点 / 外部LLM用 大学選択プルダウン
-      var uniNames = state.universities.map(function (u) { return u.name; });
+      // 大学ごとの注意点 / 外部LLM用 大学選択プルダウン（よみがな＝五十音順）
+      var uniNames = state.universities.slice().sort(function (a, b) {
+        return (a.reading || a.name).localeCompare(b.reading || b.name, "ja") || a.name.localeCompare(b.name, "ja");
+      }).map(function (u) { return u.name; });
       fillSelect(el("uni-note-select"), uniNames, "— 大学を選択 —");
       fillSelect(el("ext-uni-select"), uniNames, "— 指定なし —");
       if (el("uni-note-select") && el("uni-note-text")) {
