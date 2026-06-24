@@ -27,6 +27,13 @@ async function ensureCategoryColumn(env: Env) {
   }
 }
 
+// 大学ごとの外部LLM取り込み注意点を保存するテーブル
+async function ensureUniversityPromptNotesTable(env: Env) {
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS university_prompt_notes (university_id INTEGER PRIMARY KEY, note TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT (datetime('now')), FOREIGN KEY (university_id) REFERENCES universities(id) ON DELETE CASCADE)"
+  );
+}
+
 // question_number = 0 のレコードを修正（各 exam 内で id 順に 1 始まりで採番）
 async function fixZeroQuestionNumbers(env: Env) {
   const zeros = await env.DB.prepare(
@@ -68,6 +75,59 @@ export default {
           "SELECT * FROM universities ORDER BY name ASC"
         ).all();
         return json({ universities: results }, 200, origin);
+      }
+
+      // ── /api/university-notes（大学別の外部LLM取り込み注意点） ─────
+      if (path.startsWith("/api/university-notes")) {
+        await ensureUniversityPromptNotesTable(env);
+
+        // GET /api/university-notes
+        if (path === "/api/university-notes" && request.method === "GET") {
+          const { results } = await env.DB.prepare(`
+            SELECT u.id AS university_id, u.name AS university_name,
+                   COALESCE(n.note, '') AS note, n.updated_at
+            FROM universities u
+            LEFT JOIN university_prompt_notes n ON n.university_id = u.id
+            ORDER BY u.name ASC
+          `).all();
+          return json({ notes: results }, 200, origin);
+        }
+
+        const noteMatch = path.match(/^\/api\/university-notes\/(\d+)$/);
+
+        // GET /api/university-notes/:universityId
+        if (noteMatch && request.method === "GET") {
+          const universityId = Number(noteMatch[1]);
+          const row = await env.DB.prepare(`
+            SELECT u.id AS university_id, u.name AS university_name,
+                   COALESCE(n.note, '') AS note, n.updated_at
+            FROM universities u
+            LEFT JOIN university_prompt_notes n ON n.university_id = u.id
+            WHERE u.id = ?
+          `).bind(universityId).first();
+          if (!row) return json({ error: "University not found" }, 404, origin);
+          return json({ note: row }, 200, origin);
+        }
+
+        // PUT /api/university-notes/:universityId
+        if (noteMatch && request.method === "PUT") {
+          const universityId = Number(noteMatch[1]);
+          const exists = await env.DB.prepare("SELECT id FROM universities WHERE id = ?")
+            .bind(universityId).first<{ id: number }>();
+          if (!exists) return json({ error: "University not found" }, 404, origin);
+
+          type NoteBody = { note?: string };
+          const body = await request.json<NoteBody>();
+          const note = String(body.note ?? "");
+          await env.DB.prepare(`
+            INSERT INTO university_prompt_notes (university_id, note, updated_at)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(university_id) DO UPDATE SET
+              note = excluded.note,
+              updated_at = datetime('now')
+          `).bind(universityId, note).run();
+          return json({ success: true }, 200, origin);
+        }
       }
 
       // ── GET /api/config ───────────────────────────────────────────
@@ -152,6 +212,8 @@ export default {
             400, origin
           );
         }
+        await ensureUniversityPromptNotesTable(env);
+        await env.DB.prepare("DELETE FROM university_prompt_notes WHERE university_id = ?").bind(uniId).run();
         await env.DB.prepare("DELETE FROM universities WHERE id = ?").bind(uniId).run();
         return json({ success: true }, 200, origin);
       }
