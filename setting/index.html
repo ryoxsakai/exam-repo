@@ -278,6 +278,27 @@
           <span class="hint" id="ingest-prompt-status"></span>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-building-columns ic"></i> 大学ごとの注意点</h3></div>
+        <p class="hint">大学固有の注意点（出題形式・特殊記法・頻出セクションなど）を大学ごとに保存できます。「外部LLMで取り込む」タブで大学を選ぶと、その大学の注意点がプロンプトに自動で追記されます。設定は <strong>Worker（D1）に保存され全端末で共有</strong>されます。</p>
+        <label class="field" style="margin-top:10px">
+          <span class="field-label">大学を選択</span>
+          <select id="uni-note-select"><option value="">— 大学を選択 —</option></select>
+        </label>
+        <label class="field" style="margin-top:10px">
+          <span class="field-label">注意点</span>
+          <textarea id="uni-note-text" rows="8" placeholder="例：
+- 大問1は会話文。選択肢は ((A))((B)) で表す
+- 注釈は本文下部のものだけを ##語::訳## で採用する
+- 全訳は必ず「全訳」セクションに全文を含める"></textarea>
+        </label>
+        <div class="toolbar" style="margin-top:12px">
+          <button class="btn primary" id="uni-note-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+          <span class="spacer"></span>
+          <span class="hint" id="uni-note-status"></span>
+        </div>
+      </div>
     </section>
 
     <!-- ===== タブ: 登録データ置換（grep replace） ===== -->
@@ -305,6 +326,15 @@
         <div class="card-head"><h3><i class="fa-solid fa-robot ic"></i> 外部LLMで取り込む</h3></div>
         <p class="hint">claude.ai・ChatGPT・Gemini など任意のチャットAIで取り込めます。Anthropic APIキー不要。<br>
           <strong>手順:</strong> ①下のプロンプトをコピー → ②チャットAIにPDF（または画像）と一緒に貼り付けて送信 → ③返ってきた<strong>コードブロック右上の「コピー」ボタン</strong>でJSONを1クリックコピーし、下の欄に貼り付け → ④「読み込む」で編集画面へ。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-building-columns ic"></i> 大学の注意点を反映（任意）</h3></div>
+        <label class="field">
+          <span class="field-label">大学を選択（選ぶとその大学の注意点がプロンプトに追記されます）</span>
+          <select id="ext-uni-select"><option value="">— 指定なし —</option></select>
+        </label>
+        <p class="hint" id="ext-uni-status" style="margin-top:6px"></p>
       </div>
 
       <div class="card">
@@ -511,9 +541,9 @@
   <script src="../assets/data/oxford5000.js?v=20260612a"></script>
   <script src="../assets/data/target1900.js?v=20260613h"></script>
   <script src="../assets/js/store.js?v=20260616b"></script>
-  <script src="../assets/js/api.js?v=20260619j"></script>
+  <script src="../assets/js/api.js?v=20260624g"></script>
   <script src="../assets/js/ui.js?v=20260612z"></script>
   <script src="../assets/js/markup.js?v=20260624e"></script>
-  <script src="../assets/js/settings.js?v=20260624d"></script>
+  <script src="../assets/js/settings.js?v=20260624g"></script>
 </body>
 </html>

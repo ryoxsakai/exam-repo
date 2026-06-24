@@ -134,8 +134,9 @@
     replaceRegistered: function (rules, dryRun) {
       return call("/api/replace", { method: "POST", body: JSON.stringify({ rules: rules, dryRun: !!dryRun }) });
     },
-    // 外部LLM取り込み用プロンプト（{ prompt } を返す）
-    getIngestPrompt:  function () { return call("/api/ingest-prompt"); },
+    // 外部LLM取り込み用プロンプト（{ prompt } を返す）。
+    // universityName を渡すとその大学の注意点がプロンプトに追記される。
+    getIngestPrompt:  function (universityName) { return call("/api/ingest-prompt" + qs({ universityName: universityName })); },
     getWordLists:     function (type) { return call("/api/wordlists" + qs({ type: type })); },
     createWordList:   function (d) { return call("/api/wordlists", { method: "POST", body: JSON.stringify(d) }); },
     updateWordList:   function (id, d) { return call("/api/wordlists/" + id, { method: "PUT", body: JSON.stringify(d) }); },

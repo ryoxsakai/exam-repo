@@ -238,12 +238,30 @@ async function getIngestPrompt(env: Env): Promise<string> {
   return "";
 }
 
+// 大学ごとの注意点（{ 大学名: 注意点 }）を D1 config から読む。
+async function getUniversityNotes(env: Env): Promise<Record<string, string>> {
+  try {
+    await env.DB.exec("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+    const pr = await env.DB.prepare("SELECT value FROM config WHERE key = 'university_notes'").first<{ value: string }>();
+    if (pr) { try { const o = JSON.parse(pr.value); if (o && typeof o === "object") return o as Record<string, string>; } catch { /* 壊れた値は無視 */ } }
+  } catch { /* config テーブル未作成等は無視 */ }
+  return {};
+}
+
 // 外部LLM（claude.ai / ChatGPT / Gemini 等）に貼り付けて使う取り込みプロンプトを返す。
 // Worker解析と同じ INGEST_SYSTEM ＋ ユーザー追加プロンプト ＋ 出力JSON仕様で構成する。
-async function handleIngestPrompt(env: Env, origin: string | null): Promise<Response> {
+// universityName が指定され、その大学の注意点が登録されていればプロンプトに追記する。
+async function handleIngestPrompt(env: Env, origin: string | null, universityName?: string): Promise<Response> {
   const userPrompt = await getIngestPrompt(env);
+  let uniNote = "";
+  const uname = (universityName || "").trim();
+  if (uname) {
+    const notes = await getUniversityNotes(env);
+    uniNote = (notes[uname] || "").trim();
+  }
   const prompt = INGEST_SYSTEM
     + (userPrompt ? "\n\n# 追加の変換ルール（ユーザー設定）\n" + userPrompt : "")
+    + (uniNote ? "\n\n# " + uname + " の注意点（大学別設定）\n" + uniNote : "")
     + "\n\n# 出力形式\n添付したPDF（または画像・テキスト）の入試問題を解析し、大問ごと・セクションごとに構造化してください。年度・大学名・方式も読み取り universityName / year / schedule に入れてください。\n\n"
     + INGEST_JSON_SPEC_FENCED;
   return json({ prompt }, 200, origin);
@@ -555,6 +573,9 @@ export default {
         const ingestPromptRow = await env.DB.prepare(
           "SELECT value FROM config WHERE key = 'ingest_prompt'"
         ).first<{ value: string }>();
+        const uniNotesRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'university_notes'"
+        ).first<{ value: string }>();
         const curYear = new Date().getFullYear();
         const defaultSchedules = ["前期","後期","一般前期","一般後期","推薦","AO","その他"];
         const defaultYears = Array.from({ length: 8 }, (_, i) => String(curYear - i));
@@ -570,6 +591,7 @@ export default {
           question_categories: categoryRow ? JSON.parse(categoryRow.value) : defaultCategories,
           section_types: sectionTypesRow ? JSON.parse(sectionTypesRow.value) : defaultSectionTypes,
           ingest_prompt: ingestPromptRow ? JSON.parse(ingestPromptRow.value) : "",
+          university_notes: uniNotesRow ? JSON.parse(uniNotesRow.value) : {},
         }, 200, origin);
       }
 
@@ -578,7 +600,7 @@ export default {
         await env.DB.exec(
           "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         );
-        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string; site_subtitle?: string; question_categories?: string[]; section_types?: string[]; ingest_prompt?: string };
+        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string; site_subtitle?: string; question_categories?: string[]; section_types?: string[]; ingest_prompt?: string; university_notes?: Record<string, string> };
         const body = await request.json<ConfigBody>();
         const upsert = async (key: string, val: unknown) => {
           await env.DB.prepare(
@@ -594,6 +616,7 @@ export default {
         if (body.question_categories !== undefined) await upsert("question_categories", body.question_categories);
         if (body.section_types !== undefined) await upsert("section_types", body.section_types);
         if (body.ingest_prompt !== undefined) await upsert("ingest_prompt", body.ingest_prompt);
+        if (body.university_notes !== undefined) await upsert("university_notes", body.university_notes);
         return json({ success: true }, 200, origin);
       }
 
@@ -719,7 +742,7 @@ export default {
 
       // ── GET /api/ingest-prompt（外部LLM用プロンプト） ──────────────
       if (path === "/api/ingest-prompt" && request.method === "GET") {
-        return handleIngestPrompt(env, origin);
+        return handleIngestPrompt(env, origin, url.searchParams.get("universityName") || "");
       }
 
       // ── DELETE /api/questions/:examId/:questionNumber ──────────────
