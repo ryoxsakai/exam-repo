@@ -45,6 +45,14 @@ CREATE TABLE IF NOT EXISTS word_lists (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- University prompt notes table (外部LLM取り込み時に大学ごとの注意点を差し込む)
+CREATE TABLE IF NOT EXISTS university_prompt_notes (
+  university_id INTEGER PRIMARY KEY,
+  note TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (university_id) REFERENCES universities(id) ON DELETE CASCADE
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_exams_university_id ON exams(university_id);
 CREATE INDEX IF NOT EXISTS idx_exams_year ON exams(year);

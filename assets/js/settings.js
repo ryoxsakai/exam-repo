@@ -10,15 +10,18 @@
     conn:     { id: "conn",     label: "接続設定",         icon: "fa-plug" },
     list:     { id: "list",     label: "入試問題一覧",     icon: "fa-table-list" },
     register: { id: "register", label: "問題登録",         icon: "fa-pen-to-square" },
+    llm:      { id: "llm",      label: "外部LLMで取り込む", icon: "fa-robot" },
+    prompts:  { id: "prompts",  label: "追加プロンプト",   icon: "fa-message" },
     corpus:   { id: "corpus",   label: "コーパス検索設定", icon: "fa-language" }
   };
-  var SET_ORDER = ["main", "conn", "list", "register", "corpus"];
+  var SET_ORDER = ["main", "conn", "list", "register", "llm", "prompts", "corpus"];
   var MAIN_TABS = { search: { label: "通常検索", icon: "fa-table-list" }, corpus: { label: "コーパス検索", icon: "fa-language" }, print: { label: "問題印刷", icon: "fa-print" } };
   var MAIN_ORDER = ["search", "corpus", "print"];
 
   var state = {
     config: { schedules: [], year_presets: [], question_categories: [], section_types: [] },
     universities: [],
+    promptNotes: {},
     list: { filter: { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "" }, rows: [], sortedRows: [], sort: { key: "year", dir: "desc" }, nav: { examId: null, qnum: null } },
     reg: { sections: [], editingExamId: null, meta: { year: "", university: "", schedule: "", qnum: "1", category: "" } },
     editCtx: null  // 汎用編集モーダルの対象
@@ -44,6 +47,8 @@
     wireConn();
     wireList();
     wireRegister();
+    wireLLMImport();
+    wirePromptNotes();
     wireCorpusSettings();
 
     // 接続済みなら設定読み込み
@@ -64,6 +69,8 @@
   function onTab(id) {
     if (id === "list") loadList();
     if (id === "register") renderReg();
+    if (id === "llm") refreshLLMImport();
+    if (id === "prompts") refreshPromptNotes();
     if (id === "corpus") loadWordLists();
   }
 
@@ -188,7 +195,8 @@
   function loadServerConfig() {
     return Promise.all([
       Api.getConfig().catch(function () { return { schedules: [], year_presets: [], question_categories: [], section_types: [] }; }),
-      Api.getUniversities().catch(function () { return { universities: [] }; })
+      Api.getUniversities().catch(function () { return { universities: [] }; }),
+      Api.getUniversityPromptNotes().catch(function () { return { notes: [] }; })
     ]).then(function (res) {
       state.config = res[0] || { schedules: [], year_presets: [], question_categories: [], section_types: [] };
       if (!Array.isArray(state.config.schedules)) state.config.schedules = [];
@@ -197,6 +205,7 @@
       if (!Array.isArray(state.config.section_types)) state.config.section_types = ["問題", "解答", "解説"];
       Store.setSectionTypes(state.config.section_types);
       state.universities = (res[1] && res[1].universities) || [];
+      setPromptNotes((res[2] && res[2].notes) || []);
       // サブタイトル（Worker 側にあれば反映）
       if (state.config.site_subtitle) {
         Store.setSiteSubtitle(state.config.site_subtitle);
@@ -217,6 +226,14 @@
       fillSelect(el("sm-category"), state.config.question_categories || [], "指定なし");
       // 登録フォーム
       fillRegSelects();
+      fillUniversityNoteSelects();
+    });
+  }
+
+  function setPromptNotes(rows) {
+    state.promptNotes = {};
+    (rows || []).forEach(function (r) {
+      state.promptNotes[String(r.university_id)] = r.note || "";
     });
   }
 
@@ -227,6 +244,144 @@
     (items || []).forEach(function (it) { var o = create("option"); o.value = it; o.textContent = it; sel.appendChild(o); });
     sel.value = cur;
   }
+
+  function fillUniversitySelect(sel, placeholder) {
+    if (!sel) return;
+    var cur = sel.value;
+    sel.innerHTML = '<option value="">' + esc(placeholder) + "</option>";
+    state.universities.forEach(function (u) {
+      if (!u.id) return;
+      var o = create("option");
+      o.value = String(u.id);
+      o.textContent = u.name;
+      sel.appendChild(o);
+    });
+    sel.value = cur;
+    if (cur && sel.value !== cur) sel.value = "";
+  }
+
+  function universityNameById(id) {
+    var sid = String(id || "");
+    var u = state.universities.find(function (item) { return String(item.id) === sid; });
+    return u ? u.name : "";
+  }
+
+  function fillUniversityNoteSelects() {
+    fillUniversitySelect(el("prompt-note-university"), "大学を選択してください");
+    fillUniversitySelect(el("llm-note-university"), "注意点を反映しない");
+    renderPromptNoteEditor();
+    renderLLMPrompt();
+  }
+
+  function loadPromptNotes() {
+    if (!Store.getWorkerUrl()) {
+      setPromptNotes([]);
+      fillUniversityNoteSelects();
+      return Promise.resolve();
+    }
+    return Api.getUniversityPromptNotes().then(function (data) {
+      setPromptNotes((data && data.notes) || []);
+      fillUniversityNoteSelects();
+    });
+  }
+
+  /* ================= タブ5: 外部LLMで取り込む ================= */
+  function wireLLMImport() {
+    el("llm-note-university").addEventListener("change", renderLLMPrompt);
+    el("llm-prompt-copy").addEventListener("click", function () {
+      var text = el("llm-prompt").value;
+      if (!text) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { toast("プロンプトをコピーしました", "ok"); })
+          .catch(function () { toast("コピーに失敗しました", "err"); });
+      } else {
+        el("llm-prompt").select();
+        document.execCommand("copy");
+        toast("プロンプトをコピーしました", "ok");
+      }
+    });
+  }
+
+  function refreshLLMImport() {
+    loadPromptNotes().then(renderLLMPrompt, renderLLMPrompt);
+  }
+
+  function renderLLMPrompt() {
+    var sel = el("llm-note-university");
+    if (!sel) return;
+    fillUniversitySelect(sel, "注意点を反映しない");
+    var uniId = sel.value;
+    var uniName = universityNameById(uniId);
+    var note = uniId ? (state.promptNotes[String(uniId)] || "").trim() : "";
+    var noteBlock = "";
+    if (uniId && note) {
+      noteBlock =
+        "\n【" + uniName + "の注意点】\n" +
+        note +
+        "\n";
+      el("llm-note-status").innerHTML = '<i class="fa-solid fa-circle-check"></i> ' + esc(uniName) + " の注意点をプロンプトへ反映しています。";
+    } else if (uniId) {
+      el("llm-note-status").innerHTML = '<i class="fa-solid fa-circle-info"></i> ' + esc(uniName) + " の注意点は未登録です。";
+    } else {
+      el("llm-note-status").innerHTML = '<i class="fa-solid fa-circle-info"></i> 大学を選択すると、保存済みの注意点だけがプロンプトに追加されます。';
+    }
+    el("llm-prompt").value = buildLLMPrompt(noteBlock);
+  }
+
+  function buildLLMPrompt(noteBlock) {
+    return [
+      "あなたは英語入試問題データベースへ登録するためのデータ整形アシスタントです。",
+      "ユーザーが貼り付ける入試問題の本文・解答・解説を読み、下記の形式で出力してください。",
+      "",
+      "【出力ルール】",
+      "1. 問題本文、解答、解説を分けて整理する。",
+      "2. 大問見出しは {{問1}} のように行頭へ置く。",
+      "3. 空所は [[1]]、[[A]] のように表す。",
+      "4. 選択肢は行頭で ((A)) 本文 の形式にする。",
+      "5. 語注は ##語::訳##、下線は __語__、強調は ==語== を使う。",
+      "6. 解答は {{解答}}、解説は {{解説}} の見出しで区切る。",
+      "7. 原文の英文・設問番号・選択肢番号は勝手に改変しない。",
+      noteBlock ? noteBlock : "",
+      "【入力】",
+      "ここに入試問題の原文を貼り付けます。"
+    ].filter(function (line) { return line !== null; }).join("\n");
+  }
+
+  /* ================= タブ6: 追加プロンプト ================= */
+  function wirePromptNotes() {
+    el("prompt-note-university").addEventListener("change", renderPromptNoteEditor);
+    el("prompt-note-save").addEventListener("click", savePromptNote);
+  }
+
+  function refreshPromptNotes() {
+    loadPromptNotes().then(renderPromptNoteEditor, renderPromptNoteEditor);
+  }
+
+  function renderPromptNoteEditor() {
+    var sel = el("prompt-note-university");
+    var textarea = el("prompt-note-text");
+    var save = el("prompt-note-save");
+    if (!sel || !textarea || !save) return;
+    var uniId = sel.value;
+    textarea.value = uniId ? (state.promptNotes[String(uniId)] || "") : "";
+    textarea.disabled = !uniId;
+    save.disabled = !uniId;
+  }
+
+  function savePromptNote() {
+    var uniId = el("prompt-note-university").value;
+    if (!uniId) { toast("大学名を選択してください", "err"); return; }
+    if (!Store.getWorkerUrl()) { toast("Worker URL が未設定です。接続設定で登録してください。", "err"); return; }
+    var note = el("prompt-note-text").value;
+    Api.updateUniversityPromptNote(uniId, { note: note })
+      .then(function () {
+        state.promptNotes[String(uniId)] = note;
+        renderLLMPrompt();
+        toast("注意点を保存しました", "ok");
+      })
+      .catch(function (e) { toast(e.message, "err"); });
+  }
+
 
   /* ================= タブ3: 入試問題一覧 ================= */
   function findListNavIndex() {
@@ -832,6 +987,7 @@
       return Promise.all(ops).then(function () {
         state.universities = items.map(function (n) { return byName[n] || { id: null, name: n }; });
         fillRegSelects(); fillSelect(el("sm-university"), items, "指定なし");
+        fillUniversityNoteSelects();
       });
     }, { kind: "university" });
   }
