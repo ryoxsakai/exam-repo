@@ -1373,6 +1373,7 @@
   var MK_DEFS = [
     { l: "問",   t: "見出しバッジ {{ }}",       b: "{{", a: "}}" },
     { l: "空所", t: "空所 [[1]]",              b: "[[", a: "]]" },
+    { l: "広空所", t: "3倍幅の空欄 [[-- --]]",   b: "[[-- --]]", a: "" },
     { l: "選択", t: "選択肢 ((A)) 本文",        b: "((", a: "))" },
     { l: "蛍光", t: "ハイライト ==語==",        b: "==", a: "==" },
     { l: "色",   t: "色付きハイライト ==語==:色", b: "==", a: "==:yellow" },
@@ -1462,6 +1463,7 @@
   var SYNTAX_EXAMPLES = [
     { code: "{{問1}} 次の文を読みなさい。", desc: "大問見出し（行頭）" },
     { code: "Fill in [[1]] and [[A]].", desc: "空所バッジ" },
+    { code: "Write your answer here: [[-- --]]", desc: "3倍幅の空欄（中身はダッシュ＋空白のみ）" },
     { code: "The ##immune::免疫## system.", desc: "語注（末尾に訳一覧）" },
     { code: "[1] In the first paragraph...\n\n[2] The second paragraph follows.", desc: "段落番号（本文・和訳の段落先頭に [1] [2]。空所 [[ ]] とは別）", body: true },
     { code: "He felt ||||déjà vu||||.", desc: "斜字（イタリック）" },
