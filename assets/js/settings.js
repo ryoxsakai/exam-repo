@@ -1463,7 +1463,7 @@
   var SYNTAX_EXAMPLES = [
     { code: "{{問1}} 次の文を読みなさい。", desc: "大問見出し（行頭）" },
     { code: "Fill in [[1]] and [[A]].", desc: "空所バッジ" },
-    { code: "Write your answer here: [[-- --]]", desc: "3倍幅の空欄（中身はダッシュ＋空白のみ）" },
+    { code: "Write here: [[-- --]] / [[--A--]]", desc: "3倍幅の空欄（ダッシュで囲む。囲んだ中身はラベル表示）" },
     { code: "The ##immune::免疫## system.", desc: "語注（末尾に訳一覧）" },
     { code: "[1] In the first paragraph...\n\n[2] The second paragraph follows.", desc: "段落番号（本文・和訳の段落先頭に [1] [2]。空所 [[ ]] とは別）", body: true },
     { code: "He felt ||||déjà vu||||.", desc: "斜字（イタリック）" },
