@@ -58,13 +58,13 @@
       // [[N]] 空所
       // 左右の間隔はどちらもスペース文字で確保（行頭・行末ではブラウザが
       // スペースを消すため CSS マージンより自然に揃う）
-      if ((m = rem.match(/^\[\[([^\]]+)\]\]/))) {
+      if ((m = rem.match(/^\[\[([^\]]*)\]\]/))) {
         if (out && !/[\s(\[{「『（【]$/.test(out)) out += " ";
-        // ダッシュで囲んだもの（[[-- --]] / [[--A--]] 等）は通常の3倍幅の空欄。
-        // 囲んだ中身（あれば）をラベルとして表示する。
-        var wide = m[1].match(/^-{2,}\s*([\s\S]*?)\s*-{2,}$/);
-        if (wide) {
-          out += '<span class="blank-badge blank-badge-wide">' + esc(wide[1]) + "</span>";
+        // 先頭が -- のもの（[[--]] [[----]] [[-- --]] [[--A--]] 等）は3倍幅の空欄。
+        // 前後のダッシュ・空白を除いた中身をラベルとして表示する（空ならラベルなし）。
+        if (/^--/.test(m[1])) {
+          var label = m[1].replace(/^[-\s]+/, "").replace(/[-\s]+$/, "");
+          out += '<span class="blank-badge blank-badge-wide">' + esc(label) + "</span>";
         } else {
           out += '<span class="blank-badge">' + esc(m[1]) + "</span>";
         }
