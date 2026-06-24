@@ -480,8 +480,8 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
   font-size: .82em; font-family: var(--sans); font-weight: 600; vertical-align: .04em; line-height: 1;
   text-indent: 0; overflow: hidden;
 }
-/* [[-- --]] [[--A--]] … 通常空所の3倍幅の空欄 */
-.blank-badge-wide { width: 12em; }
+/* [[-- --]] [[--A--]] … 通常空所の3倍幅の空欄。中身の空白を保持（pre） */
+.blank-badge-wide { width: 12em; white-space: pre; }
 /* 段落番号バッジ（空所と同じ丸み・正方形・右に2emマージン）
    height と min-width を同値にして1桁は正方形を保つ。縦パディングは使わず
    固定 height + フレックス中央寄せで高さを担保（2桁以上は横へ伸びる） */
