@@ -409,6 +409,18 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
 .hl-purple { background: #e9d5ff; } .hl-pink { background: #fbcfe8; } .hl-green { background: #bbf7d0; } .hl-aqua { background: #a5f3fc; }
 .exam-doc u { text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
 .exam-hr { border: 0; height: 1px; background: linear-gradient(to right, transparent, var(--line), transparent); margin: 16px 0; }
+/* 段落番号バッジ（空所とほぼ同スタイル・角丸なし・細字・幅1.25em） */
+.para-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.25em; box-sizing: border-box; padding: calc(.2em + 1px) 0; margin: 0 .35em 0 0;
+  background: #fff; color: #000; border: 1.5px solid #000; border-radius: 0;
+  font-size: .82em; font-family: var(--sans); font-weight: 400; vertical-align: .04em; line-height: 1;
+  text-indent: 0; overflow: hidden;
+}
+/* 出典表記（右寄せ・グレー・小） */
+.exam-doc .cite { display: block; text-align: right; color: #94a3b8; font-size: .8em; text-indent: 0; }
+/* 斜字（イタリック） */
+.exam-doc em { font-style: italic; }
 
 /* Answer choices — clean wrapping for long options */
 .answer-choice {

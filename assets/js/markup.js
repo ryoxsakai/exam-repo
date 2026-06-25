@@ -10,6 +10,9 @@
      ~~x~~          … 下付き
      ^^x^^          … 上付き
      ((A)) 本文      … 選択肢（行頭）
+     ##N##          … 段落番号バッジ（語注 ##語::訳## とは別。`::` なし）
+     !!!!出典!!!!   … 出典表記（右寄せ・グレー・小）
+     ||||斜字||||   … 斜字（イタリック）
      ----           … 区切り線
    ===================================================================== */
 (function (global) {
@@ -53,11 +56,26 @@
         continue;
       }
       // ##語::訳## 脚注
-      if ((m = rem.match(/^##([^:]+)::([^#]+)##/))) {
+      if ((m = rem.match(/^##([^:#]+)::([^#]+)##/))) {
         var idx = footnotes.length + 1;
         footnotes.push({ index: idx, word: m[1], translation: m[2] });
         out += '<span title="' + esc(m[1] + ": " + m[2]) + '">' + esc(m[1]) +
                '<sup class="footnote-number">*' + idx + "</sup></span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ##段落番号##（`::` を含まない ## … ##。語注の後に判定）
+      if ((m = rem.match(/^##([^#:]+)##/))) {
+        out += '<span class="para-badge">' + esc(m[1]) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // !!!!出典!!!!（右寄せ・グレー・小）
+      if ((m = rem.match(/^!!!!([\s\S]+?)!!!!/))) {
+        out += '<span class="cite">' + inline(m[1], footnotes) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ||||斜字||||
+      if ((m = rem.match(/^\|\|\|\|([\s\S]+?)\|\|\|\|/))) {
+        out += "<em>" + inline(m[1], footnotes) + "</em>";
         rem = rem.slice(m[0].length); continue;
       }
       // ==語==:色
@@ -107,7 +125,8 @@
       while (end < rem.length) {
         var ch = rem[end];
         if (ch === "[" || ch === "#" || ch === "=" || ch === "_" ||
-            ch === "~" || ch === "^" || ch === "{" || ch === "(" || ch === "*") break;
+            ch === "~" || ch === "^" || ch === "{" || ch === "(" || ch === "*" ||
+            ch === "!" || ch === "|") break;
         end++;
       }
       var plain = esc(smartQuotes(rem.slice(0, end)));
@@ -189,7 +208,10 @@
     var t = String(text == null ? "" : text);
     t = t.replace(/\{\{[^}]*\}\}/g, " ");           // 問見出し
     t = t.replace(/\[\[[^\]]*\]\]/g, " ");          // 空所
-    t = t.replace(/##([^:]+)::[^#]+##/g, "$1");     // 脚注 → 語のみ残す
+    t = t.replace(/##([^:#]+)::[^#]+##/g, "$1");    // 脚注 → 語のみ残す
+    t = t.replace(/##[^#:]+##/g, " ");              // 段落番号 → 除去
+    t = t.replace(/!!!!([\s\S]+?)!!!!/g, " ");      // 出典 → 除去
+    t = t.replace(/\|\|\|\|([\s\S]*?)\|\|\|\|/g, "$1"); // 斜字 → テキスト残す
     t = t.replace(/==([^=]+)==:\w+/g, "$1");        // 色ハイライト
     t = t.replace(/==([^=]+)==/g, "$1");            // ハイライト
     t = t.replace(/__([^_]+)__/g, "$1");            // 下線
