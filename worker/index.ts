@@ -28,6 +28,15 @@ async function ensureCategoryColumn(env: Env) {
   }
 }
 
+// questions テーブルに label（大問の表示ラベル。例「1A」。空なら「大問」+番号）列が無い既存DBへの後方互換マイグレーション
+async function ensureLabelColumn(env: Env) {
+  try {
+    await env.DB.exec("ALTER TABLE questions ADD COLUMN label TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // 既に列が存在する場合は無視
+  }
+}
+
 // universities テーブルに reading（よみがな。五十音ソート用）列が無い既存DBへの後方互換マイグレーション
 async function ensureUniversityReadingColumn(env: Env) {
   try {
@@ -687,7 +696,8 @@ export default {
       // ── POST /api/exams ────────────────────────────────────────────
       if (path === "/api/exams" && request.method === "POST") {
         await ensureCategoryColumn(env);
-        type QBody = { questionNumber: number; category?: string; problemText: string; answerText: string; commentaryText: string };
+        await ensureLabelColumn(env);
+        type QBody = { questionNumber: number; label?: string; category?: string; problemText: string; answerText: string; commentaryText: string };
         type Body = { universityName: string; year: number; schedule: string; questions?: QBody[] };
         const body = await request.json<Body>();
         const { year, schedule, questions = [] } = body;
@@ -718,9 +728,9 @@ export default {
         const createdQuestions = [];
         for (const q of questions) {
           const created = await env.DB.prepare(`
-            INSERT INTO questions (exam_id, question_number, category, problem_text, answer_text, commentary_text)
-            VALUES (?, ?, ?, ?, ?, ?) RETURNING *
-          `).bind(exam.id, Math.max(1, Number(q.questionNumber) || 1), q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").first();
+            INSERT INTO questions (exam_id, question_number, label, category, problem_text, answer_text, commentary_text)
+            VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *
+          `).bind(exam.id, Math.max(1, Number(q.questionNumber) || 1), q.label || "", q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").first();
           if (created) createdQuestions.push(created);
         }
 
@@ -776,8 +786,9 @@ export default {
       const putExamMatch = examIdMatch;
       if (putExamMatch && request.method === "PUT") {
         await ensureCategoryColumn(env);
+        await ensureLabelColumn(env);
         let examId = Number(putExamMatch[1]);
-        type QBody = { questionNumber: number; category?: string; problemText: string; answerText: string; commentaryText: string };
+        type QBody = { questionNumber: number; label?: string; category?: string; problemText: string; answerText: string; commentaryText: string };
         type PutBody = { universityName?: string; year?: number; schedule?: string; questions?: QBody[] };
         const body = await request.json<PutBody>();
 
@@ -805,15 +816,16 @@ export default {
           for (const q of body.questions) {
             const qnum = Math.max(1, Number(q.questionNumber) || 1);
             await env.DB.prepare(`
-              INSERT INTO questions (exam_id, question_number, category, problem_text, answer_text, commentary_text)
-              VALUES (?, ?, ?, ?, ?, ?)
+              INSERT INTO questions (exam_id, question_number, label, category, problem_text, answer_text, commentary_text)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(exam_id, question_number) DO UPDATE SET
+                label = excluded.label,
                 category = excluded.category,
                 problem_text = excluded.problem_text,
                 answer_text = excluded.answer_text,
                 commentary_text = excluded.commentary_text,
                 updated_at = datetime('now')
-            `).bind(examId, qnum, q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").run();
+            `).bind(examId, qnum, q.label || "", q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").run();
           }
         }
 
@@ -863,6 +875,7 @@ export default {
       // ── GET /api/exams/:id ─────────────────────────────────────────
       if (examIdMatch && request.method === "GET") {
         await ensureCategoryColumn(env);
+        await ensureLabelColumn(env);
         const examId = Number(examIdMatch[1]);
 
         const examRow = await env.DB.prepare(`
@@ -885,8 +898,9 @@ export default {
       // ── GET /api/corpus ────────────────────────────────────────────
       // 全入試問題の英文テキストを一括返却（クライアント側コーパス分析用）
       if (path === "/api/corpus" && request.method === "GET") {
+        await ensureLabelColumn(env);
         const { results } = await env.DB.prepare(`
-          SELECT q.id AS question_id, q.question_number, q.category,
+          SELECT q.id AS question_id, q.question_number, q.label, q.category,
                  q.problem_text, q.answer_text, q.commentary_text,
                  e.id AS exam_id, e.year, e.schedule,
                  u.name AS university_name
@@ -900,6 +914,7 @@ export default {
 
       // ── GET /api/search ────────────────────────────────────────────
       if (path === "/api/search" && request.method === "GET") {
+        await ensureLabelColumn(env);
         const word     = url.searchParams.get("word") || "";
         const uname    = url.searchParams.get("universityName") || "";
         const year     = url.searchParams.get("year") || "";
@@ -908,7 +923,7 @@ export default {
 
         // 大問ごとに1行返す（exam_id + question_number で一意）
         let sql = `
-          SELECT q.id AS question_id, q.question_number, q.category,
+          SELECT q.id AS question_id, q.question_number, q.label, q.category,
                  e.id AS exam_id, u.name AS university_name, e.year, e.schedule,
                  0 AS total_occurrences
           FROM questions q

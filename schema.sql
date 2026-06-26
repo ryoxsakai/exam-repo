@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS questions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   exam_id INTEGER NOT NULL,
   question_number INTEGER NOT NULL,
+  label TEXT NOT NULL DEFAULT '',
   category TEXT NOT NULL DEFAULT '',
   problem_text TEXT NOT NULL DEFAULT '',
   answer_text TEXT NOT NULL DEFAULT '',

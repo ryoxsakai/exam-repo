@@ -7,6 +7,11 @@
 
   var SECTION_ICONS = { "問題": "fa-circle-question", "解答": "fa-circle-check", "解説": "fa-comment-dots" };
 
+  // 大問の表示用文字列。label があればそれを、無ければ question_number を返す（「大問」+これ）
+  function qLabel(q) {
+    return (q && q.label != null && String(q.label).trim()) ? String(q.label) : String(q && q.question_number);
+  }
+
   function saveOpenExam(examId, qnum) { try { sessionStorage.setItem("exam_open_id", examId + ":" + qnum); } catch (e) {} }
   function clearOpenExam() { try { sessionStorage.removeItem("exam_open_id"); } catch (e) {} }
   function getOpenExam() {
@@ -314,7 +319,7 @@
         '<td data-label="年度"><span class="pill em">' + esc(r.year) + "</span></td>" +
         '<td data-label="大学名"><strong>' + esc(r.university_name) + "</strong></td>" +
         '<td data-label="方式">' + esc(r.schedule) + "</td>" +
-        '<td data-label="大問番号">大問' + esc(r.question_number) + "</td>" +
+        '<td data-label="大問番号">大問' + esc(qLabel(r)) + "</td>" +
         '<td data-label="問題種別">' + (r.category ? esc(r.category) : '<span class="hint">—</span>') + "</td>" +
         (showOcc ? '<td data-label="出現回数"><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
         '<td class="row-actions"><button class="icon-btn sm" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
@@ -458,7 +463,7 @@
         (ex.questions || []).slice().sort(function (a, b) {
           return (Number(a.question_number) || 0) - (Number(b.question_number) || 0);
         }).forEach(function (q) {
-          rows.push({ exam_id: ex.id, question_number: q.question_number, university_name: ex.university_name, year: ex.year, schedule: ex.schedule, category: q.category });
+          rows.push({ exam_id: ex.id, question_number: q.question_number, label: q.label, university_name: ex.university_name, year: ex.year, schedule: ex.schedule, category: q.category });
         });
       });
       if (!rows.length) { children.innerHTML = '<div class="tree-msg">大問が登録されていません。</div>'; return; }
@@ -466,7 +471,7 @@
       rows.forEach(function (r, i) {
         html += '<button type="button" class="tree-row tree-row-q" data-eid="' + r.exam_id + '" data-q="' + esc(String(r.question_number)) + '" data-i="' + i + '">' +
           '<i class="fa-solid fa-file-lines tree-ic"></i>' +
-          '<span class="tree-label">大問' + esc(String(r.question_number)) +
+          '<span class="tree-label">大問' + esc(qLabel(r)) +
           (r.category ? ' <span class="tree-cat">' + esc(r.category) + "</span>" : "") +
           "</span></button>";
       });
@@ -493,7 +498,10 @@
     Api.getExam(examId).then(function (data) {
       var ex = data.exam;
       var title = ex.year + "年 " + ex.university_name + " " + ex.schedule;
-      if (qnum != null) title += " 大問" + qnum;
+      if (qnum != null) {
+        var titleQ = (ex.questions || []).filter(function (q) { return q.question_number === qnum; })[0];
+        title += " 大問" + qLabel(titleQ || { question_number: qnum });
+      }
       el("exam-modal-title").textContent = title;
 
       // 指定された大問番号のみ表示（未指定の場合はすべて）
@@ -525,7 +533,7 @@
         });
 
         // 全大問表示時は各大問の先頭に「大問N」見出しを表示
-        var head = showQHead ? '<div class="modal-qhead">大問' + esc(q.question_number) + "</div>" : "";
+        var head = showQHead ? '<div class="modal-qhead">大問' + esc(qLabel(q)) + "</div>" : "";
         // セクション間に区切り線を自動挿入
         body += head + '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
       });
@@ -677,7 +685,7 @@
           return s.text && s.text.trim() && (isAnswerSide(s.type) === answerSide) && Store.isPrintSection(s.type);
         });
         if (!secs.length) return;
-        inner += '<div class="print-q"><div class="print-q-head">大問' + esc(q.question_number) + "</div>";
+        inner += '<div class="print-q"><div class="print-q-head">大問' + esc(qLabel(q)) + "</div>";
         secs.forEach(function (s) { inner += printField(s.type, s.text); });
         inner += "</div>";
       });
@@ -1040,7 +1048,7 @@
     // ドキュメント（KWIC用ラベル付き）と全文。選択セクションのみ対象。
     var secSet = state.corpusFilter.sections;  // 配列 or null（全セクション）
     var docs = qs.map(function (q) {
-      return { text: questionSectionText(q, secSet), label: q.year + " " + q.university_name + " 大問" + q.question_number };
+      return { text: questionSectionText(q, secSet), label: q.year + " " + q.university_name + " 大問" + qLabel(q) };
     }).filter(function (d) { return d.text.trim(); });
     var fullText = docs.map(function (d) { return d.text; }).join("\n");
     var tokens = Corpus.tokenize(fullText);

@@ -5,6 +5,11 @@
   "use strict";
   var el = UI.el, $ = UI.$, $all = UI.$all, create = UI.create, esc = UI.escapeHtml, toast = UI.toast;
 
+  // 大問の表示用文字列。label があればそれを、無ければ question_number を返す（「大問」+これ）
+  function qLabel(q) {
+    return (q && q.label != null && String(q.label).trim()) ? String(q.label) : String(q && q.question_number);
+  }
+
   var SET_TABS = {
     main:     { id: "main",     label: "メイン設定",       icon: "fa-sliders" },
     conn:     { id: "conn",     label: "接続設定",         icon: "fa-plug" },
@@ -1091,7 +1096,7 @@
       var rows = (data.results || []).map(function (r) {
         return {
           exam_id: r.exam_id, question_id: r.question_id,
-          question_number: r.question_number, category: r.category || "",
+          question_number: r.question_number, label: r.label || "", category: r.category || "",
           university_name: r.university_name, year: r.year, schedule: r.schedule
         };
       });
@@ -1144,7 +1149,7 @@
             flat.push(r);
             html += '<button type="button" class="tree-row tree-row-q" data-eid="' + r.exam_id + '" data-q="' + esc(String(r.question_number)) + '">' +
               '<i class="fa-solid fa-file-lines tree-ic"></i>' +
-              '<span class="tree-label">大問' + esc(String(r.question_number)) +
+              '<span class="tree-label">大問' + esc(qLabel(r)) +
               (r.category ? ' <span class="tree-cat">' + esc(r.category) + "</span>" : "") + "</span></button>";
           });
           html += "</div></div>";
@@ -1207,7 +1212,8 @@
       var title = ex.year + "年 " + ex.university_name + " " + ex.schedule;
       var questions = ex.questions || [];
       if (qnum != null) {
-        title += " 大問" + qnum;
+        var titleQ = questions.filter(function (q) { return q.question_number === qnum; })[0];
+        title += " 大問" + qLabel(titleQ || { question_number: qnum });
         questions = questions.filter(function (q) { return q.question_number === qnum; });
       }
       // 「この問題のみ置換」用に表示中の大問データを保持
@@ -1276,6 +1282,7 @@
       total += p.count + a.count + c.count;
       return {
         questionNumber: q.question_number,
+        label: q.label || "",
         category: q.category || "",
         problemText: p.text, answerText: a.text, commentaryText: c.text
       };
@@ -1346,7 +1353,8 @@
     el("reg-cat-edit").addEventListener("click", function () { openCategoryEdit(); });
     el("reg-types-edit").addEventListener("click", function () { openTypesEdit(); });
     // メタ情報の変更を下書きへ反映
-    ["reg-year", "reg-university", "reg-schedule", "reg-qnum", "reg-category"].forEach(function (id) {
+    ["reg-year", "reg-university", "reg-schedule", "reg-qnum", "reg-label", "reg-category"].forEach(function (id) {
+      if (!el(id)) return;
       el(id).addEventListener("change", syncMeta);
       el(id).addEventListener("input", syncMeta);
     });
@@ -1367,11 +1375,12 @@
   }
 
   /* ---- 問題登録フォームのメタ情報 + 下書き保存 ---- */
-  function defaultMeta() { return { year: "", university: "", schedule: "", qnum: "1", category: "" }; }
+  function defaultMeta() { return { year: "", university: "", schedule: "", qnum: "1", label: "", category: "" }; }
   function readMetaFromDom() {
     return {
       year: el("reg-year").value, university: el("reg-university").value,
-      schedule: el("reg-schedule").value, qnum: el("reg-qnum").value, category: el("reg-category").value
+      schedule: el("reg-schedule").value, qnum: el("reg-qnum").value,
+      label: el("reg-label") ? el("reg-label").value : "", category: el("reg-category").value
     };
   }
   function applyMetaToDom() {
@@ -1380,6 +1389,7 @@
     el("reg-university").value = m.university || "";
     el("reg-schedule").value = m.schedule || "";
     el("reg-qnum").value = m.qnum || "1";
+    if (el("reg-label")) el("reg-label").value = m.label || "";
     el("reg-category").value = m.category || "";
   }
   function syncMeta() { state.reg.meta = readMetaFromDom(); saveDraft(); }
@@ -1618,6 +1628,7 @@
   function collectReg() {
     var year = el("reg-year").value, uni = el("reg-university").value, sched = el("reg-schedule").value;
     var qnum = Number(el("reg-qnum").value) || 1;
+    var label = el("reg-label") ? el("reg-label").value.trim() : "";
     var category = el("reg-category").value || "";
 
     // problemText に全セクションを順序どおり統合（セクション区切り {{名}} 付き）
@@ -1639,7 +1650,7 @@
     return {
       universityName: uni, year: Number(year), schedule: sched,
       questions: [{
-        questionNumber: qnum, category: category,
+        questionNumber: qnum, label: label, category: category,
         problemText: problemText,
         answerText: answer.join("\n\n"),
         commentaryText: commentary.join("\n\n")
@@ -1726,7 +1737,7 @@
       if (!state.reg.sections.length) addSection("問題");
       state.reg.meta = {
         year: String(ex.year), university: ex.university_name, schedule: ex.schedule,
-        qnum: String(q.question_number || 1), category: q.category || ""
+        qnum: String(q.question_number || 1), label: q.label || "", category: q.category || ""
       };
       UI.setActiveTab(el("set-tabs"), "register"); Store.setLastTab("setting", "register");
       renderReg();
