@@ -20,13 +20,18 @@
 |------|------|
 | `{{問1}}` | 大問見出しバッジ（行頭で見出し化） |
 | `[[1]]` `[[A]]` | 空所バッジ |
-| `##語::訳##` | 語注（脚注。本文に上付き番号、末尾に訳一覧） |
+| `[[-- --]]` `[[--A--]]` | 3倍幅の空欄（ダッシュで囲む。囲んだ中身はラベル表示。記述解答欄など） |
+| `##語::訳##` | 語注（脚注。本文に上付き番号、末尾に訳一覧）。語中の `^` は注のみ直前文字を小文字化（`##M^isdiagnosis::誤診##` → 本文「Misdiagnosis」/注「misdiagnosis」） |
 | `==語==` | 黄ハイライト |
 | `==語==:色` | 色付きハイライト（色: yellow/blue/red/purple/pink/green/aqua） |
 | `__語__` | 下線 |
+| `**語**` | 太字 |
 | `~~x~~` | 下付き |
 | `^^x^^` | 上付き |
 | `((A)) 本文` | 選択肢（行頭。丸ラベル＋本文。長い選択肢は綺麗に折り返す） |
+| `[1]` | 段落番号。全セクションでバッジ化（行頭でも行中でも可。空所 `[[ ]]` とは別）。**中身が2文字以下のみ**バッジ化し、3文字以上の `[…]` はそのまま表示（`[グラフ]` 等）。字下げは本文・和訳セクションの段落先頭バッジのみ（バッジの無い段落を字下げ） |
+| `\| a \| b \|`＋`\| --- \| --- \|` | 表（Markdown記法。見出し行＋区切り行＋中身。`:--:`等で寄せ指定、`\|`でセル内パイプ） |
+| `![説明](URL)` | 画像（写真・グラフ）。相対 `/api/image/KEY` は Worker 基準で解決。登録/取り込み編集の「画像」ボタンでR2へアップロードし自動挿入 |
 | `----` | 区切り線 |
 | 空行 | 段落間隔 |
 
@@ -38,12 +43,14 @@
 
 | メソッド / パス | 用途 |
 |------|------|
-| `GET /api/config` / `PUT /api/config` | サイト設定（`schedules`=方式, `year_presets`=年度, `site_title`, `markup_css`） |
+| `GET /api/config` / `PUT /api/config` | サイト設定（`schedules`=方式, `year_presets`=年度, `site_title`, `markup_css`, `ingest_prompt`=取り込み追加プロンプト, `university_notes`=大学ごとの注意点 `{大学名:注意点}`） |
+| `GET /api/ingest-prompt?universityName=` | 外部LLM取り込み用プロンプト（`universityName` 指定でその大学の注意点を追記） |
 | `GET /api/universities` / `DELETE /api/universities/:id` | 大学一覧 / 削除 |
 | `GET /api/exams` `POST /api/exams` | 試験一覧（filter: universityName,year,schedule）/ 登録 |
 | `GET/PUT/DELETE /api/exams/:id` | 試験詳細 / 更新 / 削除 |
 | `GET /api/search` | 全文検索（word,universityName,year,schedule。出現回数つき） |
 | `GET /api/corpus` | **全大問の英文テキスト一括取得**（クライアント側コーパス分析用） |
+| `POST /api/upload` / `GET /api/image/:key` | 問題画像を R2 へ保存 / 配信（`wrangler.toml` の `[[r2_buckets]] binding=IMAGES`） |
 
 データモデル: `universities` 1—N `exams`(year, schedule) 1—N `questions`(question_number, problem_text, answer_text, commentary_text)。
 
