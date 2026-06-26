@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="../assets/css/main.css?v=20260624f" />
+  <link rel="stylesheet" href="../assets/css/main.css?v=20260626c" />
 </head>
 <body>
   <header class="topbar">
@@ -172,6 +172,7 @@
         <div class="card-head">
           <h3><i class="fa-solid fa-pen-to-square ic"></i> <span id="reg-mode-label">新規 問題登録</span></h3>
           <span class="spacer"></span>
+          <button class="btn ghost sm" id="reg-label-batch" title="選択中の大学・年度の大問ラベルをまとめて編集"><i class="fa-solid fa-tags"></i> ラベル一括編集</button>
           <button class="btn ghost sm" id="reg-reset"><i class="fa-solid fa-eraser"></i> クリア</button>
         </div>
         <div class="reg-meta">
@@ -199,6 +200,10 @@
           <div class="reg-meta-item reg-meta-num">
             <span class="field-label">大問番号</span>
             <input type="number" id="reg-qnum" min="1" value="1" />
+          </div>
+          <div class="reg-meta-item reg-meta-num">
+            <span class="field-label">表示ラベル（任意）</span>
+            <input type="text" id="reg-label" placeholder="例: 1A（空欄なら大問+番号）" />
           </div>
           <div class="reg-meta-item">
             <span class="field-label">問題種別</span>
@@ -416,6 +421,25 @@
     </div>
   </div>
 
+  <!-- ===== 大問ラベル 一括編集モーダル ===== -->
+  <div class="modal-overlay" id="label-batch-modal">
+    <div class="modal wide">
+      <div class="modal-head">
+        <i class="fa-solid fa-tags ic"></i>
+        <h3 id="lb-title">ラベル一括編集</h3>
+        <span class="spacer"></span>
+        <button class="icon-btn" data-close title="閉じる"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" id="lb-body"></div>
+      <div class="modal-foot">
+        <span class="hint" id="lb-status"></span>
+        <span class="spacer"></span>
+        <button class="btn ghost" data-close>キャンセル</button>
+        <button class="btn primary" id="lb-save"><i class="fa-solid fa-floppy-disk"></i> ラベルを保存</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== 検索モーダル（一覧タブ用） ===== -->
   <div class="modal-overlay" id="search-modal">
     <div class="modal">
@@ -544,6 +568,6 @@
   <script src="../assets/js/api.js?v=20260624g"></script>
   <script src="../assets/js/ui.js?v=20260612z"></script>
   <script src="../assets/js/markup.js?v=20260624e"></script>
-  <script src="../assets/js/settings.js?v=20260624h"></script>
+  <script src="../assets/js/settings.js?v=20260626d"></script>
 </body>
 </html>

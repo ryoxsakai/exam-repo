@@ -5,6 +5,11 @@
   "use strict";
   var el = UI.el, $ = UI.$, $all = UI.$all, create = UI.create, esc = UI.escapeHtml, toast = UI.toast;
 
+  // 大問の表示用文字列。label があればそれを、無ければ question_number を返す（「大問」+これ）
+  function qLabel(q) {
+    return (q && q.label != null && String(q.label).trim()) ? String(q.label) : String(q && q.question_number);
+  }
+
   var SET_TABS = {
     main:     { id: "main",     label: "メイン設定",       icon: "fa-sliders" },
     conn:     { id: "conn",     label: "接続設定",         icon: "fa-plug" },
@@ -46,7 +51,7 @@
     UI.setActiveTab(el("set-tabs"), active);
 
     // モーダル配線
-    ["edit-modal", "search-modal", "exam-modal", "wordlist-modal", "preview-modal", "syntax-modal", "regex-help-modal"].forEach(function (id) { UI.wireModal(el(id)); });
+    ["edit-modal", "label-batch-modal", "search-modal", "exam-modal", "wordlist-modal", "preview-modal", "syntax-modal", "regex-help-modal"].forEach(function (id) { UI.wireModal(el(id)); });
 
     wireMain();
     wireConn();
@@ -1091,7 +1096,7 @@
       var rows = (data.results || []).map(function (r) {
         return {
           exam_id: r.exam_id, question_id: r.question_id,
-          question_number: r.question_number, category: r.category || "",
+          question_number: r.question_number, label: r.label || "", category: r.category || "",
           university_name: r.university_name, year: r.year, schedule: r.schedule
         };
       });
@@ -1144,7 +1149,7 @@
             flat.push(r);
             html += '<button type="button" class="tree-row tree-row-q" data-eid="' + r.exam_id + '" data-q="' + esc(String(r.question_number)) + '">' +
               '<i class="fa-solid fa-file-lines tree-ic"></i>' +
-              '<span class="tree-label">大問' + esc(String(r.question_number)) +
+              '<span class="tree-label">大問' + esc(qLabel(r)) +
               (r.category ? ' <span class="tree-cat">' + esc(r.category) + "</span>" : "") + "</span></button>";
           });
           html += "</div></div>";
@@ -1207,7 +1212,8 @@
       var title = ex.year + "年 " + ex.university_name + " " + ex.schedule;
       var questions = ex.questions || [];
       if (qnum != null) {
-        title += " 大問" + qnum;
+        var titleQ = questions.filter(function (q) { return q.question_number === qnum; })[0];
+        title += " 大問" + qLabel(titleQ || { question_number: qnum });
         questions = questions.filter(function (q) { return q.question_number === qnum; });
       }
       // 「この問題のみ置換」用に表示中の大問データを保持
@@ -1276,6 +1282,7 @@
       total += p.count + a.count + c.count;
       return {
         questionNumber: q.question_number,
+        label: q.label || "",
         category: q.category || "",
         problemText: p.text, answerText: a.text, commentaryText: c.text
       };
@@ -1294,10 +1301,16 @@
   }
 
   function isBodySection(label) { return label === "本文" || /全訳|和訳|訳/.test(label); }
+  // 英単語数（記法除去後にカウント。Corpus.tokenize と同じトークン定義）
+  function wordCount(text) {
+    var m = String(Markup.strip(text) || "").toLowerCase().match(/[a-z][a-z'’]*[a-z]|[a-z]/g);
+    return m ? m.length : 0;
+  }
   function field(label, icon, text) {
     var body = isBodySection(label);
+    var wc = label === "本文" ? '<div class="word-count">(' + wordCount(text) + " words)</div>" : "";
     return '<div style="margin-bottom:14px"><div class="exam-section-title">' + esc(label) +
-      '</div><div class="exam-doc' + (body ? "" : " no-indent") + '">' + Markup.render(text, { paraNum: body }).html + "</div></div>";
+      '</div><div class="exam-doc' + (body ? "" : " no-indent") + '">' + Markup.render(text, { paraNum: body }).html + wc + "</div></div>";
   }
 
   /* ================= タブ4: 問題登録 ================= */
@@ -1330,6 +1343,8 @@
   function wireRegister() {
     el("reg-add-section").addEventListener("click", function () { addSection(); renderReg(); saveDraft(); });
     el("reg-reset").addEventListener("click", resetReg);
+    if (el("reg-label-batch")) el("reg-label-batch").addEventListener("click", openLabelBatch);
+    if (el("lb-save")) el("lb-save").addEventListener("click", saveLabelBatch);
     el("reg-new").addEventListener("click", resetReg);
     el("reg-save").addEventListener("click", saveReg);
     el("reg-preview").addEventListener("click", previewReg);
@@ -1346,7 +1361,8 @@
     el("reg-cat-edit").addEventListener("click", function () { openCategoryEdit(); });
     el("reg-types-edit").addEventListener("click", function () { openTypesEdit(); });
     // メタ情報の変更を下書きへ反映
-    ["reg-year", "reg-university", "reg-schedule", "reg-qnum", "reg-category"].forEach(function (id) {
+    ["reg-year", "reg-university", "reg-schedule", "reg-qnum", "reg-label", "reg-category"].forEach(function (id) {
+      if (!el(id)) return;
       el(id).addEventListener("change", syncMeta);
       el(id).addEventListener("input", syncMeta);
     });
@@ -1367,11 +1383,12 @@
   }
 
   /* ---- 問題登録フォームのメタ情報 + 下書き保存 ---- */
-  function defaultMeta() { return { year: "", university: "", schedule: "", qnum: "1", category: "" }; }
+  function defaultMeta() { return { year: "", university: "", schedule: "", qnum: "1", label: "", category: "" }; }
   function readMetaFromDom() {
     return {
       year: el("reg-year").value, university: el("reg-university").value,
-      schedule: el("reg-schedule").value, qnum: el("reg-qnum").value, category: el("reg-category").value
+      schedule: el("reg-schedule").value, qnum: el("reg-qnum").value,
+      label: el("reg-label") ? el("reg-label").value : "", category: el("reg-category").value
     };
   }
   function applyMetaToDom() {
@@ -1380,6 +1397,7 @@
     el("reg-university").value = m.university || "";
     el("reg-schedule").value = m.schedule || "";
     el("reg-qnum").value = m.qnum || "1";
+    if (el("reg-label")) el("reg-label").value = m.label || "";
     el("reg-category").value = m.category || "";
   }
   function syncMeta() { state.reg.meta = readMetaFromDom(); saveDraft(); }
@@ -1618,6 +1636,7 @@
   function collectReg() {
     var year = el("reg-year").value, uni = el("reg-university").value, sched = el("reg-schedule").value;
     var qnum = Number(el("reg-qnum").value) || 1;
+    var label = el("reg-label") ? el("reg-label").value.trim() : "";
     var category = el("reg-category").value || "";
 
     // problemText に全セクションを順序どおり統合（セクション区切り {{名}} 付き）
@@ -1639,7 +1658,7 @@
     return {
       universityName: uni, year: Number(year), schedule: sched,
       questions: [{
-        questionNumber: qnum, category: category,
+        questionNumber: qnum, label: label, category: category,
         problemText: problemText,
         answerText: answer.join("\n\n"),
         commentaryText: commentary.join("\n\n")
@@ -1726,13 +1745,107 @@
       if (!state.reg.sections.length) addSection("問題");
       state.reg.meta = {
         year: String(ex.year), university: ex.university_name, schedule: ex.schedule,
-        qnum: String(q.question_number || 1), category: q.category || ""
+        qnum: String(q.question_number || 1), label: q.label || "", category: q.category || ""
       };
       UI.setActiveTab(el("set-tabs"), "register"); Store.setLastTab("setting", "register");
       renderReg();
       saveDraft();
       if (!silent) toast("編集モードで読み込みました", "ok");
     }).catch(function (e) { toast(e.message, "err"); });
+  }
+
+  /* ---- 大問ラベルの一括編集（選択中の大学・年度が対象） ---- */
+  var labelBatch = { uni: "", year: "", exams: [] };
+  function openLabelBatch() {
+    var uni = el("reg-university").value, year = el("reg-year").value;
+    if (!uni || !year) { toast("大学と年度を選択してください", "err"); return; }
+    if (!Store.getWorkerUrl()) { toast("Worker URL が未設定です（接続設定タブ）", "err"); return; }
+    el("lb-title").textContent = "ラベル一括編集 — " + uni + " " + year + "年";
+    el("lb-status").textContent = "";
+    el("lb-body").innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';
+    labelBatch = { uni: uni, year: year, exams: [] };
+    UI.openModal(el("label-batch-modal"));
+    Api.getExams({ universityName: uni, year: year }).then(function (data) {
+      // getExams は大学名を部分一致で返すため、完全一致だけに絞る
+      var exams = (data.exams || []).filter(function (e) {
+        return e.university_name === uni && String(e.year) === String(year);
+      });
+      if (!exams.length) {
+        el("lb-body").innerHTML = '<div class="empty"><i class="fa-solid fa-inbox ic"></i>この大学・年度の登録がありません。</div>';
+        return;
+      }
+      return Promise.all(exams.map(function (e) {
+        return Api.getExam(e.id).then(function (d) { return d.exam; }).catch(function () { return null; });
+      })).then(function (full) {
+        labelBatch.exams = full.filter(Boolean);
+        renderLabelBatch();
+      });
+    }).catch(function (e) {
+      el("lb-body").innerHTML = '<div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div>";
+    });
+  }
+  function renderLabelBatch() {
+    var exams = labelBatch.exams.slice().sort(function (a, b) {
+      return (schedOrderS(a.schedule) - schedOrderS(b.schedule)) || String(a.schedule).localeCompare(String(b.schedule), "ja");
+    });
+    var h = '<p class="hint" style="margin-bottom:12px"><i class="fa-solid fa-circle-info"></i> 各大問の表示ラベルをまとめて編集できます。空欄にすると「大問＋番号」に戻ります。並び順は番号のままで、ラベルは表示だけを上書きします。</p>';
+    exams.forEach(function (ex) {
+      var qs = (ex.questions || []).slice().sort(function (a, b) { return (Number(a.question_number) || 0) - (Number(b.question_number) || 0); });
+      h += '<div style="margin-bottom:18px">' +
+        '<div class="exam-section-title" style="color:var(--blue)"><i class="fa-solid fa-layer-group"></i> ' + esc(ex.schedule || "（方式なし）") + "</div>";
+      if (!qs.length) { h += '<p class="hint">大問がありません。</p></div>'; return; }
+      qs.forEach(function (q) {
+        var snippet = Markup.strip ? Markup.strip(q.problem_text || "").replace(/\s+/g, " ").trim().slice(0, 44) : "";
+        h += '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)">' +
+          '<strong style="min-width:64px;white-space:nowrap">大問' + esc(String(q.question_number)) + "</strong>" +
+          '<span class="hint" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+            (q.category ? "（" + esc(q.category) + "）" : "") + (snippet ? " " + esc(snippet) : "") + "</span>" +
+          '<input class="edit-item-input" type="text" data-lb="' + ex.id + ":" + q.question_number +
+            '" value="' + esc(q.label || "") + '" placeholder="例: ' + esc(String(q.question_number)) + 'A" style="width:140px;flex:none" />' +
+          "</div>";
+      });
+      h += "</div>";
+    });
+    el("lb-body").innerHTML = h;
+  }
+  function saveLabelBatch() {
+    var inputs = $all("[data-lb]", el("lb-body"));
+    if (!inputs.length) { UI.closeModal(el("label-batch-modal")); return; }
+    var byExam = {};  // examId -> { question_number: 新ラベル }
+    inputs.forEach(function (inp) {
+      var parts = inp.getAttribute("data-lb").split(":");
+      var eid = parts[0], qn = Number(parts[1]);
+      if (!byExam[eid]) byExam[eid] = {};
+      byExam[eid][qn] = inp.value.trim();
+    });
+    // 各 exam を full questions で PUT（本文等は保持し label のみ更新）
+    var ops = labelBatch.exams.map(function (ex) {
+      var map = byExam[ex.id] || {};
+      var questions = (ex.questions || []).map(function (q) {
+        return {
+          questionNumber: q.question_number,
+          label: (map[q.question_number] != null) ? map[q.question_number] : (q.label || ""),
+          category: q.category || "",
+          problemText: q.problem_text || "",
+          answerText: q.answer_text || "",
+          commentaryText: q.commentary_text || ""
+        };
+      });
+      return Api.updateExam(ex.id, { questions: questions });
+    });
+    if (!ops.length) { UI.closeModal(el("label-batch-modal")); return; }
+    var btn = el("lb-save"); btn.disabled = true;
+    el("lb-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> 保存中…';
+    Promise.all(ops).then(function () {
+      el("lb-status").textContent = "";
+      toast("ラベルを保存しました", "ok");
+      UI.closeModal(el("label-batch-modal"));
+      // 編集中の大問があればフォームのラベル欄も最新化
+      if (state.reg.editingExamId) loadExamIntoForm(state.reg.editingExamId, state.reg.editingQuestionNumber, true);
+    }).catch(function (e) {
+      el("lb-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
+      toast(e.message || "保存に失敗しました", "err");
+    }).then(function () { btn.disabled = false; });
   }
 
   /* ---- 年度/方式/大学/種別 編集モーダル（汎用） ---- */

@@ -52,7 +52,7 @@
 | `GET /api/corpus` | **全大問の英文テキスト一括取得**（クライアント側コーパス分析用） |
 | `POST /api/upload` / `GET /api/image/:key` | 問題画像を R2 へ保存 / 配信（`wrangler.toml` の `[[r2_buckets]] binding=IMAGES`） |
 
-データモデル: `universities` 1—N `exams`(year, schedule) 1—N `questions`(question_number, problem_text, answer_text, commentary_text)。
+データモデル: `universities` 1—N `exams`(year, schedule) 1—N `questions`(question_number, label, problem_text, answer_text, commentary_text)。`label` は大問の表示ラベル（任意。例「1A」。空なら「大問」+`question_number` を表示する表示専用の上書き。並び順・識別は常に整数 `question_number` を使用）。
 
 ## コーパス分析（`assets/js/corpus.js`）
 
