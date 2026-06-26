@@ -172,6 +172,7 @@
         <div class="card-head">
           <h3><i class="fa-solid fa-pen-to-square ic"></i> <span id="reg-mode-label">新規 問題登録</span></h3>
           <span class="spacer"></span>
+          <button class="btn ghost sm" id="reg-label-batch" title="選択中の大学・年度の大問ラベルをまとめて編集"><i class="fa-solid fa-tags"></i> ラベル一括編集</button>
           <button class="btn ghost sm" id="reg-reset"><i class="fa-solid fa-eraser"></i> クリア</button>
         </div>
         <div class="reg-meta">
@@ -420,6 +421,25 @@
     </div>
   </div>
 
+  <!-- ===== 大問ラベル 一括編集モーダル ===== -->
+  <div class="modal-overlay" id="label-batch-modal">
+    <div class="modal wide">
+      <div class="modal-head">
+        <i class="fa-solid fa-tags ic"></i>
+        <h3 id="lb-title">ラベル一括編集</h3>
+        <span class="spacer"></span>
+        <button class="icon-btn" data-close title="閉じる"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" id="lb-body"></div>
+      <div class="modal-foot">
+        <span class="hint" id="lb-status"></span>
+        <span class="spacer"></span>
+        <button class="btn ghost" data-close>キャンセル</button>
+        <button class="btn primary" id="lb-save"><i class="fa-solid fa-floppy-disk"></i> ラベルを保存</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== 検索モーダル（一覧タブ用） ===== -->
   <div class="modal-overlay" id="search-modal">
     <div class="modal">
@@ -548,6 +568,6 @@
   <script src="../assets/js/api.js?v=20260624g"></script>
   <script src="../assets/js/ui.js?v=20260612z"></script>
   <script src="../assets/js/markup.js?v=20260624e"></script>
-  <script src="../assets/js/settings.js?v=20260626a"></script>
+  <script src="../assets/js/settings.js?v=20260626b"></script>
 </body>
 </html>
