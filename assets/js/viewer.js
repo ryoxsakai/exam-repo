@@ -639,9 +639,13 @@
     var m = String(Markup.strip(text) || "").toLowerCase().match(/[a-z][a-z'’]*[a-z]|[a-z]/g);
     return m ? m.length : 0;
   }
+  function markupOpts(label) {
+    var body = isBodySection(label);
+    return { paraNum: body, zenyaku: label === "全訳" };
+  }
   function renderField(label, icon, text) {
     var body = isBodySection(label);
-    var r = Markup.render(text, { paraNum: body });
+    var r = Markup.render(text, markupOpts(label));
     var checked = Store.isPrintSection(label) ? " checked" : "";
     var wc = label === "本文" ? '<div class="word-count">(' + wordCount(text) + " words)</div>" : "";
     return '<div class="exam-field" data-sectype="' + esc(label) + '" style="margin-bottom:14px">' +
@@ -669,7 +673,7 @@
   function printField(label, text) {
     var body = isBodySection(label);
     return '<div class="print-field"><div class="print-field-label">' + esc(label) + "</div>" +
-      '<div class="exam-doc' + (body ? "" : " no-indent") + '">' + Markup.render(text, { paraNum: body }).html + "</div></div>";
+      '<div class="exam-doc' + (body ? "" : " no-indent") + '">' + Markup.render(text, markupOpts(label)).html + "</div></div>";
   }
 
   // 印刷ドキュメントの HTML を構築（表紙 → 問題面 → 解答面）

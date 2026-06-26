@@ -1306,11 +1306,15 @@
     var m = String(Markup.strip(text) || "").toLowerCase().match(/[a-z][a-z'’]*[a-z]|[a-z]/g);
     return m ? m.length : 0;
   }
+  function markupOpts(label) {
+    var body = isBodySection(label);
+    return { paraNum: body, zenyaku: label === "全訳" };
+  }
   function field(label, icon, text) {
     var body = isBodySection(label);
     var wc = label === "本文" ? '<div class="word-count">(' + wordCount(text) + " words)</div>" : "";
     return '<div style="margin-bottom:14px"><div class="exam-section-title">' + esc(label) +
-      '</div><div class="exam-doc' + (body ? "" : " no-indent") + '">' + Markup.render(text, { paraNum: body }).html + wc + "</div></div>";
+      '</div><div class="exam-doc' + (body ? "" : " no-indent") + '">' + Markup.render(text, markupOpts(label)).html + wc + "</div></div>";
   }
 
   /* ================= タブ4: 問題登録 ================= */

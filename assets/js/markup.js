@@ -230,6 +230,7 @@
   // テキスト全体 → { html, footnotes }
   // 段落先頭の [1] [2] は全セクションで段落番号バッジに変換する。
   // opts.paraNum=true（本文・和訳セクション）のときは、さらにバッジの無い段落先頭に字下げを付ける。
+  // opts.zenyaku=true（全訳セクション）のとき、《…》で始まる行は字下げしない。
   function render(text, opts) {
     var paraNum = opts && opts.paraNum;
     var footnotes = [];
@@ -294,6 +295,10 @@
         noIndent = true;
         line = line.replace(/^\s*@@\s?/, "");
         trimmed = line.trim();
+      }
+      // 全訳セクションの《…》見出し行は字下げしない
+      if (opts && opts.zenyaku && /^\s*《/.test(line)) {
+        noIndent = true;
       }
       // 字下げ：本文・和訳ではバッジの無い「英字始まり」の段落先頭のみ字下げ
       // （日本語の指示文などは左寄せにする）。それ以外のセクションは英語大文字始まりのみ。
