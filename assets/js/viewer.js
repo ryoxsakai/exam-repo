@@ -634,16 +634,22 @@
 
   // 本文・和訳・全訳セクション（段落番号 [1] と字下げを有効にする）
   function isBodySection(label) { return label === "本文" || /全訳|和訳|訳/.test(label); }
+  // 英単語数（記法除去後にカウント。Corpus.tokenize と同じトークン定義）
+  function wordCount(text) {
+    var m = String(Markup.strip(text) || "").toLowerCase().match(/[a-z][a-z'’]*[a-z]|[a-z]/g);
+    return m ? m.length : 0;
+  }
   function renderField(label, icon, text) {
     var body = isBodySection(label);
     var r = Markup.render(text, { paraNum: body });
     var checked = Store.isPrintSection(label) ? " checked" : "";
+    var wc = label === "本文" ? '<div class="word-count">(' + wordCount(text) + " words)</div>" : "";
     return '<div class="exam-field" data-sectype="' + esc(label) + '" style="margin-bottom:14px">' +
       '<div class="exam-section-title">' + esc(label) +
       '<label class="print-check" title="チェックした項目のみ印刷されます">' +
       '<input type="checkbox" data-printsec="' + esc(label) + '"' + checked + '><span>印刷</span></label>' +
       "</div>" +
-      '<div class="exam-doc' + (body ? "" : " no-indent") + '">' + r.html + "</div></div>";
+      '<div class="exam-doc' + (body ? "" : " no-indent") + '">' + r.html + wc + "</div></div>";
   }
 
   /* ---------------- 問題印刷タブ ---------------- */

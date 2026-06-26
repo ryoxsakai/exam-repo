@@ -1301,10 +1301,16 @@
   }
 
   function isBodySection(label) { return label === "本文" || /全訳|和訳|訳/.test(label); }
+  // 英単語数（記法除去後にカウント。Corpus.tokenize と同じトークン定義）
+  function wordCount(text) {
+    var m = String(Markup.strip(text) || "").toLowerCase().match(/[a-z][a-z'’]*[a-z]|[a-z]/g);
+    return m ? m.length : 0;
+  }
   function field(label, icon, text) {
     var body = isBodySection(label);
+    var wc = label === "本文" ? '<div class="word-count">(' + wordCount(text) + " words)</div>" : "";
     return '<div style="margin-bottom:14px"><div class="exam-section-title">' + esc(label) +
-      '</div><div class="exam-doc' + (body ? "" : " no-indent") + '">' + Markup.render(text, { paraNum: body }).html + "</div></div>";
+      '</div><div class="exam-doc' + (body ? "" : " no-indent") + '">' + Markup.render(text, { paraNum: body }).html + wc + "</div></div>";
   }
 
   /* ================= タブ4: 問題登録 ================= */
