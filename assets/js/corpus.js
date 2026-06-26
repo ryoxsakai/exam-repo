@@ -184,29 +184,41 @@
   }
 
   // 語彙レベルカバー率。vocabSet = 語彙リストの語集合。
+  // 表層形が語彙リストに完全一致するものを「見出し語」、原形解決で一致する
+  // ものを「派生語」、いずれにも一致しないものを「その他（リスト外）」とする。
   function coverage(tokens, vocabSet) {
     var total = tokens.length;
-    var inList = 0;
-    var types = Object.create(null), typesIn = Object.create(null);
+    var headTok = 0, derivTok = 0;
+    var types = Object.create(null), typesHead = Object.create(null), typesDeriv = Object.create(null);
     var offCounts = Object.create(null);
     var baseCache = Object.create(null); // 表層形→解決結果のメモ
     for (var i = 0; i < tokens.length; i++) {
       var w = tokens[i];
       types[w] = true;
       var base = (w in baseCache) ? baseCache[w] : (baseCache[w] = resolveBase(w, vocabSet));
-      if (base !== null) { inList++; typesIn[w] = true; }
+      if (base === w) { headTok++; typesHead[w] = true; }
+      else if (base !== null) { derivTok++; typesDeriv[w] = true; }
       else { offCounts[w] = (offCounts[w] || 0) + 1; }
     }
+    var inList = headTok + derivTok;
     var typeCount = Object.keys(types).length;
-    var typeInCount = Object.keys(typesIn).length;
+    var typeHeadCount = Object.keys(typesHead).length;
+    var typeDerivCount = Object.keys(typesDeriv).length;
+    var typeInCount = typeHeadCount + typeDerivCount;
     var offList = Object.keys(offCounts).map(function (w) { return { word: w, count: offCounts[w] }; });
     offList.sort(function (a, b) { return b.count - a.count || (a.word < b.word ? -1 : 1); });
     return {
       tokenTotal: total,
       tokenInList: inList,
+      tokenHead: headTok,
+      tokenDerived: derivTok,
       tokenCoverage: total ? (inList / total) : 0,
+      tokenHeadCoverage: total ? (headTok / total) : 0,
+      tokenDerivedCoverage: total ? (derivTok / total) : 0,
       typeTotal: typeCount,
       typeInList: typeInCount,
+      typeHead: typeHeadCount,
+      typeDerived: typeDerivCount,
       typeCoverage: typeCount ? (typeInCount / typeCount) : 0,
       offList: offList
     };

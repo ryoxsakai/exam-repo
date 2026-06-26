@@ -6,6 +6,7 @@
 
   var KEYS = {
     workerUrl:     "cf_worker_url",          // Worker API のベースURL
+    anthropicKey:  "anthropic_api_key",      // PDF取り込み用 Anthropic APIキー（この端末のみ）
     siteTitle:     "exam_site_title",        // サイトタイトル
     siteSubtitle:  "exam_site_subtitle",     // サブタイトル
     customDomain:  "exam_custom_domain",     // 独自ドメイン（リンク生成用）
@@ -22,7 +23,8 @@
     printFontSize: "exam_print_fontsize",    // 問題印刷の文字サイズ（表紙以外。xs/sm/md/lg/xl）
     printLineHeight: "exam_print_lineheight", // 問題印刷の行間（表紙以外。1〜5）
     regDraft:      "exam_reg_draft",         // 問題登録フォームの下書き（リロードしても保持）
-    printSections: "exam_print_sections"     // 印刷対象セクション {種別: bool}（全問題で共有）
+    printSections: "exam_print_sections",    // 印刷対象セクション {種別: bool}（全問題で共有）
+    replaceRules:  "exam_replace_rules"      // 登録データ一括置換のルール [{from,to,regex}]
   };
 
   function read(key, fallback) {
@@ -41,7 +43,7 @@
   }
 
   /* ---- 既定値 ---- */
-  var DEFAULT_SECTION_TYPES = ["問題", "解答", "解説"];
+  var DEFAULT_SECTION_TYPES = ["問題", "本文", "設問", "解答", "解説", "全訳"];
 
   // 汎用英語ストップワード（簡易）
   var DEFAULT_STOPWORDS = [
@@ -66,6 +68,10 @@
       return u;
     },
     setWorkerUrl: function (url) { localStorage.setItem(KEYS.workerUrl, (url || "").trim()); },
+
+    /* Anthropic API キー（PDF取り込み用。この端末の localStorage のみに保存） */
+    getAnthropicKey: function () { return (readRaw(KEYS.anthropicKey, "") || "").trim(); },
+    setAnthropicKey: function (k) { localStorage.setItem(KEYS.anthropicKey, (k || "").trim()); },
 
     /* サイトタイトル */
     getSiteTitle: function (fallback) { return readRaw(KEYS.siteTitle, fallback || "入試問題データベース"); },
@@ -201,6 +207,10 @@
       return t;
     },
     setSectionTypes: function (t) { write(KEYS.sectionTypes, t); },
+
+    /* 登録データ一括置換のルール（この端末に保持） */
+    getReplaceRules: function () { var r = read(KEYS.replaceRules, null); return Array.isArray(r) ? r : []; },
+    setReplaceRules: function (r) { write(KEYS.replaceRules, r); },
 
     /* 問題閲覧モーダルの文字サイズ */
     getFontSize: function () {

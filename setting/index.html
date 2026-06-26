@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="../assets/css/main.css?v=20260622a" />
+  <link rel="stylesheet" href="../assets/css/main.css?v=20260624f" />
 </head>
 <body>
   <header class="topbar">
@@ -105,6 +105,36 @@
         </div>
         <p class="hint" style="margin-top:8px">Cloudflare Worker の公開URLを入力してください。末尾スラッシュは不要です。</p>
       </div>
+
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-key ic"></i> Anthropic API キー（PDF取り込み用）</h3></div>
+        <label class="field">
+          <span class="field-label">API キー</span>
+          <input type="password" id="cfg-anthropic" placeholder="sk-ant-..." autocomplete="off" />
+        </label>
+        <div class="toolbar" style="margin-top:14px">
+          <button class="btn primary" id="cfg-anthropic-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+          <button class="btn blue" id="cfg-anthropic-test"><i class="fa-solid fa-satellite-dish"></i> 接続テスト</button>
+          <span class="spacer"></span>
+          <span class="hint" id="anthropic-status"></span>
+        </div>
+        <p class="hint" style="margin-top:8px">「PDF取り込み」タブの自動解析で使用します。キーはこの端末のブラウザ（localStorage）にのみ保存され、解析時に Worker 経由で Anthropic へ送信されます。共有端末では使用後に空欄で保存してください。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-image ic"></i> 画像ストレージ（R2）</h3></div>
+        <p class="hint">問題に貼る写真・グラフは Cloudflare R2 に保存されます。利用前に R2 バケットを<strong>1回だけ</strong>作成してください（無料枠あり）。<br>
+          <strong>作成方法（どちらか）:</strong><br>
+          ・Cloudflare ダッシュボード → R2 →「Create bucket」→ 名前を <code>medical-exam-images</code> にして作成。<br>
+          ・または CLI: <code>npx wrangler r2 bucket create medical-exam-images</code><br>
+          ※ バケット名は <code>wrangler.toml</code> と一致が必須。作成後、Worker を再デプロイすると有効になります。</p>
+        <div class="toolbar" style="margin-top:14px">
+          <button class="btn blue" id="r2-test"><i class="fa-solid fa-satellite-dish"></i> アップロードテスト</button>
+          <span class="spacer"></span>
+          <span class="hint" id="r2-status"></span>
+        </div>
+        <p class="hint" style="margin-top:8px">「アップロードテスト」は 1×1 の小さな画像を実際に送信し、R2 への保存・配信が有効かを確認します。</p>
+      </div>
     </section>
 
     <!-- ===== タブ3: 入試問題一覧 ===== -->
@@ -116,6 +146,24 @@
         <button class="btn ghost sm" id="list-clear"><i class="fa-solid fa-rotate-left"></i> 条件クリア</button>
       </div>
       <div id="list-area"></div>
+    </section>
+
+    <!-- ===== タブ: 大学のよみがな ===== -->
+    <section data-panel="uniyomi" class="panel">
+      <div class="card">
+        <div class="card-head">
+          <h3><i class="fa-solid fa-arrow-down-a-z ic"></i> 大学のよみがな（五十音順ソート用）</h3>
+          <span class="spacer"></span>
+          <button class="icon-btn" id="uniyomi-reload" title="再読み込み"><i class="fa-solid fa-rotate-right"></i></button>
+        </div>
+        <p class="hint">登録済みの大学に「よみがな」を設定すると、ツリー検索などの大学の並びが正しい五十音順になります（例: 杏林 → <code>きょうりん</code>）。空欄の大学は漢字コード順のままです。ひらがなで入力してください。</p>
+        <div id="uniyomi-list" style="margin-top:12px"></div>
+        <div class="toolbar" style="margin-top:14px">
+          <button class="btn primary" id="uniyomi-save"><i class="fa-solid fa-floppy-disk"></i> よみがなを保存</button>
+          <span class="spacer"></span>
+          <span class="hint" id="uniyomi-status"></span>
+        </div>
+      </div>
     </section>
 
     <!-- ===== タブ4: 問題登録 ===== -->
@@ -178,52 +226,141 @@
       <button class="fab" id="reg-add-section" title="セクションを追加"><i class="fa-solid fa-plus"></i></button>
     </section>
 
-    <!-- ===== タブ5: 外部LLMで取り込む ===== -->
-    <section data-panel="llm" class="panel">
+    <!-- ===== タブ: PDF取り込み（自動解析） ===== -->
+    <section data-panel="ingest" class="panel">
       <div class="card">
-        <div class="card-head">
-          <h3><i class="fa-solid fa-robot ic"></i> 外部LLMで取り込む</h3>
-          <span class="spacer"></span>
-          <button class="btn primary sm" id="llm-prompt-copy"><i class="fa-solid fa-copy"></i> コピー</button>
+        <div class="card-head"><h3><i class="fa-solid fa-file-import ic"></i> PDF取り込み（自動解析）</h3></div>
+        <p class="hint">問題・解答・解説が載った PDF をアップロードすると、AI が大問ごと・セクションごとに自動で振り分けます。解析後に内容を確認・修正してから登録してください。<br>※ Anthropic API キー（接続設定タブ）と Worker URL が必要です。</p>
+        <div class="reg-meta" style="margin-top:12px">
+          <div class="reg-meta-item">
+            <span class="field-label">年度（任意・自動抽出の補助）</span>
+            <input type="number" id="ing-year" placeholder="PDFから自動抽出" />
+          </div>
+          <div class="reg-meta-item">
+            <span class="field-label">大学名（任意）</span>
+            <input type="text" id="ing-university" placeholder="PDFから自動抽出" />
+          </div>
+          <div class="reg-meta-item">
+            <span class="field-label">方式（任意）</span>
+            <input type="text" id="ing-schedule" placeholder="PDFから自動抽出" />
+          </div>
         </div>
-        <label class="field" style="margin-bottom:12px">
-          <span class="field-label">注意点呼び出し</span>
-          <select id="llm-note-university">
-            <option value="">注意点を反映しない</option>
-          </select>
+        <label class="field" style="margin-top:12px">
+          <span class="field-label">PDF ファイル</span>
+          <input type="file" id="ing-file" accept="application/pdf" />
         </label>
-        <p class="hint" id="llm-note-status" style="margin:-4px 0 12px"></p>
-        <label class="field">
-          <span class="field-label">① プロンプト</span>
-          <textarea id="llm-prompt" rows="16" readonly></textarea>
-        </label>
-        <p class="hint" style="margin-top:8px"><i class="fa-solid fa-circle-info"></i> 大学名を選択した場合のみ、「追加プロンプト」タブで保存した注意点がプロンプトに差し込まれます。</p>
+        <div class="toolbar" style="margin-top:14px">
+          <button class="btn primary" id="ing-run"><i class="fa-solid fa-wand-magic-sparkles"></i> 解析する</button>
+          <span class="spacer"></span>
+          <span class="hint" id="ing-status"></span>
+        </div>
       </div>
+      <div id="ing-result"></div>
     </section>
 
-    <!-- ===== タブ6: 追加プロンプト ===== -->
-    <section data-panel="prompts" class="panel">
+    <!-- ===== タブ: 取り込み設定（追加プロンプト） ===== -->
+    <section data-panel="ingestcfg" class="panel">
       <div class="card">
-        <div class="card-head">
-          <h3><i class="fa-solid fa-message ic"></i> 大学ごとの注意点</h3>
-          <span class="spacer"></span>
-          <button class="btn primary sm" id="prompt-note-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
-        </div>
-        <p class="hint" style="margin-bottom:12px"><i class="fa-solid fa-cloud"></i> 注意点は Worker(D1) に保存され全端末で共有されます。外部LLM取り込みタブのプロンプトへ大学ごとに差し込めます。</p>
-        <label class="field" style="margin-bottom:12px">
-          <span class="field-label">大学名</span>
-          <select id="prompt-note-university">
-            <option value="">大学を選択してください</option>
-          </select>
+        <div class="card-head"><h3><i class="fa-solid fa-wand-magic-sparkles ic"></i> 追加プロンプト（AI変換ルール）</h3></div>
+        <p class="hint">PDF取り込みの自動解析に、独自の変換ルールを追記できます。記法（空所 [[ ]]・選択肢 (())・語注 ##語::訳##・下付き ~~x~~ など）に沿った指示を書くと精度が上がります。設定は <strong>Worker（D1）に保存され全端末で共有</strong>されます。</p>
+        <label class="field" style="margin-top:10px">
+          <span class="field-label">追加の指示</span>
+          <textarea id="cfg-ingest-prompt" rows="10" placeholder="例：
+- ①②③ は ((1))((2))((3)) に、a. b. c. は ((a))((b))((c)) に変換する
+- 下線部に付く小問番号 (1) は ~~(1)~~ で下付きにする
+- 注釈は必ず ##語::訳## の語注記法を使う
+- 全訳は省略せず「全訳」セクションに含める"></textarea>
         </label>
-        <label class="field">
+        <div class="toolbar" style="margin-top:12px">
+          <button class="btn primary" id="cfg-ingest-prompt-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+          <button class="btn" id="cfg-ingest-prompt-example"><i class="fa-solid fa-lightbulb"></i> 推奨例を挿入</button>
+          <span class="spacer"></span>
+          <span class="hint" id="ingest-prompt-status"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-building-columns ic"></i> 大学ごとの注意点</h3></div>
+        <p class="hint">大学固有の注意点（出題形式・特殊記法・頻出セクションなど）を大学ごとに保存できます。「外部LLMで取り込む」タブで大学を選ぶと、その大学の注意点がプロンプトに自動で追記されます。設定は <strong>Worker（D1）に保存され全端末で共有</strong>されます。</p>
+        <label class="field" style="margin-top:10px">
+          <span class="field-label">大学を選択</span>
+          <select id="uni-note-select"><option value="">— 大学を選択 —</option></select>
+        </label>
+        <label class="field" style="margin-top:10px">
           <span class="field-label">注意点</span>
-          <textarea id="prompt-note-text" rows="12" placeholder="例: この大学は年度によって設問番号の表記が異なるため、見出しは原文どおり残す。英作文は必ず「英作文」セクションに分ける。"></textarea>
+          <textarea id="uni-note-text" rows="8" placeholder="例：
+- 大問1は会話文。選択肢は ((A))((B)) で表す
+- 注釈は本文下部のものだけを ##語::訳## で採用する
+- 全訳は必ず「全訳」セクションに全文を含める"></textarea>
         </label>
+        <div class="toolbar" style="margin-top:12px">
+          <button class="btn primary" id="uni-note-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+          <span class="spacer"></span>
+          <span class="hint" id="uni-note-status"></span>
+        </div>
       </div>
     </section>
 
-    <!-- ===== タブ7: コーパス検索設定 ===== -->
+    <!-- ===== タブ: 登録データ置換（grep replace） ===== -->
+    <section data-panel="replace" class="panel">
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-right-left ic"></i> 登録データの一括置換（grep replace）</h3></div>
+        <p class="hint"><strong>すでに登録済みの全問題</strong>（問題・解答・解説の本文）に対し、上から順に文字列を置換します（例：「，」→「、」）。正規表現にチェックすると <code>検索</code> 欄を正規表現として扱います（フラグは既定で <code>g</code>）。まず「プレビュー」で件数を確認してから「実行」してください。<br>※ 元に戻せません。実行前のバックアップを推奨します。ルールはこの端末に保存されます。</p>
+        <div id="bulk-list" style="margin-top:10px"></div>
+        <div class="toolbar" style="margin-top:12px">
+          <button class="btn" id="bulk-add"><i class="fa-solid fa-plus"></i> ルールを追加</button>
+          <select id="bulk-template" style="width:auto;min-width:220px"></select>
+          <button class="btn" id="bulk-tpl-add"><i class="fa-solid fa-lightbulb"></i> テンプレを挿入</button>
+          <button class="btn" id="bulk-regex-help"><i class="fa-solid fa-circle-question"></i> 正規表現ヘルプ</button>
+          <button class="btn blue" id="bulk-preview"><i class="fa-solid fa-magnifying-glass"></i> プレビュー</button>
+          <button class="btn primary" id="bulk-run"><i class="fa-solid fa-wand-magic-sparkles"></i> 実行</button>
+          <span class="spacer"></span>
+          <span class="hint" id="bulk-status"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== タブ: 外部LLM取り込み（プロンプト + JSON貼り付け） ===== -->
+    <section data-panel="extllm" class="panel">
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-robot ic"></i> 外部LLMで取り込む</h3></div>
+        <p class="hint">claude.ai・ChatGPT・Gemini など任意のチャットAIで取り込めます。Anthropic APIキー不要。<br>
+          <strong>手順:</strong> ①下のプロンプトをコピー → ②チャットAIにPDF（または画像）と一緒に貼り付けて送信 → ③返ってきた<strong>コードブロック右上の「コピー」ボタン</strong>でJSONを1クリックコピーし、下の欄に貼り付け → ④「読み込む」で編集画面へ。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-building-columns ic"></i> 大学の注意点を反映（任意）</h3></div>
+        <label class="field">
+          <span class="field-label">大学を選択（選ぶとその大学の注意点がプロンプトに追記されます）</span>
+          <select id="ext-uni-select"><option value="">— 指定なし —</option></select>
+        </label>
+        <p class="hint" id="ext-uni-status" style="margin-top:6px"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3><i class="fa-solid fa-clipboard ic"></i> ① プロンプト</h3>
+          <span class="spacer"></span>
+          <button class="btn sm primary" id="ext-copy"><i class="fa-solid fa-copy"></i> コピー</button>
+        </div>
+        <textarea id="ext-prompt" rows="10" readonly style="width:100%;font-size:12.5px" placeholder="読み込み中…"></textarea>
+        <p class="hint" id="ext-prompt-status" style="margin-top:6px"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3><i class="fa-solid fa-paste ic"></i> ② 結果のJSONを貼り付け</h3></div>
+        <textarea id="ext-json" rows="10" style="width:100%;font-size:12.5px" placeholder='{"universityName":"...","year":2024,"schedule":"...","questions":[ ... ]}'></textarea>
+        <div class="toolbar" style="margin-top:12px">
+          <button class="btn primary" id="ext-load"><i class="fa-solid fa-file-import"></i> 読み込む（編集画面へ）</button>
+          <button class="btn ghost sm" id="ext-clear"><i class="fa-solid fa-eraser"></i> クリア</button>
+          <span class="spacer"></span>
+          <span class="hint" id="ext-status"></span>
+        </div>
+        <p class="hint" style="margin-top:8px">※ コードブロック（```）が付いていても自動で除去します。読み込み後は「PDF取り込み」タブの編集画面で確認・修正して登録します。</p>
+      </div>
+    </section>
+
+    <!-- ===== タブ5: コーパス検索設定 ===== -->
     <section data-panel="corpus" class="panel">
       <div class="card">
         <div class="card-head">
@@ -266,11 +403,8 @@
         <button class="icon-btn" data-close title="閉じる"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="modal-body">
-        <div class="inline-add edit-add-row" style="margin-bottom:14px">
-          <label class="field edit-new-field">
-            <span class="field-label" id="edit-new-label">項目名</span>
-            <input type="text" id="edit-new" placeholder="新しい項目を入力" />
-          </label>
+        <div class="inline-add" style="margin-bottom:14px">
+          <input type="text" id="edit-new" placeholder="新しい項目を入力" />
           <button class="btn primary" id="edit-add"><i class="fa-solid fa-plus"></i> 追加</button>
         </div>
         <ul class="sort-list" id="edit-list"></ul>
@@ -322,11 +456,22 @@
         <button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="modal-body" id="exam-modal-body"></div>
+      <div class="exam-replace-bar" id="exam-replace-bar" hidden>
+        <input type="text" id="exam-rep-from" placeholder="検索（from）" />
+        <i class="fa-solid fa-arrow-right exam-rep-arrow"></i>
+        <input type="text" id="exam-rep-to" placeholder="置換（to。正規表現時は $1 可）" />
+        <label class="exam-rep-re check-inline" title="正規表現として検索（フラグ g）"><input type="checkbox" id="exam-rep-regex"> <span>正規表現</span></label>
+        <button class="icon-btn" id="exam-regex-help" title="正規表現ヘルプ"><i class="fa-solid fa-circle-question"></i></button>
+        <button class="icon-btn primary" id="exam-rep-apply" title="この問題のみ置換"><i class="fa-solid fa-check"></i></button>
+      </div>
       <div class="modal-foot" id="exam-modal-foot">
         <button class="icon-btn" id="exam-prev" title="前の大問"><i class="fa-solid fa-angle-left"></i></button>
         <span id="exam-nav-label"></span>
         <button class="icon-btn" id="exam-next" title="次の大問"><i class="fa-solid fa-angle-right"></i></button>
         <span class="spacer"></span>
+        <button class="icon-btn" id="exam-replace" title="この問題内を置換"><i class="fa-solid fa-right-left"></i></button>
+        <button class="icon-btn" id="exam-edit" title="編集"><i class="fa-solid fa-pen"></i></button>
+        <button class="icon-btn danger" id="exam-del" title="削除"><i class="fa-solid fa-trash"></i></button>
         <button class="icon-btn" id="exam-show-all" title="全ての問題を表示"><i class="fa-solid fa-arrow-up-right-from-square"></i></button>
       </div>
     </div>
@@ -365,6 +510,17 @@
     </div>
   </div>
 
+  <!-- ===== 正規表現ヘルプモーダル ===== -->
+  <div class="modal-overlay" id="regex-help-modal">
+    <div class="modal wide">
+      <div class="modal-head">
+        <i class="fa-solid fa-circle-question ic"></i><h3>正規表現 早見表</h3><span class="spacer"></span>
+        <button class="icon-btn" data-close><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" id="regex-help-body"></div>
+    </div>
+  </div>
+
   <!-- ===== プレビューモーダル ===== -->
   <div class="modal-overlay" id="preview-modal">
     <div class="modal wide">
@@ -384,10 +540,10 @@
 
   <script src="../assets/data/oxford5000.js?v=20260612a"></script>
   <script src="../assets/data/target1900.js?v=20260613h"></script>
-  <script src="../assets/js/store.js?v=20260613h"></script>
-  <script src="../assets/js/api.js?v=20260624a"></script>
+  <script src="../assets/js/store.js?v=20260616b"></script>
+  <script src="../assets/js/api.js?v=20260624g"></script>
   <script src="../assets/js/ui.js?v=20260612z"></script>
-  <script src="../assets/js/markup.js?v=20260612ai"></script>
-  <script src="../assets/js/settings.js?v=20260624a"></script>
+  <script src="../assets/js/markup.js?v=20260624e"></script>
+  <script src="../assets/js/settings.js?v=20260624h"></script>
 </body>
 </html>

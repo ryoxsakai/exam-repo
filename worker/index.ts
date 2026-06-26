@@ -1,12 +1,13 @@
 export interface Env {
   DB: D1Database;
+  IMAGES?: R2Bucket;  // 問題画像の保存先（wrangler.toml の [[r2_buckets]] binding=IMAGES）
 }
 
 function cors(origin?: string | null) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-anthropic-key",
     "Access-Control-Max-Age": "86400",
   };
 }
@@ -27,11 +28,13 @@ async function ensureCategoryColumn(env: Env) {
   }
 }
 
-// 大学ごとの外部LLM取り込み注意点を保存するテーブル
-async function ensureUniversityPromptNotesTable(env: Env) {
-  await env.DB.exec(
-    "CREATE TABLE IF NOT EXISTS university_prompt_notes (university_id INTEGER PRIMARY KEY, note TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT (datetime('now')), FOREIGN KEY (university_id) REFERENCES universities(id) ON DELETE CASCADE)"
-  );
+// universities テーブルに reading（よみがな。五十音ソート用）列が無い既存DBへの後方互換マイグレーション
+async function ensureUniversityReadingColumn(env: Env) {
+  try {
+    await env.DB.exec("ALTER TABLE universities ADD COLUMN reading TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // 既に列が存在する場合は無視
+  }
 }
 
 // question_number = 0 のレコードを修正（各 exam 内で id 順に 1 始まりで採番）
@@ -56,6 +59,433 @@ async function fixZeroQuestionNumbers(env: Env) {
   }
 }
 
+// ───────────────────────────────────────────────────────────────────
+// PDF 自動取り込み（Anthropic API でスキャンPDF→構造化問題データ）
+// APIキーはリクエストヘッダ x-anthropic-key で受け取り、サーバ側には保存しない。
+// ───────────────────────────────────────────────────────────────────
+const INGEST_SYSTEM = `あなたは日本の大学入試（英語）の冊子PDFを読み取り、構造化された問題データに変換するアシスタントです。
+
+# 入力
+1つのPDFには、ある年度・大学・方式の全大問が含まれます。冊子は多くの場合「問題（大問1〜N）→ 解答 → 解説」のようにセクション単位で並んでいます。
+
+# タスク
+PDFを読み取り、大問ごとにまとめ直してください。各大問は内容に応じて複数のセクションに分割し、各セクションに種別(type)を付けて sections 配列で出力します。冊子の並び順を保ってください。解答ページや解説ページの「(1)…」等は、対応する大問へ必ず紐づけてください。該当が無い種別のセクションは作らないでください。
+
+# 最重要原則：原文に忠実に（要約・改変の禁止）
+あなたの役割は「清書（書き起こし）」であり、編集・要約・添削ではありません。PDFに書かれている内容を**一字一句そのまま**書き起こすことが最優先です。
+- **解説・全訳・解答・本文を、短くまとめる／言い換える／省略することを禁止する。** 原文の文章をそのまま全文写すこと（長くても必ず全部書く）。
+- 内容の追加・補足・言い換え・誤りの「訂正」をしない（原文が誤っていてもそのまま書き起こす）。
+- 「以下同様」「（中略）」「※省略」等を勝手に挿入しない。原文にその表記がある場合のみ残す。
+- 記法（##語::訳##・[[ ]]・(()) など）への置き換えは**見た目の変換だけ**であり、語句そのもの・順序・文章量を変えてはいけない。
+- 出力前に各大問を見直し、「解説や全訳を短くしていないか」「省いた段落・文がないか」を必ず自己点検する。
+
+# セクション種別(type)
+- 「本文」: 長文読解の英文パッセージ本体
+- 「設問」: その大問の設問（問1・問2…や下線部問題など）。長文読解では本文と分け、設問だけをここにまとめる。
+- 「問題」: 文法・語彙・整序・英作文など、本文と設問に分けにくいものはまとめてここに入れる
+- 「解答」: 解答・正解
+- 「解説」: 解説・考え方
+- 「全訳」: 本文の全訳・全文和訳。省略してはいけない。解説に混ぜず必ず独立した「全訳」セクションにする。
+
+長文読解の大問は「本文」と「設問」に分ける（＋必要に応じて「解答」「解説」「全訳」）。文法・語彙などの大問は「問題」にまとめる。判断が難しい場合は最も近い種別を選ぶ。
+
+# 出力テキストの記法（各 section の text で使用）
+- 空所は [[1]] [[A]]。**[[ ]] の中には英数字のみ**を入れる（[[1]] [[12]] [[A]]）。[[(1)]] のように括弧や記号を入れてはいけない。
+- 記述解答欄など横長の空欄は [[-- --]]（ダッシュで囲むと通常空所の3倍幅で表示）。中にラベルを入れたいときは [[--A--]] のように囲む。
+- 選択肢は行頭に ((ラベル)) 本文 の形式。①②③ → ((1))((2))((3))、a. b. c. → ((a))((b))((c))、ア イ ウ → ((ア))((イ))((ウ)) のように、選択肢記号は必ず (()) で囲む。
+- 黄ハイライト ==語==、下線 __語__、太字 **語**、下付き ~~x~~、上付き ^^x^^、斜字 ||||語||||
+- 語注・脚注・注記の扱いは特に重要。原文では本文と別に「(注) 1. canyon 峡谷 / 2. ...」のような注の一覧が欄外や末尾に置かれていることが多いが、**この一覧をそのまま行・段落・リストとして出力してはいけない**。各注は、本文中の対応する語の位置へ移して \`##語::訳##\` の形で埋め込むこと。
+  - 注の位置は冊子により様々（本文下部・欄外・側注・本文中の括弧書き・別ページ など）。**位置に関わらず原文に存在する注だけを拾う**。下部に注一覧が無い場合は本文中の括弧書き等を注として扱ってよいが、**原文に無い注を自分で創作・追加してはいけない**。
+  - 手順: ①本文側の注番号（※1 / 注1 / *1 / (1) など）または注の対象語を特定する → ②本文側の注番号は削除し、対象語を \`##語::訳##\` で囲む → ③元の注一覧・注書きは出力しない（訳一覧は閲覧側で自動生成されるので、残すと二重表示になる）。
+  - 訳語は原文の注の文言をそのまま使う（要約・言い換えをしない）。区切りは必ず半角コロン2つ \`::\`。全角「：」や半角1つ「:」は不可。
+  - 文頭などで大文字始まりの語を注では辞書見出し形（小文字）にしたいときは、語中に \`^\` を置くと**注の側だけ**直前の文字が小文字化される（本文はそのまま）。例: \`##M^isdiagnosis::誤診##\` → 本文 Misdiagnosis・注 misdiagnosis。
+  - NG（やってはいけない）: 本文 \`The immune system※1 is vital.\` ＋ 別行 \`(注) ※1 immune system＝免疫システム\`
+  - OK（こうする）: \`The ##immune system::免疫システム## is vital.\`（注の一覧は書かない）
+- 段落番号（本文や全訳に振られた ①②… や 1 2 … の段落番号）が元の問題に付いている場合は、その段落の行頭に [1] [2] のように単角括弧で残す（例: \`[1] The quick brown fox...\`）。これは空所 [[ ]]（二重括弧）とは別物なので混同しない。元の問題に段落番号が無ければ付けない。
+- 本文末などの出典・出所表記は !!!!出典: …!!!! で囲む（右寄せ・グレーで表示される）。
+- 表（行と列のある表組み）は Markdown 記法で書く。1行目を見出し、2行目を区切り行 \`| --- | --- |\`、3行目以降を中身とし、各セルを \`|\` で区切る。例:
+\`| 年 | 出来事 |\`
+\`| --- | --- |\`
+\`| 1989 | the fall of the Berlin Wall |\`
+\`| 2001 | ... |\`
+  セル内でパイプ文字そのものを使いたいときは \`\\|\` とエスケープする。罫線のある表は箇条書きや段落に崩さず、必ずこの表記法を使う。
+- 区切り線 ----、段落間は空行
+
+# 変換ルール（重要）
+- 下線部や語句に付く小問番号 (1)(2) 等が本文中に現れる場合は、空所ではないので [[ ]] にせず、~~(1)~~ のように下付きにする（例: (1)下線部 → ~~(1)~~__…__ ）。
+- 「全訳」「全文和訳」「本文の訳」は省略してはいけない。種別「全訳」のセクションに全文を必ず含める。
+- 和文（日本語の文）の中の全角カンマ「，」だけを読点「、」に統一する。**英文中のカンマは半角「,」のまま保持し、絶対に「、」や全角に変えない**（例: \`cells, tissues, and organs\` はそのまま \`cells, tissues, and organs\`）。同様に英文中のピリオド・コロン等の記号も半角のままにする。
+
+# 処理手順（必ずこの順で進める）
+1. PDF全体をページ順に通読し、どこからどこまでが各大問か、どのページが解答・解説・全訳かを把握する。
+2. 大問ごとに、問題本文 / 設問 / 解答 / 解説 / 全訳 が冊子のどのページにあるかを対応づける（解答・解説・全訳は問題と離れたページにあることが多い）。
+3. 各セクションを上記「記法」に従って書き起こす。このとき**解説・全訳・解答・本文は要約せず原文を全文写す**。
+4. 注（語注・脚注）を処理する：本文・全訳の注番号や注の対象語と訳を突き合わせ、対応する語を \`##語::訳##\` に変換する（上記「語注・脚注・注記の扱い」を厳守。原文に無い注は作らない）。
+5. 表・画像・段落番号・出典などをそれぞれの記法に変換する。
+6. universityName / year / schedule を表紙等から判定する。
+7. 出力前に各大問を自己点検する：「解説・全訳を短くしていないか」「省いた段落・文がないか」「注を勝手に足していないか」を確認してから JSON を出力する。
+
+# 注意
+- 図・写真・数式は文章で簡潔に補足する（例: （図省略）（グラフ省略） のように全角括弧で示す。単角括弧 [図] は段落番号バッジと紛らわしいので使わない）。
+- OCRが不確実な箇所は推測しすぎず原文に忠実に。英文はそのまま、和文設問もそのまま書き起こす。
+- universityName / year / schedule は表紙や本文から判断する（不明なら universityName は空文字、year は 0）。schedule は「前期」「後期」「全学部」等の入試方式。
+- universityName は表記を統一するため、末尾の「大学」「大」と括弧注記（（医）（医学部）など）を取り除いた形で出力する（例: 「愛知医科大学」「愛知医科大」「愛知医科大学（医）」→ いずれも \`愛知医科\`、「東京医科歯科大学」→ \`東京医科歯科\`）。学部・方式・年度は universityName に含めない。
+- questionNumber は 1 始まりの整数。category は「長文読解」「文法」「英作文」等が分かれば記入、不明なら空文字。`;
+
+// 出力JSONの仕様（Worker解析・外部LLM取り込みで共用）
+const INGEST_JSON_SPEC = `以下のJSON形式のみで出力してください。前後に説明文やコードブロック（\`\`\`）を含めないでください。
+{"universityName":"...","year":2024,"schedule":"...","questions":[{"questionNumber":1,"category":"...","sections":[{"type":"本文","text":"..."},{"type":"設問","text":"..."},{"type":"解答","text":"..."},{"type":"解説","text":"..."},{"type":"全訳","text":"..."}]}]}`;
+
+// 外部LLM（claude.ai / ChatGPT / Gemini 等）貼り付け用の出力仕様。
+// 結果を1つの \`\`\`json コードブロックに収めさせると、各サービスの画面で
+// コードブロック右上の「コピー」ボタンから1クリックで全文コピーできる。
+const INGEST_JSON_SPEC_FENCED = `解析結果は、下記の形のJSONを **1つの \`\`\`json コードブロックの中だけ** に出力してください。
+- コードブロックは1つだけにし、その中にJSON全体（先頭の { から末尾の } まで）を入れる。
+- コードブロックの前後に説明文・コメント・補足を書かない（コメントを書きたい場合もコードブロックの外に出さない）。
+- こうすると ChatGPT・Claude・Gemini いずれの画面でも、コードブロック右上の「コピー」ボタンで1クリックで全文をコピーできます。
+\`\`\`json
+{"universityName":"...","year":2024,"schedule":"...","questions":[{"questionNumber":1,"category":"...","sections":[{"type":"本文","text":"..."},{"type":"設問","text":"..."},{"type":"解答","text":"..."},{"type":"解説","text":"..."},{"type":"全訳","text":"..."}]}]}
+\`\`\``;
+
+// 大学名の表記ゆれを統一する。取り込み時に「愛知医科大学 / 愛知医科大 / 愛知医科大学（医）」
+// などを「愛知医科」へ寄せ、同一大学が複数レコードに分裂するのを防ぐ。
+//   - 末尾の括弧注記（（医）(医) など）を除去
+//   - 末尾の「大学」を除去、無ければ末尾の「大」を除去
+function normalizeUniversityName(name: string): string {
+  let n = (name || "").trim();
+  if (!n) return n;
+  // 末尾の括弧注記を繰り返し除去（（医）（医学部）(医) など）
+  let prev;
+  do { prev = n; n = n.replace(/[（(][^（）()]*[）)]\s*$/u, "").trim(); } while (n !== prev);
+  // 末尾の「大学」→ 除去。無ければ「大」を除去
+  if (/大学$/u.test(n)) n = n.replace(/大学$/u, "");
+  else if (/大$/u.test(n)) n = n.replace(/大$/u, "");
+  n = n.trim();
+  // 全部消えてしまう異常時は元の名前を返す
+  return n || (name || "").trim();
+}
+
+type Replacement = { from?: string; to?: string; regex?: boolean; flags?: string };
+
+// テキストへ置換ルール（grep replace）を適用し、置換件数も返す。
+// regex=true のときは正規表現（不正なパターンは無視）、それ以外は全件の単純置換。
+function applyReplacements(text: string, rules: Replacement[]): { text: string; count: number } {
+  let out = text || "";
+  let count = 0;
+  if (!out || !rules || !rules.length) return { text: out, count: 0 };
+  for (const r of rules) {
+    if (!r || !r.from) continue;
+    try {
+      if (r.regex) {
+        const re = new RegExp(r.from, (r.flags || "g").indexOf("g") >= 0 ? (r.flags || "g") : (r.flags || "") + "g");
+        const matches = out.match(re);
+        if (matches) count += matches.length;
+        out = out.replace(re, r.to || "");
+      } else {
+        const occ = out.split(r.from).length - 1;
+        if (occ > 0) { count += occ; out = out.split(r.from).join(r.to || ""); }
+      }
+    } catch { /* 不正な正規表現は無視 */ }
+  }
+  return { text: out, count: count };
+}
+
+// 登録済み全問題に置換ルールを適用（dryRun=true なら件数のみ）。
+async function handleBulkReplace(request: Request, env: Env, origin: string | null): Promise<Response> {
+  await ensureCategoryColumn(env);
+  type Body = { rules?: Replacement[]; dryRun?: boolean };
+  let body: Body;
+  try { body = await request.json<Body>(); } catch { return json({ message: "リクエストの解析に失敗しました。" }, 400, origin); }
+  const rules = Array.isArray(body.rules) ? body.rules.filter((r) => r && r.from) : [];
+  if (!rules.length) return json({ message: "置換ルールがありません。" }, 400, origin);
+
+  const { results } = await env.DB.prepare(
+    "SELECT id, problem_text, answer_text, commentary_text FROM questions"
+  ).all<{ id: number; problem_text: string; answer_text: string; commentary_text: string }>();
+
+  let occurrences = 0;
+  let changedRows = 0;
+  const updates: { id: number; p: string; a: string; c: string }[] = [];
+  for (const row of results) {
+    const rp = applyReplacements(row.problem_text || "", rules);
+    const ra = applyReplacements(row.answer_text || "", rules);
+    const rc = applyReplacements(row.commentary_text || "", rules);
+    const total = rp.count + ra.count + rc.count;
+    if (total > 0) {
+      occurrences += total;
+      changedRows += 1;
+      updates.push({ id: row.id, p: rp.text, a: ra.text, c: rc.text });
+    }
+  }
+
+  if (body.dryRun) {
+    return json({ dryRun: true, occurrences, changedRows, total: results.length }, 200, origin);
+  }
+
+  for (const u of updates) {
+    await env.DB.prepare(
+      "UPDATE questions SET problem_text = ?, answer_text = ?, commentary_text = ?, updated_at = datetime('now') WHERE id = ?"
+    ).bind(u.p, u.a, u.c, u.id).run();
+  }
+  return json({ occurrences, changedRows, total: results.length }, 200, origin);
+}
+
+// 取り込み用の追加プロンプトを D1 config から読む。
+async function getIngestPrompt(env: Env): Promise<string> {
+  try {
+    await env.DB.exec("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+    const pr = await env.DB.prepare("SELECT value FROM config WHERE key = 'ingest_prompt'").first<{ value: string }>();
+    if (pr) { try { return JSON.parse(pr.value) || ""; } catch { /* 壊れた値は無視 */ } }
+  } catch { /* config テーブル未作成等は無視 */ }
+  return "";
+}
+
+// 大学ごとの注意点（{ 大学名: 注意点 }）を D1 config から読む。
+async function getUniversityNotes(env: Env): Promise<Record<string, string>> {
+  try {
+    await env.DB.exec("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+    const pr = await env.DB.prepare("SELECT value FROM config WHERE key = 'university_notes'").first<{ value: string }>();
+    if (pr) { try { const o = JSON.parse(pr.value); if (o && typeof o === "object") return o as Record<string, string>; } catch { /* 壊れた値は無視 */ } }
+  } catch { /* config テーブル未作成等は無視 */ }
+  return {};
+}
+
+// 外部LLM（claude.ai / ChatGPT / Gemini 等）に貼り付けて使う取り込みプロンプトを返す。
+// Worker解析と同じ INGEST_SYSTEM ＋ ユーザー追加プロンプト ＋ 出力JSON仕様で構成する。
+// universityName が指定され、その大学の注意点が登録されていればプロンプトに追記する。
+async function handleIngestPrompt(env: Env, origin: string | null, universityName?: string): Promise<Response> {
+  const userPrompt = await getIngestPrompt(env);
+  let uniNote = "";
+  const uname = (universityName || "").trim();
+  if (uname) {
+    const notes = await getUniversityNotes(env);
+    uniNote = (notes[uname] || "").trim();
+  }
+  const prompt = INGEST_SYSTEM
+    + (userPrompt ? "\n\n# 追加の変換ルール（ユーザー設定）\n" + userPrompt : "")
+    + (uniNote ? "\n\n# " + uname + " の注意点（大学別設定）\n" + uniNote : "")
+    + "\n\n# 出力形式\n添付したPDF（または画像・テキスト）の入試問題を解析し、大問ごと・セクションごとに構造化してください。年度・大学名・方式も読み取り universityName / year / schedule に入れてください。\n\n"
+    + INGEST_JSON_SPEC_FENCED;
+  return json({ prompt }, 200, origin);
+}
+
+type IngestBody = {
+  pdfBase64?: string;
+  mediaType?: string;
+  model?: string;
+  hint?: { year?: number; universityName?: string; schedule?: string };
+};
+
+// Anthropic API キーの疎通確認。最小リクエスト（haiku / max_tokens:1）を投げ、
+// 認証が通るかだけを確認する。キーはヘッダで受け取り保存しない。
+async function handleAnthropicTest(request: Request, origin: string | null): Promise<Response> {
+  const apiKey = request.headers.get("x-anthropic-key") || "";
+  if (!apiKey) {
+    return json({ message: "Anthropic API キーが未設定です。先にキーを入力・保存してください。" }, 400, origin);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5",
+        max_tokens: 1,
+        messages: [{ role: "user", content: "ping" }],
+      }),
+    });
+  } catch {
+    return json({ message: "Anthropic API への接続に失敗しました。" }, 502, origin);
+  }
+
+  if (res.ok) {
+    return json({ ok: true, model: "claude-haiku-4-5" }, 200, origin);
+  }
+
+  // 認証エラー等は Anthropic のメッセージを拾って返す
+  let msg = `Anthropic API エラー（${res.status}）`;
+  try {
+    const ed: any = await res.json();
+    if (ed && ed.error && ed.error.message) msg = ed.error.message;
+  } catch { /* 非JSON */ }
+  if (res.status === 401) msg = "API キーが無効です（認証エラー 401）。キーを確認してください。";
+  else if (res.status === 403) msg = "このキーには利用権限がありません（403）。";
+  const status = res.status === 401 || res.status === 403 ? 400 : 502;
+  return json({ ok: false, message: msg }, status, origin);
+}
+
+async function handleIngest(request: Request, env: Env, origin: string | null): Promise<Response> {
+  const apiKey = request.headers.get("x-anthropic-key") || "";
+  if (!apiKey) {
+    return json({ message: "Anthropic API キーが未設定です。設定ページ →「接続設定」で登録してください。" }, 400, origin);
+  }
+
+  let body: IngestBody;
+  try {
+    body = await request.json<IngestBody>();
+  } catch {
+    return json({ message: "リクエストの解析に失敗しました。" }, 400, origin);
+  }
+
+  const pdf = body.pdfBase64 || "";
+  if (!pdf) return json({ message: "PDF データがありません。" }, 400, origin);
+
+  const model = body.model || "claude-opus-4-8";
+  const hint = body.hint || {};
+  const hintLines: string[] = [];
+  if (hint.year) hintLines.push(`年度: ${hint.year}`);
+  if (hint.universityName) hintLines.push(`大学名: ${hint.universityName}`);
+  if (hint.schedule) hintLines.push(`方式: ${hint.schedule}`);
+  const hintText = hintLines.length ? `\n\n参考情報（判明している場合は優先）:\n${hintLines.join("\n")}` : "";
+
+  // ユーザー設定（追加プロンプト）を取得
+  const extraPrompt = await getIngestPrompt(env);
+  const system = extraPrompt
+    ? INGEST_SYSTEM + "\n\n# 追加の変換ルール（ユーザー設定）\n" + extraPrompt
+    : INGEST_SYSTEM;
+
+  const payload = {
+    model,
+    max_tokens: 16000,
+    system,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "document", source: { type: "base64", media_type: body.mediaType || "application/pdf", data: pdf } },
+          { type: "text", text: `添付の入試問題PDFを解析し、大問ごと・セクションごとに構造化してください。${hintText}\n\n${INGEST_JSON_SPEC}` },
+        ],
+      },
+    ],
+  };
+
+  // SSE（Server-Sent Events）でフェーズを逐次送信。
+  // 1回の長いリクエスト中に「受信→解析中→整形→完了/エラー」を流し、
+  // 接続維持の鼓動も送ることでタイムアウト切断を防ぐ。
+  const enc = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      let alive = true;
+      const send = (obj: unknown) => {
+        if (!alive) return;
+        try { controller.enqueue(enc.encode("data: " + JSON.stringify(obj) + "\n\n")); } catch { /* closed */ }
+      };
+      const close = () => { alive = false; try { controller.close(); } catch { /* already closed */ } };
+
+      // 解析中の鼓動（接続維持）
+      let beating = true;
+      (async () => {
+        while (beating) {
+          await new Promise((r) => setTimeout(r, 15000));
+          if (beating) send({ phase: "analyzing", heartbeat: true });
+        }
+      })();
+
+      try {
+        send({ phase: "received", bytes: pdf.length });
+        send({ phase: "analyzing" });
+
+        // Anthropic 自体もストリーミングで呼ぶ（非ストリーミングだと長い生成で
+        // ゲートウェイが 502/504 を返すため）。テキストデルタを連結して JSON 化。
+        let res: Response;
+        try {
+          res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({ ...payload, stream: true }),
+          });
+        } catch {
+          beating = false;
+          send({ phase: "error", message: "Anthropic API への接続に失敗しました。" });
+          return close();
+        }
+
+        if (!res.ok || !res.body) {
+          beating = false;
+          let msg = `Anthropic API エラー（${res.status}）`;
+          try { const ed: any = await res.json(); if (ed && ed.error && ed.error.message) msg = ed.error.message; } catch { /* 非JSON */ }
+          send({ phase: "error", message: msg });
+          return close();
+        }
+
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let sbuf = "";
+        let text = "";
+        let stopReason: string | null = null;
+        let apiErr: string | null = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          sbuf += dec.decode(value, { stream: true });
+          const events = sbuf.split("\n\n");
+          sbuf = events.pop() || "";
+          for (const evt of events) {
+            const dataLine = evt.split("\n").find((l) => l.indexOf("data:") === 0);
+            if (!dataLine) continue;
+            const ds = dataLine.slice(5).trim();
+            if (!ds) continue;
+            let obj: any;
+            try { obj = JSON.parse(ds); } catch { continue; }
+            if (obj.type === "content_block_delta" && obj.delta && obj.delta.type === "text_delta") {
+              text += obj.delta.text;
+              send({ phase: "analyzing", chars: text.length });
+            } else if (obj.type === "message_delta" && obj.delta && obj.delta.stop_reason) {
+              stopReason = obj.delta.stop_reason;
+            } else if (obj.type === "error") {
+              apiErr = (obj.error && obj.error.message) || "Anthropic API エラー";
+            }
+          }
+        }
+        beating = false;
+
+        if (apiErr) { send({ phase: "error", message: apiErr }); return close(); }
+        if (stopReason === "refusal") {
+          send({ phase: "error", message: "解析が安全性の理由で拒否されました。別のPDFでお試しください。" });
+          return close();
+        }
+        if (!text) {
+          send({ phase: "error", message: "解析結果を取得できませんでした（出力が空でした）。" });
+          return close();
+        }
+
+        send({ phase: "parsing" });
+        let parsed: any;
+        try {
+          let jsonText = text.trim();
+          const m = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+          if (m) jsonText = m[1].trim();
+          parsed = JSON.parse(jsonText);
+        }
+        catch { send({ phase: "error", message: "解析結果のJSONを読み取れませんでした。" }); return close(); }
+        if (stopReason === "max_tokens") parsed._truncated = true;
+
+        send({ phase: "done", result: parsed });
+        close();
+      } catch (e: any) {
+        beating = false;
+        send({ phase: "error", message: "解析中にエラーが発生しました: " + (e && e.message ? e.message : String(e)) });
+        close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", ...cors(origin) },
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const origin = request.headers.get("Origin");
@@ -67,67 +497,50 @@ export default {
     }
 
     try {
+      // ── GET /api/image/:key（R2 から画像配信。DB に触れないので最初に処理） ──
+      if (path.startsWith("/api/image/") && request.method === "GET") {
+        if (!env.IMAGES) return json({ error: "画像ストレージ（R2）が未設定です。" }, 503, origin);
+        const key = decodeURIComponent(path.slice("/api/image/".length));
+        if (!key) return json({ error: "key がありません。" }, 400, origin);
+        const obj = await env.IMAGES.get(key);
+        if (!obj) return json({ error: "画像が見つかりません。" }, 404, origin);
+        return new Response(obj.body, {
+          headers: {
+            "Content-Type": obj.httpMetadata?.contentType || "application/octet-stream",
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Access-Control-Allow-Origin": origin || "*",
+          },
+        });
+      }
+
+      // ── POST /api/upload（画像を R2 に保存） ───────────────────────
+      if (path === "/api/upload" && request.method === "POST") {
+        if (!env.IMAGES) return json({ error: "画像ストレージ（R2）が未設定です。wrangler.toml の R2 バインディングとデプロイをご確認ください。" }, 503, origin);
+        const ct = request.headers.get("Content-Type") || "application/octet-stream";
+        if (!/^image\//.test(ct)) return json({ error: "画像ファイル（image/*）のみアップロードできます。" }, 400, origin);
+        const buf = await request.arrayBuffer();
+        if (!buf.byteLength) return json({ error: "ファイルが空です。" }, 400, origin);
+        if (buf.byteLength > 10 * 1024 * 1024) return json({ error: "画像が大きすぎます（上限 10MB）。" }, 413, origin);
+        const extMap: Record<string, string> = {
+          "image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg",
+          "image/gif": "gif", "image/webp": "webp", "image/svg+xml": "svg",
+        };
+        const ext = extMap[ct.toLowerCase()] || "img";
+        const rand = Math.random().toString(36).slice(2, 10);
+        const key = `img/${Date.now()}-${rand}.${ext}`;
+        await env.IMAGES.put(key, buf, { httpMetadata: { contentType: ct } });
+        return json({ key, path: "/api/image/" + key }, 201, origin);
+      }
+
       await fixZeroQuestionNumbers(env);
 
       // ── GET /api/universities ──────────────────────────────────────
       if (path === "/api/universities" && request.method === "GET") {
+        await ensureUniversityReadingColumn(env);
         const { results } = await env.DB.prepare(
           "SELECT * FROM universities ORDER BY name ASC"
         ).all();
         return json({ universities: results }, 200, origin);
-      }
-
-      // ── /api/university-notes（大学別の外部LLM取り込み注意点） ─────
-      if (path.startsWith("/api/university-notes")) {
-        await ensureUniversityPromptNotesTable(env);
-
-        // GET /api/university-notes
-        if (path === "/api/university-notes" && request.method === "GET") {
-          const { results } = await env.DB.prepare(`
-            SELECT u.id AS university_id, u.name AS university_name,
-                   COALESCE(n.note, '') AS note, n.updated_at
-            FROM universities u
-            LEFT JOIN university_prompt_notes n ON n.university_id = u.id
-            ORDER BY u.name ASC
-          `).all();
-          return json({ notes: results }, 200, origin);
-        }
-
-        const noteMatch = path.match(/^\/api\/university-notes\/(\d+)$/);
-
-        // GET /api/university-notes/:universityId
-        if (noteMatch && request.method === "GET") {
-          const universityId = Number(noteMatch[1]);
-          const row = await env.DB.prepare(`
-            SELECT u.id AS university_id, u.name AS university_name,
-                   COALESCE(n.note, '') AS note, n.updated_at
-            FROM universities u
-            LEFT JOIN university_prompt_notes n ON n.university_id = u.id
-            WHERE u.id = ?
-          `).bind(universityId).first();
-          if (!row) return json({ error: "University not found" }, 404, origin);
-          return json({ note: row }, 200, origin);
-        }
-
-        // PUT /api/university-notes/:universityId
-        if (noteMatch && request.method === "PUT") {
-          const universityId = Number(noteMatch[1]);
-          const exists = await env.DB.prepare("SELECT id FROM universities WHERE id = ?")
-            .bind(universityId).first<{ id: number }>();
-          if (!exists) return json({ error: "University not found" }, 404, origin);
-
-          type NoteBody = { note?: string };
-          const body = await request.json<NoteBody>();
-          const note = String(body.note ?? "");
-          await env.DB.prepare(`
-            INSERT INTO university_prompt_notes (university_id, note, updated_at)
-            VALUES (?, ?, datetime('now'))
-            ON CONFLICT(university_id) DO UPDATE SET
-              note = excluded.note,
-              updated_at = datetime('now')
-          `).bind(universityId, note).run();
-          return json({ success: true }, 200, origin);
-        }
       }
 
       // ── GET /api/config ───────────────────────────────────────────
@@ -159,11 +572,17 @@ export default {
         const sectionTypesRow = await env.DB.prepare(
           "SELECT value FROM config WHERE key = 'section_types'"
         ).first<{ value: string }>();
+        const ingestPromptRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'ingest_prompt'"
+        ).first<{ value: string }>();
+        const uniNotesRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'university_notes'"
+        ).first<{ value: string }>();
         const curYear = new Date().getFullYear();
         const defaultSchedules = ["前期","後期","一般前期","一般後期","推薦","AO","その他"];
         const defaultYears = Array.from({ length: 8 }, (_, i) => String(curYear - i));
         const defaultCategories = ["長文","文法","語彙","英作文","会話","リスニング","その他"];
-        const defaultSectionTypes = ["問題", "解答", "解説"];
+        const defaultSectionTypes = ["問題", "本文", "設問", "解答", "解説", "全訳"];
         return json({
           schedules:    schedRow ? JSON.parse(schedRow.value)  : defaultSchedules,
           year_presets: yearRow  ? JSON.parse(yearRow.value)   : defaultYears,
@@ -173,6 +592,8 @@ export default {
           site_subtitle: subtitleRow ? JSON.parse(subtitleRow.value) : undefined,
           question_categories: categoryRow ? JSON.parse(categoryRow.value) : defaultCategories,
           section_types: sectionTypesRow ? JSON.parse(sectionTypesRow.value) : defaultSectionTypes,
+          ingest_prompt: ingestPromptRow ? JSON.parse(ingestPromptRow.value) : "",
+          university_notes: uniNotesRow ? JSON.parse(uniNotesRow.value) : {},
         }, 200, origin);
       }
 
@@ -181,7 +602,7 @@ export default {
         await env.DB.exec(
           "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         );
-        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string; site_subtitle?: string; question_categories?: string[]; section_types?: string[] };
+        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string; site_subtitle?: string; question_categories?: string[]; section_types?: string[]; ingest_prompt?: string; university_notes?: Record<string, string> };
         const body = await request.json<ConfigBody>();
         const upsert = async (key: string, val: unknown) => {
           await env.DB.prepare(
@@ -196,7 +617,30 @@ export default {
         if (body.site_subtitle !== undefined) await upsert("site_subtitle", body.site_subtitle);
         if (body.question_categories !== undefined) await upsert("question_categories", body.question_categories);
         if (body.section_types !== undefined) await upsert("section_types", body.section_types);
+        if (body.ingest_prompt !== undefined) await upsert("ingest_prompt", body.ingest_prompt);
+        if (body.university_notes !== undefined) await upsert("university_notes", body.university_notes);
         return json({ success: true }, 200, origin);
+      }
+
+      // ── PUT /api/universities/:id（大学名のリネーム・よみがな更新） ───
+      const putUniMatch = path.match(/^\/api\/universities\/(\d+)$/);
+      if (putUniMatch && request.method === "PUT") {
+        await ensureUniversityReadingColumn(env);
+        const uniId = Number(putUniMatch[1]);
+        const body = await request.json<{ name?: string; reading?: string }>().catch(() => ({}));
+        const name = (body.name || "").trim();
+        const reading = (body.reading || "").trim();
+        if (!name) return json({ error: "大学名を入力してください。" }, 400, origin);
+        const cur = await env.DB.prepare("SELECT id FROM universities WHERE id = ?").bind(uniId).first<{ id: number }>();
+        if (!cur) return json({ error: "対象の大学が見つかりません。" }, 404, origin);
+        const exists = await env.DB.prepare(
+          "SELECT id FROM universities WHERE name = ? AND id != ?"
+        ).bind(name, uniId).first<{ id: number }>();
+        if (exists) return json({ error: `「${name}」は既に登録されています。` }, 400, origin);
+        await env.DB.prepare(
+          "UPDATE universities SET name = ?, reading = ? WHERE id = ?"
+        ).bind(name, reading, uniId).run();
+        return json({ success: true, id: uniId, name, reading }, 200, origin);
       }
 
       // ── DELETE /api/universities/:id ───────────────────────────────
@@ -212,21 +656,20 @@ export default {
             400, origin
           );
         }
-        await ensureUniversityPromptNotesTable(env);
-        await env.DB.prepare("DELETE FROM university_prompt_notes WHERE university_id = ?").bind(uniId).run();
         await env.DB.prepare("DELETE FROM universities WHERE id = ?").bind(uniId).run();
         return json({ success: true }, 200, origin);
       }
 
       // ── GET /api/exams ─────────────────────────────────────────────
       if (path === "/api/exams" && request.method === "GET") {
+        await ensureUniversityReadingColumn(env);
         const uname = url.searchParams.get("universityName");
         const year = url.searchParams.get("year");
         const schedule = url.searchParams.get("schedule");
 
         let sql = `
           SELECT e.id, e.year, e.schedule, e.created_at,
-                 u.name AS university_name
+                 u.name AS university_name, u.reading AS university_reading
           FROM exams e
           JOIN universities u ON e.university_id = u.id
           WHERE 1=1`;
@@ -247,7 +690,8 @@ export default {
         type QBody = { questionNumber: number; category?: string; problemText: string; answerText: string; commentaryText: string };
         type Body = { universityName: string; year: number; schedule: string; questions?: QBody[] };
         const body = await request.json<Body>();
-        const { universityName, year, schedule, questions = [] } = body;
+        const { year, schedule, questions = [] } = body;
+        const universityName = normalizeUniversityName(body.universityName);
 
         if (!universityName || !year || !schedule) {
           return json({ error: "Missing required fields: universityName, year, schedule" }, 400, origin);
@@ -281,6 +725,26 @@ export default {
         }
 
         return json({ exam: { ...exam, university_name: universityName }, questions: createdQuestions }, 201, origin);
+      }
+
+      // ── POST /api/ingest（PDF自動取り込み） ────────────────────────
+      if (path === "/api/ingest" && request.method === "POST") {
+        return handleIngest(request, env, origin);
+      }
+
+      // ── POST /api/anthropic-test（APIキー疎通確認） ────────────────
+      if (path === "/api/anthropic-test" && request.method === "POST") {
+        return handleAnthropicTest(request, origin);
+      }
+
+      // ── POST /api/replace（登録データの一括置換） ──────────────────
+      if (path === "/api/replace" && request.method === "POST") {
+        return handleBulkReplace(request, env, origin);
+      }
+
+      // ── GET /api/ingest-prompt（外部LLM用プロンプト） ──────────────
+      if (path === "/api/ingest-prompt" && request.method === "GET") {
+        return handleIngestPrompt(env, origin, url.searchParams.get("universityName") || "");
       }
 
       // ── DELETE /api/questions/:examId/:questionNumber ──────────────
@@ -323,12 +787,13 @@ export default {
 
         // 変更後の (大学・年度・方式) を確定（大学名が来ていれば取得 or 新規作成。まだ UPDATE はしない）
         let targetUniId = existing.university_id;
-        if (body.universityName) {
+        const putUniName = normalizeUniversityName(body.universityName || "");
+        if (putUniName) {
           let uni = await env.DB.prepare("SELECT id FROM universities WHERE name = ?")
-            .bind(body.universityName).first<{ id: number }>();
+            .bind(putUniName).first<{ id: number }>();
           if (!uni) uni = await env.DB.prepare(
             "INSERT INTO universities (name) VALUES (?) RETURNING id"
-          ).bind(body.universityName).first<{ id: number }>();
+          ).bind(putUniName).first<{ id: number }>();
           if (uni) targetUniId = uni.id;
         }
         const targetYear = body.year !== undefined ? body.year : existing.year;
@@ -421,7 +886,7 @@ export default {
       // 全入試問題の英文テキストを一括返却（クライアント側コーパス分析用）
       if (path === "/api/corpus" && request.method === "GET") {
         const { results } = await env.DB.prepare(`
-          SELECT q.id AS question_id, q.question_number,
+          SELECT q.id AS question_id, q.question_number, q.category,
                  q.problem_text, q.answer_text, q.commentary_text,
                  e.id AS exam_id, e.year, e.schedule,
                  u.name AS university_name

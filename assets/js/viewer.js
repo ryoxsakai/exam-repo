@@ -20,10 +20,11 @@
 
   var TAB_DEFS = {
     search: { id: "search", label: "通常検索", icon: "fa-table-list" },
+    tree:   { id: "tree",   label: "ツリー検索", icon: "fa-sitemap" },
     corpus: { id: "corpus", label: "コーパス検索", icon: "fa-language" },
     print:  { id: "print",  label: "問題印刷",   icon: "fa-print" }
   };
-  var DEFAULT_ORDER = ["search", "corpus", "print"];
+  var DEFAULT_ORDER = ["tree", "search", "corpus", "print"];
 
   // 状態
   var state = {
@@ -35,12 +36,25 @@
     config: null,
     corpus: null,
     // null = 制限なし。配列なら該当値のみ対象（値は文字列で保持）
-    corpusFilter: { universities: null, years: null, schedules: null, qnums: null, categories: null },
+    // null = 制限なし。配列なら該当値のみ対象（値は文字列で保持）。sections は対象セクション種別。
+    corpusFilter: { universities: null, years: null, schedules: null, categories: null, sections: ["問題", "本文", "設問"] },
     levelStats: null,
     levelListName: "",
+    covOffList: null,
+    covListName: "",
     printExam: null,     // 印刷タブで構築した {year,university_name,schedule,questions[]}
+    printSel: { uni: "", year: "", sched: "" },  // 印刷タブで選んだ大学/年度/方式
+    printTreeLoaded: false,
+    treeLoaded: false,   // ツリー検索を読み込み済みか
+    uniReading: {},      // 大学名 → よみがな（五十音ソート用）
     charts: {}
   };
+
+  // 大学名の並び替え比較（よみがな優先 → 名前。ともに ja ロケール）
+  function uniCmp(a, b) {
+    var ra = state.uniReading[a] || a, rb = state.uniReading[b] || b;
+    return ra.localeCompare(rb, "ja") || a.localeCompare(b, "ja");
+  }
 
   /* ---------------- 初期化 ---------------- */
   function init() {
@@ -52,18 +66,21 @@
 
     // ナビリンクを独自ドメイン基準に（リンク切れ防止）
     UI.applyDomainLinks();
+    // 画像記法 ![](/api/image/..) の解決基準を Worker URL に
+    if (Markup.setImageBase) Markup.setImageBase(Store.getWorkerUrl() || "");
 
     // タブ構築
     var order = Store.getTabOrder("main", DEFAULT_ORDER);
     var active = Store.getLastTab("main");
     if (DEFAULT_ORDER.indexOf(active) < 0) active = order[0];
     UI.buildTabs({
-      tabsEl: el("main-tabs"), order: order, defs: TAB_DEFS, active: active, page: "main",
-      onChange: function (id) { Store.setLastTab("main", id); if (id === "corpus") refreshCorpusLists(); if (id === "print") loadPrintPreview(); }
+      tabsEl: el("main-tabs"), order: order, defs: TAB_DEFS, active: active, page: "main", iconOnly: true,
+      onChange: function (id) { Store.setLastTab("main", id); if (id === "corpus") refreshCorpusLists(); if (id === "print") openPrintTab(); if (id === "tree") loadTree(); }
     });
     UI.setActiveTab(el("main-tabs"), active);
     if (active === "corpus") refreshCorpusLists(); else ensureCorpusControls();
-    if (active === "print") loadPrintPreview();
+    if (active === "print") openPrintTab();
+    if (active === "tree") loadTree();
 
     // モーダル配線
     UI.wireModal(el("search-modal"));
@@ -100,10 +117,11 @@
       if (state.nav.examId != null) openExam(state.nav.examId, null);
     });
 
+    // ツリー検索 再読み込み
+    var treeRefresh = el("btn-tree-refresh");
+    if (treeRefresh) treeRefresh.addEventListener("click", function () { loadTree(true); });
+
     // 問題印刷タブ
-    ["pr-year", "pr-university", "pr-schedule"].forEach(function (id) {
-      el(id).addEventListener("change", loadPrintPreview);
-    });
     el("pr-cover").addEventListener("change", renderPrintPreview);
     el("pr-fontsize").value = Store.getPrintFontSize();
     el("pr-fontsize").addEventListener("change", function () {
@@ -169,9 +187,6 @@
       fillSelect(el("sm-schedule"), cfg.schedules || [], "指定なし");
       fillSelect(el("sm-university"), unis.map(function (u) { return u.name; }), "指定なし");
       fillSelect(el("sm-category"), cfg.question_categories || [], "指定なし");
-      fillSelect(el("pr-year"), cfg.year_presets || [], "選択してください");
-      fillSelect(el("pr-schedule"), cfg.schedules || [], "選択してください");
-      fillSelect(el("pr-university"), unis.map(function (u) { return u.name; }), "選択してください");
     });
   }
 
@@ -281,8 +296,8 @@
       { key: "year", label: "年度" },
       { key: "university_name", label: "大学名" },
       { key: "schedule", label: "方式" },
-      { key: "question_number", label: "大問" },
-      { key: "category", label: "種別" }
+      { key: "question_number", label: "大問番号" },
+      { key: "category", label: "問題種別" }
     ];
     if (showOcc) cols.push({ key: "occurrences", label: "出現回数" });
 
@@ -296,13 +311,13 @@
     html += '<th style="text-align:right">表示</th></tr></thead><tbody>';
     rows.forEach(function (r) {
       html += "<tr>" +
-        '<td><span class="pill em">' + esc(r.year) + "</span></td>" +
-        "<td><strong>" + esc(r.university_name) + "</strong></td>" +
-        "<td>" + esc(r.schedule) + "</td>" +
-        "<td>大問" + esc(r.question_number) + "</td>" +
-        "<td>" + esc(r.category) + "</td>" +
-        (showOcc ? '<td><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
-        '<td class="row-actions"><button class="icon-btn" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
+        '<td data-label="年度"><span class="pill em">' + esc(r.year) + "</span></td>" +
+        '<td data-label="大学名"><strong>' + esc(r.university_name) + "</strong></td>" +
+        '<td data-label="方式">' + esc(r.schedule) + "</td>" +
+        '<td data-label="大問番号">大問' + esc(r.question_number) + "</td>" +
+        '<td data-label="問題種別">' + (r.category ? esc(r.category) : '<span class="hint">—</span>') + "</td>" +
+        (showOcc ? '<td data-label="出現回数"><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
+        '<td class="row-actions"><button class="icon-btn sm" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
         "</tr>";
     });
     html += "</tbody></table></div>";
@@ -341,6 +356,131 @@
     nextBtn.disabled = (idx < 0 || idx >= total - 1);
     el("exam-nav-label").textContent = (idx >= 0 && total > 0) ? (idx + 1) + " / " + total : "";
     el("exam-show-all").style.display = (state.nav.qnum != null) ? "" : "none";
+  }
+
+  /* ---------------- ツリー検索（大学→年度→方式→大問） ---------------- */
+  function loadTree(force) {
+    var box = el("tree-area");
+    if (!box) return;
+    if (!Store.getWorkerUrl()) { box.innerHTML = noWorkerHtml(); return; }
+    if (state.treeLoaded && !force) return;
+    box.innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
+    Api.getExams({}).then(function (data) {
+      var exams = data.exams || [];
+      if (!exams.length) {
+        box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>登録された入試問題がありません。</div></div>';
+        return;
+      }
+      box.innerHTML = renderTree(buildTreeData(exams));
+      wireTree();
+      state.treeLoaded = true;
+    }).catch(function (e) {
+      box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div></div>";
+    });
+  }
+
+  // exams[] → { uniName: { year: { schedule: [examId,...] } } }
+  function buildTreeData(exams) {
+    var unis = {};
+    exams.forEach(function (e) {
+      var u = e.university_name || "（大学名なし）";
+      var y = String(e.year);
+      var s = e.schedule || "（方式なし）";
+      if (e.university_reading) state.uniReading[u] = e.university_reading;
+      if (!unis[u]) unis[u] = {};
+      if (!unis[u][y]) unis[u][y] = {};
+      if (!unis[u][y][s]) unis[u][y][s] = [];
+      unis[u][y][s].push(e.id);
+    });
+    return unis;
+  }
+
+  function schedOrder(s) {
+    var cfg = (state.config && state.config.schedules) || [];
+    var i = cfg.indexOf(s);
+    return i < 0 ? 999 : i;
+  }
+
+  function treeRow(lvl, icon, label, data) {
+    var attrs = "";
+    if (data) Object.keys(data).forEach(function (k) { attrs += " data-" + k + '="' + esc(String(data[k])) + '"'; });
+    return '<button type="button" class="tree-row tree-row-' + lvl + '"' + attrs + '>' +
+      '<i class="fa-solid fa-chevron-right tree-chev"></i>' +
+      '<i class="fa-solid ' + icon + ' tree-ic"></i>' +
+      '<span class="tree-label">' + label + "</span></button>";
+  }
+
+  function renderTree(unis) {
+    var uniNames = Object.keys(unis).sort(uniCmp);
+    var html = '<div class="tree card">';
+    uniNames.forEach(function (u) {
+      html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
+      Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
+        html += '<div class="tree-node">' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
+        Object.keys(unis[u][y]).sort(function (a, b) { return (schedOrder(a) - schedOrder(b)) || a.localeCompare(b, "ja"); }).forEach(function (s) {
+          html += '<div class="tree-node">' +
+            treeRow("sched", "fa-layer-group", esc(s), { exams: unis[u][y][s].join(","), uni: u, year: y, sched: s }) +
+            '<div class="tree-children" hidden data-loaded="0"></div></div>';
+        });
+        html += "</div></div>";
+      });
+      html += "</div></div>";
+    });
+    html += "</div>";
+    return html;
+  }
+
+  function wireTree() {
+    $all(".tree-row", el("tree-area")).forEach(function (row) {
+      row.addEventListener("click", function () {
+        var children = row.nextElementSibling;
+        if (!children || !children.classList.contains("tree-children")) return;
+        var willOpen = children.hidden;
+        children.hidden = !willOpen;
+        row.classList.toggle("open", willOpen);
+        if (willOpen && row.classList.contains("tree-row-sched") && children.getAttribute("data-loaded") === "0") {
+          loadTreeQuestions(row, children);
+        }
+      });
+    });
+  }
+
+  // 方式ノードを開いたとき、その配下の大問を遅延読み込み
+  function loadTreeQuestions(row, children) {
+    children.setAttribute("data-loaded", "1");
+    children.innerHTML = '<div class="tree-msg"><span class="spinner"></span> 読み込み中…</div>';
+    var ids = (row.getAttribute("data-exams") || "").split(",").filter(Boolean).map(Number);
+    Promise.all(ids.map(function (id) { return Api.getExam(id).catch(function () { return null; }); })).then(function (results) {
+      var rows = [];
+      results.forEach(function (r) {
+        if (!r || !r.exam) return;
+        var ex = r.exam;
+        (ex.questions || []).slice().sort(function (a, b) {
+          return (Number(a.question_number) || 0) - (Number(b.question_number) || 0);
+        }).forEach(function (q) {
+          rows.push({ exam_id: ex.id, question_number: q.question_number, university_name: ex.university_name, year: ex.year, schedule: ex.schedule, category: q.category });
+        });
+      });
+      if (!rows.length) { children.innerHTML = '<div class="tree-msg">大問が登録されていません。</div>'; return; }
+      var html = "";
+      rows.forEach(function (r, i) {
+        html += '<button type="button" class="tree-row tree-row-q" data-eid="' + r.exam_id + '" data-q="' + esc(String(r.question_number)) + '" data-i="' + i + '">' +
+          '<i class="fa-solid fa-file-lines tree-ic"></i>' +
+          '<span class="tree-label">大問' + esc(String(r.question_number)) +
+          (r.category ? ' <span class="tree-cat">' + esc(r.category) + "</span>" : "") +
+          "</span></button>";
+      });
+      children.innerHTML = html;
+      children._rows = rows;
+      $all(".tree-row-q", children).forEach(function (b) {
+        b.addEventListener("click", function () {
+          state.sortedRows = children._rows;  // 前/次ナビをこの方式内に限定
+          openExam(Number(b.getAttribute("data-eid")), Number(b.getAttribute("data-q")));
+        });
+      });
+    }).catch(function (e) {
+      children.innerHTML = '<div class="tree-msg">' + esc(e.message) + "</div>";
+    });
   }
 
   /* ---------------- 入試問題 表示モーダル ---------------- */
@@ -395,6 +535,7 @@
       el("exam-modal-body").innerHTML = '<div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div>";
     });
   }
+
   // 文字サイズ切替（小→中→大の循環。localStorage に保存し印刷にも反映）
   var FS_ORDER = ["xs", "sm", "md", "lg", "xl"];
   var FS_LABEL = { xs: "極小", sm: "小", md: "中", lg: "大", xl: "極大" };
@@ -483,15 +624,18 @@
     } catch (e) { return false; }
   }
 
+  // 本文・和訳・全訳セクション（段落番号 [1] と字下げを有効にする）
+  function isBodySection(label) { return label === "本文" || /全訳|和訳|訳/.test(label); }
   function renderField(label, icon, text) {
-    var r = Markup.render(text);
+    var body = isBodySection(label);
+    var r = Markup.render(text, { paraNum: body });
     var checked = Store.isPrintSection(label) ? " checked" : "";
     return '<div class="exam-field" data-sectype="' + esc(label) + '" style="margin-bottom:14px">' +
       '<div class="exam-section-title">' + esc(label) +
       '<label class="print-check" title="チェックした項目のみ印刷されます">' +
       '<input type="checkbox" data-printsec="' + esc(label) + '"' + checked + '><span>印刷</span></label>' +
       "</div>" +
-      '<div class="exam-doc">' + r.html + "</div></div>";
+      '<div class="exam-doc' + (body ? "" : " no-indent") + '">' + r.html + "</div></div>";
   }
 
   /* ---------------- 問題印刷タブ ---------------- */
@@ -509,8 +653,9 @@
   }
 
   function printField(label, text) {
+    var body = isBodySection(label);
     return '<div class="print-field"><div class="print-field-label">' + esc(label) + "</div>" +
-      '<div class="exam-doc">' + Markup.render(text).html + "</div></div>";
+      '<div class="exam-doc' + (body ? "" : " no-indent") + '">' + Markup.render(text, { paraNum: body }).html + "</div></div>";
   }
 
   // 印刷ドキュメントの HTML を構築（表紙 → 問題面 → 解答面）
@@ -581,13 +726,82 @@
     });
   }
 
+  // 印刷タブを開いたとき：ツリー（大学→年度→方式）とプレビューを用意
+  function openPrintTab() {
+    loadPrintTree();
+    loadPrintPreview();
+  }
+
+  // 印刷タブのツリー（大学→年度→方式まで。方式クリックで全大問プレビュー）
+  function loadPrintTree(force) {
+    var box = el("pr-tree");
+    if (!box) return;
+    if (!Store.getWorkerUrl()) { box.innerHTML = ""; return; }
+    if (state.printTreeLoaded && !force) return;
+    box.innerHTML = '<div class="tree-msg"><span class="spinner"></span> 読み込み中…</div>';
+    Api.getExams({}).then(function (data) {
+      var exams = data.exams || [];
+      if (!exams.length) { box.innerHTML = '<div class="tree-msg">登録された入試問題がありません。</div>'; return; }
+      var unis = {};
+      exams.forEach(function (e) {
+        var u = e.university_name || "（大学名なし）", y = String(e.year), s = e.schedule || "（方式なし）";
+        if (e.university_reading) state.uniReading[u] = e.university_reading;
+        if (!unis[u]) unis[u] = {};
+        if (!unis[u][y]) unis[u][y] = {};
+        unis[u][y][s] = true;
+      });
+      var html = '<div class="tree">';
+      Object.keys(unis).sort(uniCmp).forEach(function (u) {
+        html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
+        Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
+          html += '<div class="tree-node">' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
+          Object.keys(unis[u][y]).sort(function (a, b) { return (schedOrder(a) - schedOrder(b)) || a.localeCompare(b, "ja"); }).forEach(function (s) {
+            var picked = (state.printSel.uni === u && state.printSel.year === y && state.printSel.sched === s);
+            html += '<button type="button" class="tree-row tree-row-sched tree-row-pick' + (picked ? " selected" : "") + '"' +
+              ' data-uni="' + esc(u) + '" data-year="' + esc(y) + '" data-sched="' + esc(s) + '">' +
+              '<i class="fa-solid fa-layer-group tree-ic"></i><span class="tree-label">' + esc(s) + "</span></button>";
+          });
+          html += "</div></div>";
+        });
+        html += "</div></div>";
+      });
+      html += "</div>";
+      box.innerHTML = html;
+      state.printTreeLoaded = true;
+      wirePrintTree();
+    }).catch(function (e) {
+      box.innerHTML = '<div class="tree-msg">' + esc(e.message) + "</div>";
+    });
+  }
+
+  function wirePrintTree() {
+    var box = el("pr-tree");
+    $all(".tree-row", box).forEach(function (row) {
+      row.addEventListener("click", function () {
+        if (row.classList.contains("tree-row-pick")) {
+          $all(".tree-row-pick", box).forEach(function (x) { x.classList.remove("selected"); });
+          row.classList.add("selected");
+          state.printSel = { uni: row.getAttribute("data-uni"), year: row.getAttribute("data-year"), sched: row.getAttribute("data-sched") };
+          loadPrintPreview();
+          return;
+        }
+        var children = row.nextElementSibling;
+        if (!children || !children.classList.contains("tree-children")) return;
+        var willOpen = children.hidden;
+        children.hidden = !willOpen;
+        row.classList.toggle("open", willOpen);
+      });
+    });
+  }
+
   function loadPrintPreview() {
     if (!Store.getWorkerUrl()) { el("print-preview").innerHTML = noWorkerHtml(); return; }
-    var year = el("pr-year").value, uni = el("pr-university").value, sched = el("pr-schedule").value;
+    var sel = state.printSel || {};
+    var year = sel.year, uni = sel.uni, sched = sel.sched;
     if (!year || !uni || !sched) {
       state.printExam = null;
       renderPrintSectionControls();
-      el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-print ic"></i>年度・大学・方式をすべて選択してください。</div></div>';
+      el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-print ic"></i>上のツリーから 大学 → 年度 → 方式 を選んでください。</div></div>';
       return;
     }
     el("print-preview").innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
@@ -634,9 +848,39 @@
     { key: "universities", label: "大学", field: "university_name" },
     { key: "years",        label: "年度", field: "year" },
     { key: "schedules",    label: "方式", field: "schedule" },
-    { key: "qnums",        label: "大問", field: "question_number" },
-    { key: "categories",   label: "種別", field: "category" }
+    { key: "categories",   label: "種別", field: "category" },
+    { key: "sections",     label: "セクション", field: "__section__" }
   ];
+
+  // 全問題に含まれるセクション種別を収集（問題・本文・設問・解答・解説・全訳 を優先順に）
+  function corpusSectionTypes(qs) {
+    var set = [];
+    qs.forEach(function (q) {
+      var types = Markup.parseSections(q.problem_text || "").map(function (s) { return s.type; });
+      if (q.answer_text && q.answer_text.trim() && types.indexOf("解答") < 0) types.push("解答");
+      if (q.commentary_text && q.commentary_text.trim() && types.indexOf("解説") < 0) types.push("解説");
+      types.forEach(function (t) { if (set.indexOf(t) < 0) set.push(t); });
+    });
+    var order = ["問題", "本文", "設問", "解答", "解説", "全訳"];
+    set.sort(function (a, b) {
+      var ia = order.indexOf(a), ib = order.indexOf(b);
+      if (ia < 0) ia = 999; if (ib < 0) ib = 999;
+      return ia - ib || a.localeCompare(b, "ja");
+    });
+    return set;
+  }
+
+  // 1問題の選択セクションだけを連結して記法除去（secSet=null は全セクション）
+  function questionSectionText(q, secSet) {
+    var sections = Markup.parseSections(q.problem_text || "");
+    var hasAns = sections.some(function (s) { return s.type === "解答"; });
+    var hasCom = sections.some(function (s) { return s.type === "解説"; });
+    if (q.answer_text && q.answer_text.trim() && !hasAns) sections.push({ type: "解答", text: q.answer_text });
+    if (q.commentary_text && q.commentary_text.trim() && !hasCom) sections.push({ type: "解説", text: q.commentary_text });
+    var parts = [];
+    sections.forEach(function (s) { if (!secSet || secSet.indexOf(s.type) >= 0) parts.push(s.text); });
+    return Markup.strip(parts.join("\n"));
+  }
 
   function applyCorpusFilter(qs) {
     var f = state.corpusFilter;
@@ -644,7 +888,6 @@
       if (f.universities && f.universities.indexOf(String(q.university_name)) < 0) return false;
       if (f.years && f.years.indexOf(String(q.year)) < 0) return false;
       if (f.schedules && f.schedules.indexOf(String(q.schedule)) < 0) return false;
-      if (f.qnums && f.qnums.indexOf(String(q.question_number)) < 0) return false;
       if (f.categories && f.categories.indexOf(String(q.category || "")) < 0) return false;
       return true;
     });
@@ -652,7 +895,6 @@
 
   function cfLabel(field, v) {
     if (field === "year") return v + "年";
-    if (field === "question_number") return "大問" + v;
     return v;
   }
 
@@ -678,13 +920,16 @@
     var html = "";
     CF_GROUPS.forEach(function (g) {
       var vals = [];
-      qs.forEach(function (q) {
-        var v = (q[g.field] != null && q[g.field] !== "") ? String(q[g.field]) : null;
-        if (v !== null && vals.indexOf(v) < 0) vals.push(v);
-      });
-      if (g.field === "year") vals.sort(function (a, b) { return Number(b) - Number(a); });
-      else if (g.field === "question_number") vals.sort(function (a, b) { return Number(a) - Number(b); });
-      else vals.sort();
+      if (g.field === "__section__") {
+        vals = corpusSectionTypes(qs);
+      } else {
+        qs.forEach(function (q) {
+          var v = (q[g.field] != null && q[g.field] !== "") ? String(q[g.field]) : null;
+          if (v !== null && vals.indexOf(v) < 0) vals.push(v);
+        });
+        if (g.field === "year") vals.sort(function (a, b) { return Number(b) - Number(a); });
+        else vals.sort();
+      }
       var sel = state.corpusFilter[g.key];
       html += '<div class="cf-group"><div class="cf-group-head">' +
         '<span class="field-label">' + esc(g.label) + "</span>" +
@@ -749,14 +994,14 @@
     });
     if (sw.querySelector('option[value="0"]') && swSel === "") sw.value = "0"; else sw.value = swSel;
 
-    // 語彙リスト（カバー率。localStorage）
+    // 語彙リスト（カバー率。内蔵 Target1900＋localStorage。既定は内蔵）
     var vc = el("corpus-vocab");
     var vcSel = vc.value;
     vc.innerHTML = '<option value="">なし</option>';
     Store.getVocabLists().forEach(function (l, i) {
       var o = create("option"); o.value = String(i); o.textContent = l.name + "（" + l.words.length + "語）"; vc.appendChild(o);
     });
-    vc.value = vcSel;
+    if (vc.querySelector('option[value="0"]') && vcSel === "") vc.value = "0"; else vc.value = vcSel;
 
     // レベル別語彙リスト（CEFR分析。Worker 内蔵＋共有リスト。既定は内蔵）
     var lv = el("corpus-level");
@@ -792,16 +1037,16 @@
       el("corpus-results").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-filter ic"></i>絞り込み条件に該当する入試問題がありません。「対象を絞り込み」から条件を見直してください。</div></div>';
       return;
     }
-    // ドキュメント（KWIC用ラベル付き）と全文
+    // ドキュメント（KWIC用ラベル付き）と全文。選択セクションのみ対象。
+    var secSet = state.corpusFilter.sections;  // 配列 or null（全セクション）
     var docs = qs.map(function (q) {
-      var text = Markup.strip([q.problem_text, q.answer_text, q.commentary_text].join("\n"));
-      return { text: text, label: q.year + " " + q.university_name + " 大問" + q.question_number };
-    });
+      return { text: questionSectionText(q, secSet), label: q.year + " " + q.university_name + " 大問" + q.question_number };
+    }).filter(function (d) { return d.text.trim(); });
     var fullText = docs.map(function (d) { return d.text; }).join("\n");
     var tokens = Corpus.tokenize(fullText);
 
-    if (!tokens.length) {
-      el("corpus-results").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>英文テキストが見つかりませんでした。問題を登録してください。</div></div>';
+    if (!docs.length || !tokens.length) {
+      el("corpus-results").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>選択したセクションに英文テキストが見つかりませんでした。「対象を絞り込み」のセクション選択を見直してください。</div></div>';
       return;
     }
 
@@ -874,21 +1119,27 @@
 
     // --- 語彙カバー率 ---
     if (vocab) {
-      var cov = Corpus.coverage(tokens, Corpus.toSet(vocab.words));
-      html += '<div class="card"><div class="card-head"><h3><i class="fa-solid fa-list-check ic"></i> 語彙カバー率: ' + esc(vocab.name) + "</h3></div>" +
+      var covTokens = stopSet ? tokens.filter(function (w) { return !stopSet[w]; }) : tokens;
+      var cov = Corpus.coverage(covTokens, Corpus.toSet(vocab.words));
+      state.covOffList = cov.offList;
+      state.covListName = vocab.name;
+      html += '<div class="card"><div class="card-head"><h3><i class="fa-solid fa-list-check ic"></i> 語彙カバー率: ' + esc(vocab.name) +
+        (stopSet ? "（ストップワード除外）" : "") + '</h3><span class="spacer"></span><span class="hint">タップでその他の語一覧</span></div>' +
         '<div class="grid-2"><div><canvas id="cov-chart" height="160"></canvas></div>' +
         '<div class="stat-grid">' +
         stat((cov.tokenCoverage * 100).toFixed(1) + "%", "延べ語カバー率") +
         stat((cov.typeCoverage * 100).toFixed(1) + "%", "異なり語カバー率") +
+        stat(cov.tokenHead, "見出し語 (延べ)") +
+        stat(cov.tokenDerived, "派生語 (延べ)") +
         stat(cov.tokenInList, "リスト内 (延べ)") +
-        stat(cov.offList.length, "リスト外 異なり語") +
+        stat(cov.offList.length, "その他 異なり語") +
         "</div></div>";
-      html += '<div class="table-wrap" style="margin-top:14px"><table class="data freq-table"><thead><tr>' +
-        "<th>リスト外の語（頻度順）</th><th>頻度</th></tr></thead><tbody>";
-      cov.offList.slice(0, 30).forEach(function (o) {
-        html += "<tr><td>" + esc(o.word) + "</td><td class='num'>" + o.count + "</td></tr>";
-      });
-      html += "</tbody></table></div></div>";
+      html += '<div class="table-wrap" style="margin-top:14px"><table class="data freq-table"><tbody>' +
+        '<tr class="level-row" data-covoff="1" style="cursor:pointer">' +
+        '<td><span class="level-badge" style="background:#cbd5e1;color:#334155">その他（リスト外）</span></td>' +
+        "<td class='num'>" + cov.offList.length + " 異なり語</td>" +
+        '<td class="hint"><i class="fa-solid fa-arrow-up-right-from-square"></i> タップで全一覧</td>' +
+        "</tr></tbody></table></div></div>";
     }
 
     // --- 語彙レベル分析（CEFR） ---
@@ -905,13 +1156,31 @@
     // チャート描画
     destroyCharts();
     drawFreqChart(top);
-    if (vocab) drawCovChart(Corpus.coverage(tokens, Corpus.toSet(vocab.words)));
+    if (vocab) drawCovChart(Corpus.coverage(covTokens, Corpus.toSet(vocab.words)));
     if (lvStats) drawLevelChart(lvStats);
 
     // レベル詳細モーダルを開く（行タップ）
     $all("[data-level]", el("corpus-results")).forEach(function (b) {
       b.addEventListener("click", function () { openLevelDetail(b.getAttribute("data-level")); });
     });
+    // 語彙カバー率「その他（リスト外）」一覧をモーダルで開く
+    $all("[data-covoff]", el("corpus-results")).forEach(function (b) {
+      b.addEventListener("click", openCovOffDetail);
+    });
+  }
+
+  function openCovOffDetail() {
+    var words = state.covOffList || [];
+    el("level-detail-title").innerHTML = '<span class="level-badge" style="background:#cbd5e1;color:#334155">その他（リスト外）</span> ' +
+      words.length + " 語（" + esc(state.covListName || "") + "）";
+    var body = '<div class="table-wrap"><table class="data freq-table"><thead><tr><th>#</th><th>語</th><th>頻度</th></tr></thead><tbody>';
+    if (!words.length) body += '<tr><td colspan="3" class="hint">該当する語はありません。</td></tr>';
+    words.forEach(function (w, i) {
+      body += "<tr><td class='num'>" + (i + 1) + "</td><td><strong>" + esc(w.word) + "</strong></td><td class='num'>" + w.count + "</td></tr>";
+    });
+    body += "</tbody></table></div>";
+    el("level-detail-body").innerHTML = body;
+    UI.openModal(el("level-detail-modal"));
   }
 
   // CEFR レベルごとの色（A1=易→C2=難）
@@ -1022,9 +1291,9 @@
     var ctx = el("cov-chart"); if (!ctx || !global.Chart) return;
     state.charts.cov = new Chart(ctx, {
       type: "doughnut",
-      data: { labels: ["リスト内", "リスト外"],
-        datasets: [{ data: [cov.tokenInList, cov.tokenTotal - cov.tokenInList],
-          backgroundColor: ["rgba(5,150,105,.8)", "rgba(37,99,235,.25)"] }] },
+      data: { labels: ["見出し語", "派生語", "その他"],
+        datasets: [{ data: [cov.tokenHead, cov.tokenDerived, cov.tokenTotal - cov.tokenInList],
+          backgroundColor: ["rgba(5,150,105,.85)", "rgba(16,185,129,.45)", "rgba(37,99,235,.2)"] }] },
       options: { plugins: { legend: { position: "bottom" } } }
     });
   }
