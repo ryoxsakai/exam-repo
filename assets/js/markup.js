@@ -295,8 +295,9 @@
         line = line.replace(/^\s*@@\s?/, "");
         trimmed = line.trim();
       }
-      // 字下げ：本文・和訳ではバッジの無い段落先頭を字下げ。それ以外は英語大文字始まりのみ。
-      var indent = !noIndent && paraStart && (paraNum ? !badgeNum : /^[A-Z]/.test(trimmed));
+      // 字下げ：本文・和訳ではバッジの無い「英字始まり」の段落先頭のみ字下げ
+      // （日本語の指示文などは左寄せにする）。それ以外のセクションは英語大文字始まりのみ。
+      var indent = !noIndent && paraStart && (paraNum ? (!badgeNum && /^[A-Za-z]/.test(trimmed)) : /^[A-Z]/.test(trimmed));
       var prefix = badgeNum ? '<span class="para-badge">' + esc(badgeNum) + "</span>" : "";
       html += '<span class="blk' + (indent ? " indent" : "") + '">' + prefix + inline(line, footnotes) + "</span>";
       paraStart = false;
