@@ -829,10 +829,49 @@
     });
     el("ext-clear").addEventListener("click", function () { el("ext-json").value = ""; el("ext-status").innerHTML = ""; });
     el("ext-load").addEventListener("click", loadExtJson);
+    // ファイル選択（.json / .txt）で読み込み
+    if (el("ext-file") && el("ext-file-btn")) {
+      el("ext-file-btn").addEventListener("click", function () { el("ext-file").click(); });
+      el("ext-file").addEventListener("change", function () {
+        var f = this.files && this.files[0];
+        if (f) readExtFile(f);
+        this.value = "";  // 同じファイルを連続で選べるようにリセット
+      });
+    }
+    // textarea へのドラッグ＆ドロップで読み込み
+    var dz = el("ext-json");
+    if (dz) {
+      ["dragenter", "dragover"].forEach(function (ev) {
+        dz.addEventListener(ev, function (e) { e.preventDefault(); e.stopPropagation(); dz.classList.add("dragover"); });
+      });
+      ["dragleave", "dragend", "drop"].forEach(function (ev) {
+        dz.addEventListener(ev, function (e) { e.preventDefault(); e.stopPropagation(); dz.classList.remove("dragover"); });
+      });
+      dz.addEventListener("drop", function (e) {
+        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) readExtFile(f);
+      });
+    }
     // 大学選択でプロンプトを取り直し（その大学の注意点を反映）
     if (el("ext-uni-select")) {
       el("ext-uni-select").addEventListener("change", function () { loadExtPrompt(true); });
     }
+  }
+  // .json / .txt ファイルをテキストとして読み、貼り付け欄に入れて読み込む
+  function readExtFile(file) {
+    var name = String(file.name || "").toLowerCase();
+    if (!/\.(json|txt)$/.test(name) && file.type && !/json|text/.test(file.type)) {
+      toast(".json または .txt ファイルを選んでください", "err");
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+      el("ext-json").value = String(reader.result || "");
+      el("ext-status").innerHTML = '<span class="hint"><i class="fa-solid fa-file-import"></i> ' + esc(file.name) + " を読み込みました</span>";
+      loadExtJson();
+    };
+    reader.onerror = function () { toast("ファイルの読み込みに失敗しました", "err"); };
+    reader.readAsText(file);
   }
   // 外部LLM用プロンプトを Worker から取得して表示（初回のみ）
   function loadExtPrompt(force) {

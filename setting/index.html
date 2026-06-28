@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="../assets/css/main.css?v=20260626c" />
+  <link rel="stylesheet" href="../assets/css/main.css?v=20260628a" />
 </head>
 <body>
   <header class="topbar">
@@ -353,15 +353,21 @@
       </div>
 
       <div class="card">
-        <div class="card-head"><h3><i class="fa-solid fa-paste ic"></i> ② 結果のJSONを貼り付け</h3></div>
-        <textarea id="ext-json" rows="10" style="width:100%;font-size:12.5px" placeholder='{"universityName":"...","year":2024,"schedule":"...","questions":[ ... ]}'></textarea>
+        <div class="card-head">
+          <h3><i class="fa-solid fa-paste ic"></i> ② 結果のJSONを貼り付け / ファイルで読み込み</h3>
+          <span class="spacer"></span>
+          <button class="btn sm" id="ext-file-btn"><i class="fa-solid fa-file-arrow-up"></i> ファイルを選択（.json / .txt）</button>
+          <input type="file" id="ext-file" accept=".json,.txt,application/json,text/plain" style="display:none" />
+        </div>
+        <textarea id="ext-json" rows="10" style="width:100%;font-size:12.5px" placeholder='ここに JSON を貼り付け、または .json / .txt ファイルをドラッグ＆ドロップ
+{"universityName":"...","year":2024,"schedule":"...","questions":[ ... ]}'></textarea>
         <div class="toolbar" style="margin-top:12px">
           <button class="btn primary" id="ext-load"><i class="fa-solid fa-file-import"></i> 読み込む（編集画面へ）</button>
           <button class="btn ghost sm" id="ext-clear"><i class="fa-solid fa-eraser"></i> クリア</button>
           <span class="spacer"></span>
           <span class="hint" id="ext-status"></span>
         </div>
-        <p class="hint" style="margin-top:8px">※ コードブロック（```）が付いていても自動で除去します。読み込み後は「PDF取り込み」タブの編集画面で確認・修正して登録します。</p>
+        <p class="hint" style="margin-top:8px">※ JSON の貼り付けのほか、<strong>.json / .txt ファイルを上のボックスにドラッグ＆ドロップ</strong>、または「ファイルを選択」から読み込めます（読み込むと自動で編集画面へ進みます）。コードブロック（```）が付いていても自動で除去します。読み込み後は「PDF取り込み」タブの編集画面で確認・修正して登録します。</p>
       </div>
     </section>
 
@@ -568,6 +574,6 @@
   <script src="../assets/js/api.js?v=20260624g"></script>
   <script src="../assets/js/ui.js?v=20260612z"></script>
   <script src="../assets/js/markup.js?v=20260627a"></script>
-  <script src="../assets/js/settings.js?v=20260626e"></script>
+  <script src="../assets/js/settings.js?v=20260628a"></script>
 </body>
 </html>

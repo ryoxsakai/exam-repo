@@ -501,6 +501,8 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
 .exam-doc .cite { display: block; text-align: right; color: #94a3b8; font-size: .8em; text-indent: 0; }
 /* 本文の字数表示（注釈の下・右寄せ・グレー・小） */
 .exam-doc .word-count { text-align: right; color: #94a3b8; font-size: .8em; text-indent: 0; margin-top: .5em; }
+/* 外部LLM取り込み: JSON 貼り付け欄へのドラッグ＆ドロップ中のハイライト */
+#ext-json.dragover { border-color: var(--emerald); box-shadow: 0 0 0 3px rgba(0,180,216,.18); background: var(--emerald-soft); }
 /* 斜字（イタリック） */
 .exam-doc em { font-style: italic; }
 mark.hl { padding: .08em .22em; border-radius: .25em; }
