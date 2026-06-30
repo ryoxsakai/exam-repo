@@ -49,6 +49,7 @@
     covListName: "",
     printExam: null,     // 印刷タブで構築した {year,university_name,schedule,questions[]}
     printSel: { uni: "", year: "", sched: "" },  // 印刷タブで選んだ大学/年度/方式
+    printQSel: {},       // 印刷タブで選んだ大問（key=question_number文字列, value=真偽。未設定は印刷対象）
     printTreeLoaded: false,
     treeLoaded: false,   // ツリー検索を読み込み済みか
     uniReading: {},      // 大学名 → よみがな（五十音ソート用）
@@ -677,6 +678,11 @@
   }
 
   // 印刷ドキュメントの HTML を構築（表紙 → 問題面 → 解答面）
+  // 大問が印刷対象か（未設定＝デフォルトで対象。明示的に false のときのみ除外）
+  function isPrintQ(qnum) {
+    return state.printQSel[String(qnum)] !== false;
+  }
+
   function buildPrintHtml(ex, opts) {
     var html = "";
     if (opts.cover) {
@@ -687,7 +693,7 @@
     }
     var qs = (ex.questions || []).slice().sort(function (a, b) {
       return (Number(a.question_number) || 0) - (Number(b.question_number) || 0);
-    });
+    }).filter(function (q) { return isPrintQ(q.question_number); });
     function part(title, answerSide) {
       var inner = "";
       qs.forEach(function (q) {
@@ -734,8 +740,29 @@
       });
       return h + "</div></div>";
     }
-    var html = group("問題面に印刷するセクション", problem) + group("解答面に印刷するセクション", answer);
+    // 印刷する大問の選択（セクション選択の上に置く）
+    function qgroup() {
+      var qs = (state.printExam.questions || []).slice().sort(function (a, b) {
+        return (Number(a.question_number) || 0) - (Number(b.question_number) || 0);
+      });
+      if (!qs.length) return "";
+      var h = '<div class="pr-secgroup"><div class="pr-secgroup-head">印刷する大問</div>' +
+        '<div class="pr-secgroup-opts">';
+      qs.forEach(function (q) {
+        var ck = isPrintQ(q.question_number) ? " checked" : "";
+        h += '<label class="check-inline"><input type="checkbox" data-prq="' + esc(String(q.question_number)) + '"' + ck +
+          "> <span>大問" + esc(qLabel(q)) + "</span></label>";
+      });
+      return h + "</div></div>";
+    }
+    var html = qgroup() + group("問題面に印刷するセクション", problem) + group("解答面に印刷するセクション", answer);
     box.innerHTML = html ? '<div class="card pr-seccard">' + html + "</div>" : "";
+    $all("[data-prq]", box).forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        state.printQSel[cb.getAttribute("data-prq")] = cb.checked;
+        renderPrintPreview();
+      });
+    });
     $all("[data-prsec]", box).forEach(function (cb) {
       cb.addEventListener("change", function () {
         Store.setPrintSection(cb.getAttribute("data-prsec"), cb.checked);
@@ -835,6 +862,9 @@
         var questions = [];
         results.forEach(function (r) { (r.exam.questions || []).forEach(function (q) { questions.push(q); }); });
         state.printExam = { year: year, university_name: uni, schedule: sched, questions: questions };
+        // 大問選択を初期化（既定で全大問を印刷対象に）
+        state.printQSel = {};
+        questions.forEach(function (q) { state.printQSel[String(q.question_number)] = true; });
         renderPrintSectionControls();
         renderPrintPreview();
       });
