@@ -752,5 +752,13 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area.print-out .print-q { page-break-inside: avoid; margin-bottom: 16pt; }
   #print-area.print-out .print-q-head { font-size: 13pt; font-weight: 700; margin-bottom: 6pt; }
   #print-area.print-out .print-field-label { font-size: 10pt; font-weight: 600; margin-bottom: 3pt; }
+  /* 見出しの直後で改ページしない（「問題」と「大問1」、「大問N」と本文、
+     セクション名と中身が分断されるのを防ぐ） */
+  #print-area.print-out .print-part-head,
+  #print-area.print-out .print-q-head,
+  #print-area.print-out .print-field-label {
+    break-after: avoid; page-break-after: avoid;
+    break-inside: avoid; page-break-inside: avoid;
+  }
   @page { margin: 15mm 18mm; size: A4; }
 }
