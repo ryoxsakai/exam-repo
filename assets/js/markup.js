@@ -160,11 +160,12 @@
         end++;
       }
       var plain = esc(smartQuotes(rem.slice(0, end)));
-      // 文末の . ? ! の直後に大文字が来る場合、スペースを &nbsp;&nbsp; に広げる
-      // （. のときのみ Dr. / Mr. / Mt. などの略語・イニシャルは除外）
-      plain = plain.replace(/([A-Za-z]*)([.?!])\s+(?=[A-Z])/g, function (full, w, p) {
-        if (p === "." && ABBREV.test(w)) return full;
-        return w + p + "&nbsp;&nbsp;";
+      // 文末の . ? ! の後（閉じ引用符・閉じ括弧 ”’"')]）】」』 が続く場合も含む）に
+      // 大文字が来る場合、スペースを &nbsp;&nbsp; に広げる（例: ?” He / .) The）
+      // （. のときのみ、かつ閉じ記号が無いときのみ Dr. / Mr. / Mt. などの略語・イニシャルを除外）
+      plain = plain.replace(/([A-Za-z]*)([.?!])([”’"')\]）】」』]*)\s+(?=[A-Z])/g, function (full, w, p, q) {
+        if (p === "." && !q && ABBREV.test(w)) return full;
+        return w + p + q + "&nbsp;&nbsp;";
       });
       // em dash → 2em幅（隙間なし）
       plain = plain.replace(/—/g, '<span class="em-dash">——</span>');
