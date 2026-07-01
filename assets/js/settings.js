@@ -33,7 +33,9 @@
     universities: [],
     list: { filter: { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "" }, rows: [], sortedRows: [], sort: { key: "year", dir: "desc" }, nav: { examId: null, qnum: null } },
     reg: { sections: [], editingExamId: null, meta: { year: "", university: "", schedule: "", qnum: "1", category: "" } },
-    editCtx: null  // 汎用編集モーダルの対象
+    editCtx: null,  // 汎用編集モーダルの対象
+    corpus: null,   // 難易度帯の基準用（全大問の英文。取得後キャッシュ）
+    longLevel: null // 長文レベルのキャッシュ {src, wv, byKey, cutoffs}
   };
 
   /* ---------------- 初期化 ---------------- */
@@ -1259,21 +1261,35 @@
       // 「この問題のみ置換」用に表示中の大問データを保持
       state.examView = { examId: examId, qnum: qnum, questions: questions };
       el("exam-modal-title").textContent = title;
-      var body = "";
-      questions.forEach(function (q) {
-        var fields = [];
-        var sections = Markup.parseSections(q.problem_text || "");
-        var hasAnswer = sections.some(function (s) { return s.type === "解答"; });
-        var hasCommentary = sections.some(function (s) { return s.type === "解説"; });
-        sections.forEach(function (sec) {
-          if (sec.text.trim()) fields.push(field(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text));
-        });
-        if (q.answer_text && q.answer_text.trim() && !hasAnswer) fields.push(field("解答", "fa-circle-check", q.answer_text));
-        if (q.commentary_text && q.commentary_text.trim() && !hasCommentary) fields.push(field("解説", "fa-comment-dots", q.commentary_text));
-        body += '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
+
+      // 本文があり難易度帯の基準（四分位）が未取得なら、コーパスを取り込んでから描画
+      var hasBody = questions.some(function (q) {
+        return Markup.parseSections(q.problem_text || "").some(function (s) { return s.type === "本文"; });
       });
-      el("exam-modal-body").innerHTML = body || '<div class="empty">大問が登録されていません。</div>';
-      buildExamShortcuts();
+      var render = function () {
+        if (hasBody) ensureLongLevels();
+        var body = "";
+        questions.forEach(function (q) {
+          var fields = [];
+          var sections = Markup.parseSections(q.problem_text || "");
+          var hasAnswer = sections.some(function (s) { return s.type === "解答"; });
+          var hasCommentary = sections.some(function (s) { return s.type === "解説"; });
+          sections.forEach(function (sec) {
+            if (sec.text.trim()) fields.push(field(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text));
+          });
+          if (q.answer_text && q.answer_text.trim() && !hasAnswer) fields.push(field("解答", "fa-circle-check", q.answer_text));
+          if (q.commentary_text && q.commentary_text.trim() && !hasCommentary) fields.push(field("解説", "fa-comment-dots", q.commentary_text));
+          body += '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
+        });
+        el("exam-modal-body").innerHTML = body || '<div class="empty">大問が登録されていません。</div>';
+        buildExamShortcuts();
+      };
+      if (hasBody && !state.longLevel) {
+        (state.corpus ? Promise.resolve() : Api.getCorpus().then(function (d) { state.corpus = d.questions || []; }, function () {}))
+          .then(render, render);
+      } else {
+        render();
+      }
     }).catch(function (e) { el("exam-modal-body").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
   }
 
@@ -1366,10 +1382,15 @@
   }
 
   function isBodySection(label) { return label === "本文" || /全訳|和訳|訳/.test(label); }
-  // 英単語数（記法除去後にカウント。Corpus.tokenize と同じトークン定義）
-  function wordCount(text) {
-    var m = String(Markup.strip(text) || "").toLowerCase().match(/[a-z][a-z'’]*[a-z]|[a-z]/g);
-    return m ? m.length : 0;
+  // 英単語数は共有モジュール Difficulty を使用
+  function wordCount(text) { return Difficulty.wordCount(text); }
+  // 長文レベルをコーパス単位でキャッシュ（重み変更・コーパス差し替えで再計算）
+  function ensureLongLevels() {
+    var w = Difficulty.weights();
+    if (state.longLevel && state.longLevel.src === state.corpus && state.longLevel.wv === w.vocab) return state.longLevel;
+    var r = Difficulty.corpusLevels(state.corpus || [], w);
+    state.longLevel = { src: state.corpus, wv: w.vocab, byKey: r.byKey, cutoffs: r.cutoffs };
+    return state.longLevel;
   }
   function markupOpts(label) {
     var body = isBodySection(label);
@@ -1377,7 +1398,14 @@
   }
   function field(label, icon, text) {
     var body = isBodySection(label);
-    var wc = label === "本文" ? '<div class="word-count">(' + wordCount(text) + " words)</div>" : "";
+    var wc = "";
+    if (label === "本文") {
+      var score = Difficulty.scoreForText(text);
+      var band = Difficulty.band(score, state.longLevel ? state.longLevel.cutoffs : null);
+      wc = '<div class="word-count">(' + wordCount(text) + " words)" +
+        (score ? ' <span class="level-inline" title="難易度（合成スコア）">' + esc(score.toFixed(1)) + " " + esc(band) + "</span>" : "") +
+        "</div>";
+    }
     return '<div style="margin-bottom:14px"><div class="exam-section-title">' + esc(label) +
       '</div><div class="exam-doc' + (body ? "" : " no-indent") + '">' + Markup.render(text, markupOpts(label)).html + wc + "</div></div>";
   }

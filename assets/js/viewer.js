@@ -275,160 +275,22 @@
     loadResults();
   }
 
-  // 1大問の「本文」テキスト（本文が無ければ problem_text 全体）
-  function bodyText(q) {
-    var sections = Markup.parseSections(q.problem_text || "");
-    var body = sections.filter(function (s) { return s.type === "本文"; });
-    return body.length ? body.map(function (s) { return s.text; }).join("\n") : (q.problem_text || "");
-  }
-  // 1大問の「本文」セクションの英単語数
-  function bodyWordCount(q) { return wordCount(bodyText(q)); }
-
-  // CEFR レベルの重み（A1=1 … C2=6。Oxford5000 は C1=5 まで）。
-  // リスト外の語は最難（C1超）相当として 6 で算入する（C2・専門語がリスト外に落ちるため）。
-  var LEVEL_WEIGHT = { A1: 1, A2: 2, B1: 3, B2: 4, C1: 5, C2: 6 };
-  var OFFLIST_WEIGHT = 6;
-  var LEVEL_BAND_TH = [1.8, 2.5, 3.4];  // 長文が少なく四分位が作れないときの絶対フォールバック
-  var LEVEL_BAND_LABEL = { "易": "易しめ", "標準": "標準", "難": "難しめ", "最難": "最難" };
-
-  // 原文で「常に大文字始まり」かつ Oxford5000 外の語を固有名詞候補として集める
-  // （人名・地名・固有名など。語彙難易度から除外するため）。文頭でのみ大文字になる
-  // 一般語は小文字出現もあるので除外されない。リスト内の語も難易度に効くので残す。
-  function properNounSet(text, levelMap) {
-    var seenLower = Object.create(null), capOnly = Object.create(null);
-    var toks = Corpus.tokenizeWithCase(text);
-    for (var i = 0; i < toks.length; i++) {
-      var w = toks[i], lw = w.toLowerCase();
-      if (/^[A-Z]/.test(w)) { if (!(lw in seenLower)) capOnly[lw] = true; }
-      else { seenLower[lw] = true; }
-    }
-    var pn = Object.create(null);
-    Object.keys(capOnly).forEach(function (lw) {
-      if (seenLower[lw]) return;                              // 小文字でも出現 → 一般語
-      if (Corpus.resolveBase(lw, levelMap) !== null) return;  // リスト内 → 残す
-      pn[lw] = true;
-    });
-    return pn;
-  }
-
-  // 記法除去済みテキストの内容語（機能語・固有名詞を除外）を Oxford5000 で CEFR 加重平均
-  // （リスト外=6 算入。0=判定不能）
-  function strippedLevelAvg(text, levelMap, stopSet) {
-    var pn = properNounSet(text, levelMap);
-    var toks = Corpus.tokenize(text).filter(function (w) {
-      return !(stopSet && stopSet[w]) && !pn[w];
-    });
-    if (!toks.length) return 0;
-    var s = Corpus.levelStats(toks, levelMap);
-    if (!s.tokenTotal) return 0;
-    var sum = 0;
-    s.perLevel.forEach(function (p) { sum += (LEVEL_WEIGHT[p.level] || 0) * p.tokens; });
-    sum += OFFLIST_WEIGHT * s.tokenOff;
-    return sum / s.tokenTotal;
-  }
-  function bodyLevelAvg(q, levelMap, stopSet) {
-    return strippedLevelAvg(Markup.strip(bodyText(q)), levelMap, stopSet);
-  }
-  // 難易度計算用リスト（Oxford5000 と内蔵ストップワード）を遅延キャッシュ
-  var _diffLists = null;
-  function diffLists() {
-    if (!_diffLists) {
-      _diffLists = {
-        levelMap: (Store.builtinLevelList && Store.builtinLevelList()) ? Store.builtinLevelList().levels : {},
-        stopSet: Corpus.toSet(Store.builtinStopList().words || [])
-      };
-    }
-    return _diffLists;
-  }
+  // 難易度ロジックは共有モジュール Difficulty(difficulty.js) に集約。以下は薄いラッパ。
+  var LEVEL_BAND_LABEL = Difficulty.BAND_LABEL;
+  function bodyWordCount(q) { return Difficulty.wordCount(Difficulty.bodyText(q)); }
+  function difficultyWeights() { return Difficulty.weights(); }
   // 本文セクションの生テキスト → { score, band }（帯は取得済み四分位、無ければ絶対フォールバック）
   function sectionDifficulty(rawText) {
-    var stripped = Markup.strip(rawText);
-    var L = diffLists();
-    var vocab = strippedLevelAvg(stripped, L.levelMap, L.stopSet);
-    var asl = strippedAsl(stripped);
-    var score = compositeScore(vocab, asl, difficultyWeights());
-    var cutoffs = state.longLevel ? state.longLevel.cutoffs : null;
-    return { score: score, band: bandFromCutoffs(score, cutoffs) };
+    var score = Difficulty.scoreForText(rawText);
+    return { score: score, band: Difficulty.band(score, state.longLevel ? state.longLevel.cutoffs : null) };
   }
-
-  // 難易度の重み（語彙 : 文長）。localStorage（この端末）に保存。既定 0.5。
-  function difficultyWeights() {
-    var v = Store.getDifficultyVocabWeight();
-    return { vocab: v, sentence: 1 - v };
-  }
-
-  // 文数のカウント（略語・小数・省略記号・閉じ引用符などを補正して過剰分割を防ぐ）
-  var SENT_ABBR = /\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Mt|vs|etc|No|Vol|Fig|cf|ca|pp|Inc|Ltd|Co|Corp|Ave|Rd|Gen|Sen|Rev|Gov|Capt|Sgt|Lt|Col|Univ|approx)\b\./gi;
-  function sentenceCount(text) {
-    var t = String(text || "");
-    if (!t.trim()) return 0;
-    t = t.replace(/(\d)[.,](\d)/g, "$1$2");            // 小数・桁区切り 3.14 / 1,000
-    t = t.replace(/\.\.\.+|…/g, " ");                   // 省略記号は区切りにしない
-    t = t.replace(SENT_ABBR, " ");                      // 略語 Dr. Mr. etc.
-    t = t.replace(/\b(?:e\.g|i\.e|a\.m|p\.m)\.?/gi, " "); // e.g. i.e. a.m. p.m.
-    t = t.replace(/\b([A-Za-z])\./g, "$1");            // 単独イニシャル J. K. / U.S.A.
-    // 文末: . ! ? の連続 ＋ 閉じ引用符/括弧 ＋（空白 or 終端）
-    var m = t.match(/[.!?]+["'”’)\]）」』]*(?=\s|$)/g);
-    var n = m ? m.length : 0;
-    return n > 0 ? n : 1;                               // 終端記号が無くても本文があれば1文
-  }
-  // 記法除去済みテキストの平均文長（1文あたりの語数）
-  function strippedAsl(text) {
-    var words = Corpus.tokenize(text).length;
-    if (!words) return 0;
-    var sents = sentenceCount(text);
-    return sents ? words / sents : 0;
-  }
-  function bodyAvgSentenceLen(q) { return strippedAsl(Markup.strip(bodyText(q))); }
-  // 平均文長 → CEFR と同じ 1〜6 スケールへ（12語以下=1、34語以上=6 の目安）
-  var SL_MIN = 12, SL_MAX = 34;
-  function slToLevel(asl) {
-    if (!asl) return 0;
-    return Math.max(1, Math.min(6, 1 + (asl - SL_MIN) / (SL_MAX - SL_MIN) * 5));
-  }
-  // 合成スコア（語彙レベルと文長レベルを重み付き平均。欠損側は在る方のみ）
-  function compositeScore(vocab, asl, w) {
-    var sl = slToLevel(asl);
-    if (!vocab && !sl) return 0;
-    if (!vocab) return sl;
-    if (!sl) return vocab;
-    return w.vocab * vocab + w.sentence * sl;
-  }
-
-  // 登録済み「長文」大問のレベル分布を四分位に区切り、相対難易度帯の境界を作る。
-  // コーパス（state.corpus）単位でキャッシュ。全大問で共通の基準にするため他の絞り込みには依存しない。
-  function ensureLongLevels(levelMap, stopSet) {
-    var w = difficultyWeights();
+  // 登録済み「長文」大問のレベル分布（四分位境界つき）を state.corpus 単位でキャッシュ。
+  function ensureLongLevels() {
+    var w = Difficulty.weights();
     if (state.longLevel && state.longLevel.src === state.corpus && state.longLevel.wv === w.vocab) return state.longLevel;
-    var byKey = Object.create(null), vals = [];
-    (state.corpus || []).forEach(function (q) {
-      if ((q.category || "") !== "長文") return;
-      var vocab = bodyLevelAvg(q, levelMap, stopSet);
-      var asl = bodyAvgSentenceLen(q);
-      var score = compositeScore(vocab, asl, w);
-      byKey[q.exam_id + ":" + q.question_number] = { score: score, vocab: vocab, asl: asl };
-      if (score) vals.push(score);
-    });
-    vals.sort(function (a, b) { return a - b; });
-    var cutoffs = null;
-    if (vals.length >= 4) {
-      cutoffs = [
-        vals[Math.floor(0.25 * (vals.length - 1))],
-        vals[Math.floor(0.50 * (vals.length - 1))],
-        vals[Math.floor(0.75 * (vals.length - 1))]
-      ];
-    }
-    state.longLevel = { src: state.corpus, wv: w.vocab, byKey: byKey, cutoffs: cutoffs };
+    var r = Difficulty.corpusLevels(state.corpus || [], w);
+    state.longLevel = { src: state.corpus, wv: w.vocab, byKey: r.byKey, cutoffs: r.cutoffs };
     return state.longLevel;
-  }
-  // 加重平均値 → 難易度帯ラベル（cutoffs=四分位境界。無ければ絶対フォールバック。""=判定不能）
-  function bandFromCutoffs(v, cutoffs) {
-    if (!v) return "";
-    var th = cutoffs || LEVEL_BAND_TH;
-    if (v < th[0]) return "易";
-    if (v < th[1]) return "標準";
-    if (v < th[2]) return "難";
-    return "最難";
   }
 
   /* ---------------- 結果テーブル ---------------- */
@@ -465,9 +327,7 @@
       if (needWords) {
         var corpusByKey = {};
         (state.corpus || []).forEach(function (q) { corpusByKey[q.exam_id + ":" + q.question_number] = q; });
-        var levelMap = (Store.builtinLevelList && Store.builtinLevelList()) ? Store.builtinLevelList().levels : {};
-        var stopSet = Corpus.toSet(Store.builtinStopList().words || []);
-        var ll = ensureLongLevels(levelMap, stopSet);
+        var ll = ensureLongLevels();
         rows.forEach(function (r) {
           var key = r.exam_id + ":" + r.question_number;
           var q = corpusByKey[key];
@@ -476,7 +336,7 @@
           r.level = e ? e.score : 0;
           r.levelVocab = e ? e.vocab : 0;
           r.levelAsl = e ? e.asl : 0;
-          r.levelBand = bandFromCutoffs(r.level, ll.cutoffs);
+          r.levelBand = Difficulty.band(r.level, ll.cutoffs);
         });
         var mn = state.filter.wordsMin !== "" ? Number(state.filter.wordsMin) : null;
         var mx = state.filter.wordsMax !== "" ? Number(state.filter.wordsMax) : null;
@@ -755,7 +615,7 @@
         return Markup.parseSections(q.problem_text || "").some(function (s) { return s.type === "本文"; });
       });
       var finish = function () {
-        if (hasBody) { var L = diffLists(); ensureLongLevels(L.levelMap, L.stopSet); }
+        if (hasBody) { ensureLongLevels(); }
         renderExamBody(questions, qnum == null && questions.length > 1);
       };
       if (hasBody && !state.longLevel) {
@@ -905,11 +765,8 @@
 
   // 本文・和訳・全訳セクション（段落番号 [1] と字下げを有効にする）
   function isBodySection(label) { return label === "本文" || /全訳|和訳|訳/.test(label); }
-  // 英単語数（記法除去後にカウント。Corpus.tokenize と同じトークン定義）
-  function wordCount(text) {
-    var m = String(Markup.strip(text) || "").toLowerCase().match(/[a-z][a-z'’]*[a-z]|[a-z]/g);
-    return m ? m.length : 0;
-  }
+  // 英単語数は共有モジュール Difficulty を使用
+  function wordCount(text) { return Difficulty.wordCount(text); }
   function markupOpts(label) {
     var body = isBodySection(label);
     return { paraNum: body, zenyaku: label === "全訳" };
