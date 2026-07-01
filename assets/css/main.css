@@ -760,8 +760,10 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
     font-family: var(--sans); font-size: 14pt; font-weight: 700;
     margin: 0 0 12pt; padding-bottom: 6pt; border-bottom: 1px solid #000;
   }
-  /* 段落・選択肢の途中で改ページしない */
-  #print-area .exam-doc .blk,
+  /* 段落は途中で改ページしてよい（誌面を使い切るため）。ただし1行だけ
+     取り残されないよう orphans/widows で最低2行は同じ側にまとめる。
+     選択肢は短いので引き続き途中で改ページしない。 */
+  #print-area .exam-doc .blk { orphans: 2; widows: 2; }
   #print-area .answer-choice {
     break-inside: avoid; page-break-inside: avoid;
   }
@@ -815,7 +817,9 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area.print-out .print-cover .pc-sched { font-size: 22pt; }
   #print-area.print-out .print-part + .print-part { page-break-before: always; }
   #print-area.print-out .print-part-head { font-size: 16pt; font-weight: 800; border-bottom: 1.5px solid #000; padding-bottom: 4pt; margin-bottom: 12pt; }
-  #print-area.print-out .print-q { page-break-inside: avoid; margin-bottom: 16pt; }
+  /* 大問全体を避けて次ページへ丸ごと送ると空白が大きく空くため、
+     大問も途中で改ページしてよい（見出し直後の改ページ防止は下で別途対応）。 */
+  #print-area.print-out .print-q { margin-bottom: 16pt; }
   #print-area.print-out .print-q-head { font-size: 13pt; font-weight: 700; margin-bottom: 6pt; }
   #print-area.print-out .print-field-label { font-size: 10pt; font-weight: 600; margin-bottom: 3pt; }
   /* 見出しの直後で改ページしない（「問題」と「大問1」、「大問N」と本文、
