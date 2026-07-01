@@ -323,8 +323,28 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
 #exam-modal .modal-head h3, #preview-modal .modal-head h3 { font-size: 13px; font-weight: 600; }
 #exam-modal .modal-head > .ic, #preview-modal .modal-head > .ic { font-size: 13px; }
 #exam-modal .modal-head .icon-btn, #preview-modal .modal-head .icon-btn { width: 34px; height: 34px; border-radius: 9px; font-size: 13px; }
-#exam-modal .modal-foot { padding: 10px 14px; gap: 6px; justify-content: flex-start; }
+#exam-modal .modal-foot { padding: 8px 12px; gap: 5px; justify-content: flex-start; }
+/* フッターのボタンは小さめに */
+#exam-modal-foot .icon-btn { width: 32px; height: 32px; border-radius: 9px; font-size: 13px; }
 #exam-nav-label { font-size: 12px; color: var(--muted); min-width: 3.5em; text-align: center; }
+/* 問題閲覧モーダル下部のセクション・大問ショートカット（横スクロール） */
+.exam-shortcuts {
+  display: flex; gap: 6px; overflow-x: auto; padding: 7px 12px;
+  border-top: 1px solid var(--line); background: #fafcfe; flex-shrink: 0;
+  -webkit-overflow-scrolling: touch;
+}
+.exam-shortcuts::-webkit-scrollbar { height: 6px; }
+.exam-shortcuts::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+.exam-shortcuts .sc-btn {
+  flex: 0 0 auto; font-family: var(--sans); font-size: 12px; font-weight: 600;
+  padding: 4px 11px; border-radius: 999px; border: 1px solid var(--line);
+  background: #fff; color: var(--ink-soft); white-space: nowrap; cursor: pointer;
+  transition: .15s ease;
+}
+.exam-shortcuts .sc-btn:hover { border-color: var(--emerald); color: var(--emerald-dark); }
+.exam-shortcuts .sc-btn.sc-q { color: var(--emerald-dark); border-color: var(--emerald-soft); background: var(--emerald-soft); }
+/* 本文の語数の右に出す難易度（合成スコア＋帯） */
+.exam-doc .word-count .level-inline { margin-left: .6em; color: var(--emerald-dark); font-weight: 600; }
 /* 閲覧モーダル: この問題内のみ置換するバー（フッターの上に出る） */
 .exam-replace-bar {
   display: flex; align-items: center; gap: 8px; flex-shrink: 0;

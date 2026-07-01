@@ -1245,6 +1245,7 @@
     hideReplaceBar();
     updateListExamNav();
     UI.openModal(el("exam-modal"));
+    if (el("exam-shortcuts")) { el("exam-shortcuts").hidden = true; el("exam-shortcuts").innerHTML = ""; }
     el("exam-modal-body").innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';
     Api.getExam(examId).then(function (data) {
       var ex = data.exam;
@@ -1272,7 +1273,32 @@
         body += '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
       });
       el("exam-modal-body").innerHTML = body || '<div class="empty">大問が登録されていません。</div>';
+      buildExamShortcuts();
     }).catch(function (e) { el("exam-modal-body").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
+  }
+
+  // モーダル下部に各セクションへの横スクロール式ショートカットを生成
+  function buildExamShortcuts() {
+    var bar = el("exam-shortcuts");
+    if (!bar) return;
+    var body = el("exam-modal-body");
+    var items = $all(".exam-section-title", body);
+    if (items.length < 2) { bar.hidden = true; bar.innerHTML = ""; return; }
+    var html = "";
+    items.forEach(function (node, i) {
+      node.setAttribute("data-anchor", "a" + i);
+      var label = node.textContent.trim();
+      if (!label) return;
+      html += '<button type="button" class="sc-btn" data-scroll="a' + i + '">' + esc(label) + "</button>";
+    });
+    bar.innerHTML = html;
+    bar.hidden = false;
+    $all("[data-scroll]", bar).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var t = body.querySelector('[data-anchor="' + b.getAttribute("data-scroll") + '"]');
+        if (t) t.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
   }
 
   /* ---- 閲覧中の大問のみテキスト置換 ---- */
