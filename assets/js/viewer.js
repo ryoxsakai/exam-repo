@@ -33,7 +33,7 @@
 
   // 状態
   var state = {
-    filter: { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "", wordsMin: "", wordsMax: "" },
+    filter: { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "", wordsMin: "", wordsMax: "", level: "" },
     rows: [],
     sortedRows: [],
     sort: { key: "year", dir: "desc" },
@@ -205,10 +205,11 @@
   }
 
   /* ---------------- 検索モーダル ---------------- */
-  // 種別=長文 のときだけ語数の絞り込み欄を表示
+  // 種別=長文 のときだけ語数・難易度の絞り込み欄を表示
   function toggleWordsRow() {
     var on = el("sm-category") && el("sm-category").value === "長文";
     if (el("sm-words-row")) el("sm-words-row").style.display = on ? "" : "none";
+    if (el("sm-level-row")) el("sm-level-row").style.display = on ? "" : "none";
   }
   function openSearch() {
     el("sm-word").value = state.filter.word;
@@ -219,6 +220,7 @@
     el("sm-category").value = state.filter.category;
     if (el("sm-words-min")) el("sm-words-min").value = state.filter.wordsMin;
     if (el("sm-words-max")) el("sm-words-max").value = state.filter.wordsMax;
+    if (el("sm-level")) el("sm-level").value = state.filter.level;
     toggleWordsRow();
     UI.openModal(el("search-modal"));
   }
@@ -231,7 +233,8 @@
       qnum: el("sm-qnum").value.trim(),
       category: el("sm-category").value,
       wordsMin: el("sm-words-min") ? el("sm-words-min").value.trim() : "",
-      wordsMax: el("sm-words-max") ? el("sm-words-max").value.trim() : ""
+      wordsMax: el("sm-words-max") ? el("sm-words-max").value.trim() : "",
+      level: el("sm-level") ? el("sm-level").value : ""
     };
     UI.closeModal(el("search-modal"));
     UI.setActiveTab(el("main-tabs"), "search");
@@ -239,17 +242,45 @@
     loadResults();
   }
   function clearFilter() {
-    state.filter = { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "", wordsMin: "", wordsMax: "" };
+    state.filter = { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "", wordsMin: "", wordsMax: "", level: "" };
     loadResults();
   }
 
-  // 1大問の「本文」セクションの英単語数（本文が無ければ problem_text 全体）
-  function bodyWordCount(q) {
+  // 1大問の「本文」テキスト（本文が無ければ problem_text 全体）
+  function bodyText(q) {
     var sections = Markup.parseSections(q.problem_text || "");
     var body = sections.filter(function (s) { return s.type === "本文"; });
-    var text = body.length ? body.map(function (s) { return s.text; }).join("\n") : (q.problem_text || "");
-    return wordCount(text);
+    return body.length ? body.map(function (s) { return s.text; }).join("\n") : (q.problem_text || "");
   }
+  // 1大問の「本文」セクションの英単語数
+  function bodyWordCount(q) { return wordCount(bodyText(q)); }
+
+  // CEFR レベルの重み（A1=1 … C2=6。Oxford5000 は C1=5 まで）と難易度帯のしきい値。
+  // リスト外の語は最難（C1超）相当として 6 で算入する（C2・専門語がリスト外に落ちるため）。
+  var LEVEL_WEIGHT = { A1: 1, A2: 2, B1: 3, B2: 4, C1: 5, C2: 6 };
+  var OFFLIST_WEIGHT = 6;
+  var LEVEL_BAND_TH = [1.8, 2.5, 3.4];  // 未満で 易 / 標準 / 難、以上で 最難（暫定・実データで要調整）
+  // 本文の内容語（ストップワード除外）を Oxford5000 で CEFR 加重平均（リスト外=6 算入。0=判定不能）
+  function bodyLevelAvg(q, levelMap, stopSet) {
+    var toks = Corpus.tokenize(Markup.strip(bodyText(q)));
+    if (stopSet) toks = toks.filter(function (w) { return !stopSet[w]; });
+    if (!toks.length) return 0;
+    var s = Corpus.levelStats(toks, levelMap);
+    if (!s.tokenTotal) return 0;
+    var sum = 0;
+    s.perLevel.forEach(function (p) { sum += (LEVEL_WEIGHT[p.level] || 0) * p.tokens; });
+    sum += OFFLIST_WEIGHT * s.tokenOff;
+    return sum / s.tokenTotal;
+  }
+  // 加重平均値 → 難易度帯ラベル（""=判定不能）
+  function levelBand(v) {
+    if (!v) return "";
+    if (v < LEVEL_BAND_TH[0]) return "易";
+    if (v < LEVEL_BAND_TH[1]) return "標準";
+    if (v < LEVEL_BAND_TH[2]) return "難";
+    return "最難";
+  }
+  var LEVEL_BAND_LABEL = { "易": "易しめ", "標準": "標準", "難": "難しめ", "最難": "最難" };
 
   /* ---------------- 結果テーブル ---------------- */
   function loadResults() {
@@ -281,18 +312,23 @@
         var qn = Number(state.filter.qnum);
         rows = rows.filter(function (r) { return r.question_number === qn; });
       }
-      // 語数の付与・絞り込み（種別=長文 のとき）
+      // 語数・語彙レベルの付与・絞り込み（種別=長文 のとき）
       if (needWords) {
-        var wc = {};
-        (state.corpus || []).forEach(function (q) { wc[q.exam_id + ":" + q.question_number] = bodyWordCount(q); });
+        var corpusByKey = {};
+        (state.corpus || []).forEach(function (q) { corpusByKey[q.exam_id + ":" + q.question_number] = q; });
+        var levelMap = (Store.builtinLevelList && Store.builtinLevelList()) ? Store.builtinLevelList().levels : {};
+        var stopSet = Corpus.toSet(Store.builtinStopList().words || []);
         rows.forEach(function (r) {
-          var k = r.exam_id + ":" + r.question_number;
-          r.words = wc[k] != null ? wc[k] : 0;
+          var q = corpusByKey[r.exam_id + ":" + r.question_number];
+          r.words = q ? bodyWordCount(q) : 0;
+          r.level = q ? bodyLevelAvg(q, levelMap, stopSet) : 0;
+          r.levelBand = levelBand(r.level);
         });
         var mn = state.filter.wordsMin !== "" ? Number(state.filter.wordsMin) : null;
         var mx = state.filter.wordsMax !== "" ? Number(state.filter.wordsMax) : null;
         if (mn != null && !isNaN(mn)) rows = rows.filter(function (r) { return r.words >= mn; });
         if (mx != null && !isNaN(mx)) rows = rows.filter(function (r) { return r.words <= mx; });
+        if (state.filter.level) rows = rows.filter(function (r) { return r.levelBand === state.filter.level; });
       }
       state.rows = rows;
       renderTable();
@@ -321,6 +357,7 @@
     if (f.category === "長文" && (f.wordsMin !== "" || f.wordsMax !== "")) {
       parts.push("語数 " + (f.wordsMin !== "" ? f.wordsMin : "0") + "〜" + (f.wordsMax !== "" ? f.wordsMax : "∞"));
     }
+    if (f.category === "長文" && f.level) parts.push("難易度 " + (LEVEL_BAND_LABEL[f.level] || f.level));
     el("filter-summary").textContent = parts.length ? parts.join(" / ") + " で絞り込み中" : "すべての入試問題を表示中";
   }
 
@@ -329,7 +366,7 @@
     var key = state.sort.key, dir = state.sort.dir === "asc" ? 1 : -1;
     rows.sort(function (a, b) {
       var av = a[key], bv = b[key];
-      if (key === "year" || key === "question_number" || key === "occurrences" || key === "words") { av = Number(av) || 0; bv = Number(bv) || 0; }
+      if (key === "year" || key === "question_number" || key === "occurrences" || key === "words" || key === "level") { av = Number(av) || 0; bv = Number(bv) || 0; }
       else { av = String(av || "").toLowerCase(); bv = String(bv || "").toLowerCase(); }
       return av < bv ? -1 * dir : av > bv ? 1 * dir : 0;
     });
@@ -349,6 +386,7 @@
       { key: "category", label: "問題種別" }
     ];
     if (showWords) cols.push({ key: "words", label: "語数" });
+    if (showWords) cols.push({ key: "level", label: "レベル" });
     if (showOcc) cols.push({ key: "occurrences", label: "出現回数" });
 
     var html = '<div class="table-wrap"><table class="data"><thead><tr>';
@@ -367,6 +405,7 @@
         '<td data-label="大問番号">大問' + esc(qLabel(r)) + "</td>" +
         '<td data-label="問題種別">' + (r.category ? esc(r.category) : '<span class="hint">—</span>') + "</td>" +
         (showWords ? '<td data-label="語数"><span class="pill">' + esc(r.words != null ? r.words : 0) + "</span></td>" : "") +
+        (showWords ? '<td data-label="レベル">' + (r.level ? '<span class="pill" title="Oxford5000 加重平均 ' + esc(r.level.toFixed(2)) + '（' + esc(LEVEL_BAND_LABEL[r.levelBand] || "") + '）">' + esc(r.level.toFixed(1)) + " " + esc(r.levelBand) + "</span>" : '<span class="hint">—</span>') + "</td>" : "") +
         (showOcc ? '<td data-label="出現回数"><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
         '<td class="row-actions"><button class="icon-btn sm" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
         "</tr>";
@@ -379,7 +418,7 @@
       th.addEventListener("click", function () {
         var k = th.getAttribute("data-sort");
         if (state.sort.key === k) state.sort.dir = state.sort.dir === "asc" ? "desc" : "asc";
-        else { state.sort.key = k; state.sort.dir = (k === "year" || k === "question_number" || k === "occurrences" || k === "words") ? "desc" : "asc"; }
+        else { state.sort.key = k; state.sort.dir = (k === "year" || k === "question_number" || k === "occurrences" || k === "words" || k === "level") ? "desc" : "asc"; }
         renderTable();
       });
     });
