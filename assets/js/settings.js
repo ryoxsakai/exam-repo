@@ -861,10 +861,23 @@
       el("ext-uni-select").addEventListener("change", function () { loadExtPrompt(true); });
     }
   }
+  // ボタンでの自動読み取りが使えないとき、欄にフォーカスして手動貼り付けを促す
+  function focusExtJsonForManualPaste(msg) {
+    var ta = el("ext-json");
+    if (ta) { ta.focus(); }
+    toast(msg + "。貼り付け欄をクリックして Ctrl+V（Macは Cmd+V）で貼り付けてください", "err");
+  }
   // クリップボードの内容を貼り付け欄へ転写して読み込む
+  // 対応状況はブラウザにより異なる: Chrome/Edge/Safari は対応（要権限）、
+  // Firefox は Web ページからのクリップボード読み取りを仕様上サポートしない。
+  // 非対応・拒否時は自動で「手動貼り付け」に切り替える。
   function pasteExtJson() {
+    if (!window.isSecureContext) {
+      focusExtJsonForManualPaste("HTTPS 接続でのみクリップボード読み取りが使えます");
+      return;
+    }
     if (!navigator.clipboard || !navigator.clipboard.readText) {
-      toast("このブラウザはクリップボード読み取りに対応していません。手動で貼り付けてください", "err");
+      focusExtJsonForManualPaste("このブラウザ（Firefox 等）はボタンでの自動貼り付けに対応していません");
       return;
     }
     navigator.clipboard.readText().then(function (text) {
@@ -872,8 +885,13 @@
       el("ext-json").value = text;
       el("ext-status").innerHTML = '<span class="hint"><i class="fa-solid fa-paste"></i> クリップボードから貼り付けました</span>';
       loadExtJson();
-    }, function () {
-      toast("クリップボードの読み取りに失敗しました（権限を確認してください）", "err");
+    }, function (err) {
+      var name = err && err.name;
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        focusExtJsonForManualPaste("クリップボードへのアクセスが許可されていません");
+      } else {
+        focusExtJsonForManualPaste("クリップボードの読み取りに失敗しました");
+      }
     });
   }
   // .json / .txt ファイルをテキストとして読み、貼り付け欄に入れて読み込む
