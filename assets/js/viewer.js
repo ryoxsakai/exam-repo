@@ -33,7 +33,7 @@
 
   // 状態
   var state = {
-    filter: { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "" },
+    filter: { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "", wordsMin: "", wordsMax: "" },
     rows: [],
     sortedRows: [],
     sort: { key: "year", dir: "desc" },
@@ -99,6 +99,7 @@
     el("btn-open-search").addEventListener("click", openSearch);
     el("btn-open-search-2").addEventListener("click", openSearch);
     el("sm-run").addEventListener("click", runSearch);
+    if (el("sm-category")) el("sm-category").addEventListener("change", toggleWordsRow);
     el("btn-clear-filter").addEventListener("click", clearFilter);
     el("btn-run-corpus").addEventListener("click", runCorpus);
     UI.wireModal(el("corpus-filter-modal"));
@@ -204,6 +205,11 @@
   }
 
   /* ---------------- 検索モーダル ---------------- */
+  // 種別=長文 のときだけ語数の絞り込み欄を表示
+  function toggleWordsRow() {
+    var on = el("sm-category") && el("sm-category").value === "長文";
+    if (el("sm-words-row")) el("sm-words-row").style.display = on ? "" : "none";
+  }
   function openSearch() {
     el("sm-word").value = state.filter.word;
     el("sm-university").value = state.filter.universityName;
@@ -211,6 +217,9 @@
     el("sm-schedule").value = state.filter.schedule;
     el("sm-qnum").value = state.filter.qnum;
     el("sm-category").value = state.filter.category;
+    if (el("sm-words-min")) el("sm-words-min").value = state.filter.wordsMin;
+    if (el("sm-words-max")) el("sm-words-max").value = state.filter.wordsMax;
+    toggleWordsRow();
     UI.openModal(el("search-modal"));
   }
   function runSearch() {
@@ -220,7 +229,9 @@
       year: el("sm-year").value,
       schedule: el("sm-schedule").value,
       qnum: el("sm-qnum").value.trim(),
-      category: el("sm-category").value
+      category: el("sm-category").value,
+      wordsMin: el("sm-words-min") ? el("sm-words-min").value.trim() : "",
+      wordsMax: el("sm-words-max") ? el("sm-words-max").value.trim() : ""
     };
     UI.closeModal(el("search-modal"));
     UI.setActiveTab(el("main-tabs"), "search");
@@ -228,8 +239,16 @@
     loadResults();
   }
   function clearFilter() {
-    state.filter = { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "" };
+    state.filter = { word: "", universityName: "", year: "", schedule: "", qnum: "", category: "", wordsMin: "", wordsMax: "" };
     loadResults();
+  }
+
+  // 1大問の「本文」セクションの英単語数（本文が無ければ problem_text 全体）
+  function bodyWordCount(q) {
+    var sections = Markup.parseSections(q.problem_text || "");
+    var body = sections.filter(function (s) { return s.type === "本文"; });
+    var text = body.length ? body.map(function (s) { return s.text; }).join("\n") : (q.problem_text || "");
+    return wordCount(text);
   }
 
   /* ---------------- 結果テーブル ---------------- */
@@ -237,11 +256,18 @@
     if (!Store.getWorkerUrl()) { el("results-area").innerHTML = noWorkerHtml(); return; }
     updateFilterSummary();
     el("results-area").innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
-    Api.search({
+    // 種別=長文 のときは本文語数を表示・絞り込みするためコーパス全文を併用（キャッシュ）
+    var needWords = state.filter.category === "長文";
+    var searchP = Api.search({
       word: state.filter.word, universityName: state.filter.universityName,
       year: state.filter.year, schedule: state.filter.schedule,
       category: state.filter.category
-    }).then(function (data) {
+    });
+    var corpusP = !needWords ? Promise.resolve(null)
+      : (state.corpus ? Promise.resolve({ questions: state.corpus }) : Api.getCorpus());
+    Promise.all([searchP, corpusP]).then(function (res) {
+      var data = res[0];
+      if (res[1]) state.corpus = res[1].questions || state.corpus;
       var rows = (data.results || []).map(function (r) {
         return {
           exam_id: r.exam_id, question_id: r.question_id,
@@ -254,6 +280,19 @@
       if (state.filter.qnum) {
         var qn = Number(state.filter.qnum);
         rows = rows.filter(function (r) { return r.question_number === qn; });
+      }
+      // 語数の付与・絞り込み（種別=長文 のとき）
+      if (needWords) {
+        var wc = {};
+        (state.corpus || []).forEach(function (q) { wc[q.exam_id + ":" + q.question_number] = bodyWordCount(q); });
+        rows.forEach(function (r) {
+          var k = r.exam_id + ":" + r.question_number;
+          r.words = wc[k] != null ? wc[k] : 0;
+        });
+        var mn = state.filter.wordsMin !== "" ? Number(state.filter.wordsMin) : null;
+        var mx = state.filter.wordsMax !== "" ? Number(state.filter.wordsMax) : null;
+        if (mn != null && !isNaN(mn)) rows = rows.filter(function (r) { return r.words >= mn; });
+        if (mx != null && !isNaN(mx)) rows = rows.filter(function (r) { return r.words <= mx; });
       }
       state.rows = rows;
       renderTable();
@@ -279,6 +318,9 @@
     if (f.schedule) parts.push(f.schedule);
     if (f.qnum) parts.push("大問" + f.qnum);
     if (f.category) parts.push(f.category);
+    if (f.category === "長文" && (f.wordsMin !== "" || f.wordsMax !== "")) {
+      parts.push("語数 " + (f.wordsMin !== "" ? f.wordsMin : "0") + "〜" + (f.wordsMax !== "" ? f.wordsMax : "∞"));
+    }
     el("filter-summary").textContent = parts.length ? parts.join(" / ") + " で絞り込み中" : "すべての入試問題を表示中";
   }
 
@@ -287,7 +329,7 @@
     var key = state.sort.key, dir = state.sort.dir === "asc" ? 1 : -1;
     rows.sort(function (a, b) {
       var av = a[key], bv = b[key];
-      if (key === "year" || key === "question_number" || key === "occurrences") { av = Number(av) || 0; bv = Number(bv) || 0; }
+      if (key === "year" || key === "question_number" || key === "occurrences" || key === "words") { av = Number(av) || 0; bv = Number(bv) || 0; }
       else { av = String(av || "").toLowerCase(); bv = String(bv || "").toLowerCase(); }
       return av < bv ? -1 * dir : av > bv ? 1 * dir : 0;
     });
@@ -298,6 +340,7 @@
     }
 
     var showOcc = !!state.filter.word;
+    var showWords = state.filter.category === "長文";
     var cols = [
       { key: "year", label: "年度" },
       { key: "university_name", label: "大学名" },
@@ -305,6 +348,7 @@
       { key: "question_number", label: "大問番号" },
       { key: "category", label: "問題種別" }
     ];
+    if (showWords) cols.push({ key: "words", label: "語数" });
     if (showOcc) cols.push({ key: "occurrences", label: "出現回数" });
 
     var html = '<div class="table-wrap"><table class="data"><thead><tr>';
@@ -322,6 +366,7 @@
         '<td data-label="方式">' + esc(r.schedule) + "</td>" +
         '<td data-label="大問番号">大問' + esc(qLabel(r)) + "</td>" +
         '<td data-label="問題種別">' + (r.category ? esc(r.category) : '<span class="hint">—</span>') + "</td>" +
+        (showWords ? '<td data-label="語数"><span class="pill">' + esc(r.words != null ? r.words : 0) + "</span></td>" : "") +
         (showOcc ? '<td data-label="出現回数"><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
         '<td class="row-actions"><button class="icon-btn sm" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
         "</tr>";
@@ -334,7 +379,7 @@
       th.addEventListener("click", function () {
         var k = th.getAttribute("data-sort");
         if (state.sort.key === k) state.sort.dir = state.sort.dir === "asc" ? "desc" : "asc";
-        else { state.sort.key = k; state.sort.dir = (k === "year" || k === "question_number" || k === "occurrences") ? "desc" : "asc"; }
+        else { state.sort.key = k; state.sort.dir = (k === "year" || k === "question_number" || k === "occurrences" || k === "words") ? "desc" : "asc"; }
         renderTable();
       });
     });

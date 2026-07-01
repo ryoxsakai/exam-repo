@@ -158,6 +158,16 @@
             <label class="field"><span class="field-label">大問番号</span><input type="number" id="sm-qnum" min="1" placeholder="例: 1" /></label>
             <label class="field"><span class="field-label">問題種別</span><select id="sm-category"><option value="">指定なし</option></select></label>
           </div>
+          <div id="sm-words-row" class="field" style="display:none;margin-top:10px">
+            <span class="field-label">語数（種別=長文の本文語数で絞り込み）</span>
+            <div class="inline-add" style="gap:8px;align-items:center">
+              <input type="number" id="sm-words-min" min="0" placeholder="最小" style="flex:1" />
+              <span class="hint">〜</span>
+              <input type="number" id="sm-words-max" min="0" placeholder="最大" style="flex:1" />
+              <span class="hint">語</span>
+            </div>
+            <p class="hint" style="margin-top:6px"><i class="fa-solid fa-circle-info"></i> 結果に本文の語数を表示し、指定範囲で絞り込みます（空欄なら無制限）。</p>
+          </div>
         </div>
 
         <div data-mpanel="keyword" style="display:none">
@@ -238,6 +248,6 @@
   <script src="assets/js/ui.js?v=20260612z"></script>
   <script src="assets/js/markup.js?v=20260628b"></script>
   <script src="assets/js/corpus.js?v=20260613j"></script>
-  <script src="assets/js/viewer.js?v=20260628c"></script>
+  <script src="assets/js/viewer.js?v=20260701a"></script>
 </body>
 </html>
