@@ -233,6 +233,11 @@ table.data tbody tr:hover { background: #f8fafc; }
 table.data tbody tr:last-child td { border-bottom: 0; }
 /* コーパス分析系テーブル: 列数が少ないのでmin-width不要 */
 table.data.freq-table { min-width: 0; font-size: 13px; }
+/* メイン検索結果表は全幅（min-width を掛けず、常にデバイス幅に収める）。
+   表示ボタン列は内容幅に固定し、余白は他列が吸収（種別と表示の間に隙間を作らない）。 */
+#results-area table.data { min-width: 0; }
+#results-area table.data th:last-child,
+#results-area table.data td.row-actions { width: 1px; white-space: nowrap; }
 @media (max-width: 640px) {
   table.data thead th,
   table.data tbody td { padding: 8px 8px; font-size: 12.5px; }
