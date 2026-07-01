@@ -311,10 +311,9 @@
     return pn;
   }
 
-  // 本文の内容語（機能語・固有名詞を除外）を Oxford5000 で CEFR 加重平均
+  // 記法除去済みテキストの内容語（機能語・固有名詞を除外）を Oxford5000 で CEFR 加重平均
   // （リスト外=6 算入。0=判定不能）
-  function bodyLevelAvg(q, levelMap, stopSet) {
-    var text = Markup.strip(bodyText(q));
+  function strippedLevelAvg(text, levelMap, stopSet) {
     var pn = properNounSet(text, levelMap);
     var toks = Corpus.tokenize(text).filter(function (w) {
       return !(stopSet && stopSet[w]) && !pn[w];
@@ -326,6 +325,30 @@
     s.perLevel.forEach(function (p) { sum += (LEVEL_WEIGHT[p.level] || 0) * p.tokens; });
     sum += OFFLIST_WEIGHT * s.tokenOff;
     return sum / s.tokenTotal;
+  }
+  function bodyLevelAvg(q, levelMap, stopSet) {
+    return strippedLevelAvg(Markup.strip(bodyText(q)), levelMap, stopSet);
+  }
+  // 難易度計算用リスト（Oxford5000 と内蔵ストップワード）を遅延キャッシュ
+  var _diffLists = null;
+  function diffLists() {
+    if (!_diffLists) {
+      _diffLists = {
+        levelMap: (Store.builtinLevelList && Store.builtinLevelList()) ? Store.builtinLevelList().levels : {},
+        stopSet: Corpus.toSet(Store.builtinStopList().words || [])
+      };
+    }
+    return _diffLists;
+  }
+  // 本文セクションの生テキスト → { score, band }（帯は取得済み四分位、無ければ絶対フォールバック）
+  function sectionDifficulty(rawText) {
+    var stripped = Markup.strip(rawText);
+    var L = diffLists();
+    var vocab = strippedLevelAvg(stripped, L.levelMap, L.stopSet);
+    var asl = strippedAsl(stripped);
+    var score = compositeScore(vocab, asl, difficultyWeights());
+    var cutoffs = state.longLevel ? state.longLevel.cutoffs : null;
+    return { score: score, band: bandFromCutoffs(score, cutoffs) };
   }
 
   // 難易度の重み（語彙 : 文長）。localStorage（この端末）に保存。既定 0.5。
@@ -349,14 +372,14 @@
     var n = m ? m.length : 0;
     return n > 0 ? n : 1;                               // 終端記号が無くても本文があれば1文
   }
-  // 本文の平均文長（1文あたりの語数）
-  function bodyAvgSentenceLen(q) {
-    var text = Markup.strip(bodyText(q));
+  // 記法除去済みテキストの平均文長（1文あたりの語数）
+  function strippedAsl(text) {
     var words = Corpus.tokenize(text).length;
     if (!words) return 0;
     var sents = sentenceCount(text);
     return sents ? words / sents : 0;
   }
+  function bodyAvgSentenceLen(q) { return strippedAsl(Markup.strip(bodyText(q))); }
   // 平均文長 → CEFR と同じ 1〜6 スケールへ（12語以下=1、34語以上=6 の目安）
   var SL_MIN = 12, SL_MAX = 34;
   function slToLevel(asl) {
@@ -710,6 +733,7 @@
     updateExamNav();
     saveOpenExam(examId, qnum);
     UI.openModal(el("exam-modal"));
+    if (el("exam-shortcuts")) { el("exam-shortcuts").hidden = true; el("exam-shortcuts").innerHTML = ""; }
     el("exam-modal-body").innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';
     Api.getExam(examId).then(function (data) {
       var ex = data.exam;
@@ -726,37 +750,68 @@
         questions = questions.filter(function (q) { return q.question_number === qnum; });
       }
 
-      var body = "";
-      var showQHead = qnum == null && questions.length > 1;
-      questions.forEach(function (q) {
-        var fields = [];
-        var sections = Markup.parseSections(q.problem_text || "");
-
-        // problem_text に {{解答}} {{解説}} が含まれているかチェック
-        var hasAnswerSection = sections.some(function (s) { return s.type === "解答"; });
-        var hasCommentarySection = sections.some(function (s) { return s.type === "解説"; });
-
-        // 既存互換：別カラムに解答・解説がある場合、セクションに追加
-        if (q.answer_text && q.answer_text.trim() && !hasAnswerSection) {
-          sections.push({ type: "解答", text: q.answer_text });
-        }
-        if (q.commentary_text && q.commentary_text.trim() && !hasCommentarySection) {
-          sections.push({ type: "解説", text: q.commentary_text });
-        }
-
-        sections.forEach(function (sec) {
-          if (sec.text.trim()) fields.push(renderField(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text));
-        });
-
-        // 全大問表示時は各大問の先頭に「大問N」見出しを表示
-        var head = showQHead ? '<div class="modal-qhead">大問' + esc(qLabel(q)) + "</div>" : "";
-        // セクション間に区切り線を自動挿入
-        body += head + '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
+      // 本文があり難易度帯の基準（四分位）が未取得なら、コーパスを取り込んでから描画
+      var hasBody = questions.some(function (q) {
+        return Markup.parseSections(q.problem_text || "").some(function (s) { return s.type === "本文"; });
       });
-      el("exam-modal-body").innerHTML = body || '<div class="empty">大問が登録されていません。</div>';
-      wirePrintChecks();
+      var finish = function () {
+        if (hasBody) { var L = diffLists(); ensureLongLevels(L.levelMap, L.stopSet); }
+        renderExamBody(questions, qnum == null && questions.length > 1);
+      };
+      if (hasBody && !state.longLevel) {
+        (state.corpus ? Promise.resolve() : Api.getCorpus().then(function (d) { state.corpus = d.questions || []; }, function () {}))
+          .then(finish, finish);
+      } else {
+        finish();
+      }
     }).catch(function (e) {
       el("exam-modal-body").innerHTML = '<div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div>";
+    });
+  }
+
+  // 表示モーダルの本文 HTML を組み立てて反映（＋下部ショートカット）
+  function renderExamBody(questions, showQHead) {
+    var body = "";
+    questions.forEach(function (q) {
+      var fields = [];
+      var sections = Markup.parseSections(q.problem_text || "");
+      var hasAnswerSection = sections.some(function (s) { return s.type === "解答"; });
+      var hasCommentarySection = sections.some(function (s) { return s.type === "解説"; });
+      if (q.answer_text && q.answer_text.trim() && !hasAnswerSection) sections.push({ type: "解答", text: q.answer_text });
+      if (q.commentary_text && q.commentary_text.trim() && !hasCommentarySection) sections.push({ type: "解説", text: q.commentary_text });
+      sections.forEach(function (sec) {
+        if (sec.text.trim()) fields.push(renderField(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text));
+      });
+      var head = showQHead ? '<div class="modal-qhead">大問' + esc(qLabel(q)) + "</div>" : "";
+      body += head + '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
+    });
+    el("exam-modal-body").innerHTML = body || '<div class="empty">大問が登録されていません。</div>';
+    wirePrintChecks();
+    buildExamShortcuts();
+  }
+
+  // モーダル下部に「大問N / セクション」への横スクロール式ショートカットを生成
+  function buildExamShortcuts() {
+    var bar = el("exam-shortcuts");
+    if (!bar) return;
+    var body = el("exam-modal-body");
+    var items = $all(".modal-qhead, .exam-field", body);
+    if (items.length < 2) { bar.hidden = true; bar.innerHTML = ""; return; }
+    var html = "";
+    items.forEach(function (node, i) {
+      node.setAttribute("data-anchor", "a" + i);
+      var isQ = node.classList.contains("modal-qhead");
+      var label = isQ ? node.textContent.trim() : (node.getAttribute("data-sectype") || "");
+      if (!label) return;
+      html += '<button type="button" class="sc-btn' + (isQ ? " sc-q" : "") + '" data-scroll="a' + i + '">' + esc(label) + "</button>";
+    });
+    bar.innerHTML = html;
+    bar.hidden = false;
+    $all("[data-scroll]", bar).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var t = body.querySelector('[data-anchor="' + b.getAttribute("data-scroll") + '"]');
+        if (t) t.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
     });
   }
 
@@ -863,7 +918,13 @@
     var body = isBodySection(label);
     var r = Markup.render(text, markupOpts(label));
     var checked = Store.isPrintSection(label) ? " checked" : "";
-    var wc = label === "本文" ? '<div class="word-count">(' + wordCount(text) + " words)</div>" : "";
+    var wc = "";
+    if (label === "本文") {
+      var d = sectionDifficulty(text);
+      wc = '<div class="word-count">(' + wordCount(text) + " words)" +
+        (d.score ? ' <span class="level-inline" title="難易度（合成スコア）">' + esc(d.score.toFixed(1)) + " " + esc(d.band) + "</span>" : "") +
+        "</div>";
+    }
     return '<div class="exam-field" data-sectype="' + esc(label) + '" style="margin-bottom:14px">' +
       '<div class="exam-section-title">' + esc(label) +
       '<label class="print-check" title="チェックした項目のみ印刷されます">' +
