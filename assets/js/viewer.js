@@ -11,10 +11,6 @@
   function qLabel(q) {
     return (q && q.label != null && String(q.label).trim()) ? String(q.label) : String(q && q.question_number);
   }
-  // 大学の表示名。略称があればそれを、無ければ正式名を返す。
-  function uniDisp(name) {
-    return (name && state.uniAbbr && state.uniAbbr[name]) ? state.uniAbbr[name] : (name || "");
-  }
 
   function saveOpenExam(examId, qnum) { try { sessionStorage.setItem("exam_open_id", examId + ":" + qnum); } catch (e) {} }
   function clearOpenExam() { try { sessionStorage.removeItem("exam_open_id"); } catch (e) {} }
@@ -420,9 +416,14 @@
     });
     html += '<th style="text-align:right">表示</th></tr></thead><tbody>';
     rows.forEach(function (r) {
+      var uniFull = r.university_name || "";
+      var uniAbbr = state.uniAbbr[uniFull];
+      var uniCell = (uniAbbr && uniAbbr !== uniFull)
+        ? '<strong class="uni-full">' + esc(uniFull) + '</strong><strong class="uni-abbr">' + esc(uniAbbr) + "</strong>"
+        : "<strong>" + esc(uniFull) + "</strong>";
       html += "<tr>" +
         '<td data-label="年度"><span class="pill em">' + esc(r.year) + "</span></td>" +
-        '<td data-label="大学"><strong>' + esc(uniDisp(r.university_name)) + "</strong></td>" +
+        '<td data-label="大学">' + uniCell + "</td>" +
         '<td data-label="方式">' + esc(r.schedule) + "</td>" +
         '<td data-label="大問">' + esc(qLabel(r)) + "</td>" +
         '<td data-label="種別">' + (r.category ? esc(r.category) : '<span class="hint">—</span>') + "</td>" +
@@ -526,7 +527,7 @@
     var uniNames = Object.keys(unis).sort(uniCmp);
     var html = '<div class="tree card">';
     uniNames.forEach(function (u) {
-      html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(uniDisp(u))) + '<div class="tree-children" hidden>';
+      html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
       Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
         html += '<div class="tree-node">' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
         Object.keys(unis[u][y]).sort(function (a, b) { return (schedOrder(a) - schedOrder(b)) || a.localeCompare(b, "ja"); }).forEach(function (s) {
@@ -605,7 +606,7 @@
     el("exam-modal-body").innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';
     Api.getExam(examId).then(function (data) {
       var ex = data.exam;
-      var title = ex.year + "年 " + uniDisp(ex.university_name) + " " + ex.schedule;
+      var title = ex.year + "年 " + ex.university_name + " " + ex.schedule;
       if (qnum != null) {
         var titleQ = (ex.questions || []).filter(function (q) { return q.question_number === qnum; })[0];
         title += " 大問" + qLabel(titleQ || { question_number: qnum });
@@ -938,7 +939,7 @@
       });
       var html = '<div class="tree">';
       Object.keys(unis).sort(uniCmp).forEach(function (u) {
-        html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(uniDisp(u))) + '<div class="tree-children" hidden>';
+        html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
         Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
           html += '<div class="tree-node">' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
           Object.keys(unis[u][y]).sort(function (a, b) { return (schedOrder(a) - schedOrder(b)) || a.localeCompare(b, "ja"); }).forEach(function (s) {
@@ -1229,7 +1230,7 @@
     // ドキュメント（KWIC用ラベル付き）と全文。選択セクションのみ対象。
     var secSet = state.corpusFilter.sections;  // 配列 or null（全セクション）
     var docs = qs.map(function (q) {
-      return { text: questionSectionText(q, secSet), label: q.year + " " + uniDisp(q.university_name) + " 大問" + qLabel(q) };
+      return { text: questionSectionText(q, secSet), label: q.year + " " + q.university_name + " 大問" + qLabel(q) };
     }).filter(function (d) { return d.text.trim(); });
     var fullText = docs.map(function (d) { return d.text; }).join("\n");
     var tokens = Corpus.tokenize(fullText);

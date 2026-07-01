@@ -241,11 +241,19 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
 
   /* メイン検索結果: 幅が狭くてもカード化せず、文字とパディングを詰めて
      表のまま各行を1行に収める（data-label を持つ #results-area のテーブルのみ対象） */
-  #results-area table.data { min-width: 0; font-size: 12px; }
+  #results-area table.data { min-width: 0; width: 100%; table-layout: auto; font-size: 12px; }
   #results-area table.data thead th { padding: 8px 6px; font-size: 11px; white-space: nowrap; }
   #results-area table.data thead th .sort-ic { margin-left: 3px; font-size: 9px; }
   #results-area table.data tbody td { padding: 8px 6px; white-space: nowrap; }
+  /* 表示ボタン列は内容幅に固定（種別との間に余白ができないように） */
+  #results-area table.data th:last-child,
+  #results-area table.data td.row-actions { width: 1px; white-space: nowrap; }
+  /* 大学名列は余白を吸収し、長い正式名は折り返して横スクロールを防ぐ */
+  #results-area table.data td[data-label="大学"] { white-space: normal; word-break: break-word; }
   #results-area .row-actions { gap: 4px; }
+  /* モバイルの検索表のみ略称を表示（他は正式名） */
+  #results-area .uni-abbr { display: inline; }
+  #results-area .uni-full { display: none; }
 }
 /* さらに狭い画面ではより詰める */
 @media (max-width: 420px) {
@@ -256,6 +264,9 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
   #results-area .icon-btn.sm { width: 28px; height: 28px; }
 }
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+/* 検索表の大学名: 既定（PC）は正式名。モバイルのみ略称に切替（上の @media 参照） */
+#results-area .uni-abbr { display: none; }
+#results-area .uni-full { display: inline; }
 
 /* ツリー検索（大学→年度→方式→大問） */
 .tree { padding: 8px 6px; }
