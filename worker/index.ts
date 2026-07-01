@@ -183,6 +183,70 @@ function normalizeUniversityName(name: string): string {
   return n || (name || "").trim();
 }
 
+// 孤立レコードの自動削除: 親が存在しない questions / exams を除去する。
+// D1(SQLite) は既定では外部キー制約を強制しないため、過去に大学・試験を
+// 削除した際 ON DELETE CASCADE が効かず子レコードが残っている場合がある。
+// 参照先が無い行の削除のみ行う（曖昧な判断を伴わない安全な処理）。
+async function fixOrphanedRecords(env: Env) {
+  await env.DB.prepare(
+    "DELETE FROM questions WHERE exam_id NOT IN (SELECT id FROM exams)"
+  ).run();
+  await env.DB.prepare(
+    "DELETE FROM exams WHERE university_id NOT IN (SELECT id FROM universities)"
+  ).run();
+}
+
+// 大学名の表記ゆれによる重複統合。normalizeUniversityName（取り込み・登録時の
+// 正規化と同一ルール）で同じ名前になる大学をまとめ、既存の exams を統合先へ
+// 付け替える。統合先に同じ (year, schedule) の exams が既に存在する組は、
+// どちらが正しいデータか自動判断できないため統合せずスキップする。
+async function mergeDuplicateUniversities(env: Env) {
+  const { results: unis } = await env.DB.prepare(
+    "SELECT id, name, reading, abbreviation FROM universities"
+  ).all<{ id: number; name: string; reading: string; abbreviation: string }>();
+  if (unis.length < 2) return;
+
+  const groups = new Map<string, typeof unis>();
+  for (const u of unis) {
+    const key = normalizeUniversityName(u.name);
+    if (!key) continue;
+    const arr = groups.get(key) || [];
+    arr.push(u);
+    groups.set(key, arr);
+  }
+
+  for (const [key, group] of groups) {
+    if (group.length < 2) continue;
+    // 正規化後の名前と完全一致する行を正とする。無ければ最小IDを正とする。
+    const canonical = group.find((u) => u.name === key) ?? group.slice().sort((a, b) => a.id - b.id)[0];
+    const dups = group.filter((u) => u.id !== canonical.id);
+
+    const { results: canonExams } = await env.DB.prepare(
+      "SELECT year, schedule FROM exams WHERE university_id = ?"
+    ).bind(canonical.id).all<{ year: number; schedule: string }>();
+    const canonKeys = new Set(canonExams.map((e) => `${e.year}::${e.schedule}`));
+
+    let reading = canonical.reading, abbreviation = canonical.abbreviation;
+    for (const dup of dups) {
+      const { results: dupExams } = await env.DB.prepare(
+        "SELECT year, schedule FROM exams WHERE university_id = ?"
+      ).bind(dup.id).all<{ year: number; schedule: string }>();
+      const collide = dupExams.some((e) => canonKeys.has(`${e.year}::${e.schedule}`));
+      if (collide) continue;  // 年度・方式が衝突する場合は自動判断が難しいため統合しない
+
+      await env.DB.prepare("UPDATE exams SET university_id = ? WHERE university_id = ?")
+        .bind(canonical.id, dup.id).run();
+      if (!reading && dup.reading) reading = dup.reading;
+      if (!abbreviation && dup.abbreviation) abbreviation = dup.abbreviation;
+      await env.DB.prepare("DELETE FROM universities WHERE id = ?").bind(dup.id).run();
+      dupExams.forEach((e) => canonKeys.add(`${e.year}::${e.schedule}`));
+    }
+    // 正規化した表記に統一し、よみがな・略称は統合元から補完
+    await env.DB.prepare("UPDATE universities SET name = ?, reading = ?, abbreviation = ? WHERE id = ?")
+      .bind(key, reading || "", abbreviation || "", canonical.id).run();
+  }
+}
+
 type Replacement = { from?: string; to?: string; regex?: boolean; flags?: string };
 
 // テキストへ置換ルール（grep replace）を適用し、置換件数も返す。
@@ -551,11 +615,13 @@ export default {
       }
 
       await fixZeroQuestionNumbers(env);
+      await fixOrphanedRecords(env);
 
       // ── GET /api/universities ──────────────────────────────────────
       if (path === "/api/universities" && request.method === "GET") {
         await ensureUniversityReadingColumn(env);
         await ensureUniversityAbbreviationColumn(env);
+        await mergeDuplicateUniversities(env);
         const { results } = await env.DB.prepare(
           "SELECT * FROM universities ORDER BY name ASC"
         ).all();
@@ -646,6 +712,7 @@ export default {
       if (putUniMatch && request.method === "PUT") {
         await ensureUniversityReadingColumn(env);
         await ensureUniversityAbbreviationColumn(env);
+        await mergeDuplicateUniversities(env);
         const uniId = Number(putUniMatch[1]);
         const body = await request.json<{ name?: string; reading?: string; abbreviation?: string }>().catch(() => ({}));
         const name = (body.name || "").trim();
