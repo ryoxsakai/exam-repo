@@ -41,7 +41,11 @@
     getConfig:        function () { return call("/api/config"); },
     updateConfig:     function (data) { return call("/api/config", { method: "PUT", body: JSON.stringify(data) }); },
     getUniversities:  function () { return call("/api/universities"); },
-    updateUniversity: function (id, name, reading) { return call("/api/universities/" + id, { method: "PUT", body: JSON.stringify({ name: name, reading: reading || "" }) }); },
+    updateUniversity: function (id, name, reading, abbreviation) {
+      var b = { name: name, reading: reading || "" };
+      if (abbreviation !== undefined) b.abbreviation = abbreviation || "";
+      return call("/api/universities/" + id, { method: "PUT", body: JSON.stringify(b) });
+    },
     deleteUniversity: function (id) { return call("/api/universities/" + id, { method: "DELETE" }); },
     getExams:         function (p) { return call("/api/exams" + qs(p)); },
     getExam:          function (id) { return call("/api/exams/" + id); },

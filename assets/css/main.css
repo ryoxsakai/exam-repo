@@ -398,6 +398,15 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
 }
 .sort-item .edit-item-input:focus { border-color: var(--emerald); box-shadow: 0 0 0 3px rgba(5,150,105,.12); outline: none; }
 .sort-item .edit-item-reading { flex: 0 1 40%; font-size: 13px; color: var(--ink-soft); }
+/* 大学のよみがな・略称 行（名前 + よみがな + 略称） */
+.uniyomi-item .label { flex: 1 1 30%; min-width: 0; }
+.uniyomi-item .edit-item-reading { flex: 1 1 34%; }
+.uniyomi-item .edit-item-abbr { flex: 1 1 28%; font-size: 13px; color: var(--ink-soft); }
+@media (max-width: 560px) {
+  .uniyomi-item { flex-wrap: wrap; }
+  .uniyomi-item .label { flex: 1 1 100%; }
+  .uniyomi-item .edit-item-reading, .uniyomi-item .edit-item-abbr { flex: 1 1 45%; }
+}
 .sort-item .move { display: flex; gap: 4px; }
 
 /* ---------- Registration builder ---------- */

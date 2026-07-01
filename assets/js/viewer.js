@@ -11,6 +11,10 @@
   function qLabel(q) {
     return (q && q.label != null && String(q.label).trim()) ? String(q.label) : String(q && q.question_number);
   }
+  // 大学の表示名。略称があればそれを、無ければ正式名を返す。
+  function uniDisp(name) {
+    return (name && state.uniAbbr && state.uniAbbr[name]) ? state.uniAbbr[name] : (name || "");
+  }
 
   function saveOpenExam(examId, qnum) { try { sessionStorage.setItem("exam_open_id", examId + ":" + qnum); } catch (e) {} }
   function clearOpenExam() { try { sessionStorage.removeItem("exam_open_id"); } catch (e) {} }
@@ -54,6 +58,7 @@
     printTreeLoaded: false,
     treeLoaded: false,   // ツリー検索を読み込み済みか
     uniReading: {},      // 大学名 → よみがな（五十音ソート用）
+    uniAbbr: {},         // 大学名 → 略称（表示用。無ければ正式名）
     charts: {}
   };
 
@@ -184,6 +189,9 @@
     ]).then(function (res) {
       var cfg = res[0] || {}, unis = (res[1] && res[1].universities) || [];
       state.config = cfg;
+      // 大学名 → 略称のマップ（表示用）
+      state.uniAbbr = {};
+      unis.forEach(function (u) { if (u && u.name && u.abbreviation) state.uniAbbr[u.name] = u.abbreviation; });
       // タイトルは Worker 側設定があれば優先（未保存ならローカル）
       if (cfg.site_title) {
         el("site-title").textContent = cfg.site_title;
@@ -394,10 +402,10 @@
     var showWords = state.filter.category === "長文";
     var cols = [
       { key: "year", label: "年度" },
-      { key: "university_name", label: "大学名" },
+      { key: "university_name", label: "大学" },
       { key: "schedule", label: "方式" },
-      { key: "question_number", label: "大問番号" },
-      { key: "category", label: "問題種別" }
+      { key: "question_number", label: "大問" },
+      { key: "category", label: "種別" }
     ];
     if (showWords) cols.push({ key: "words", label: "語数" });
     if (showWords) cols.push({ key: "level", label: "レベル" });
@@ -414,10 +422,10 @@
     rows.forEach(function (r) {
       html += "<tr>" +
         '<td data-label="年度"><span class="pill em">' + esc(r.year) + "</span></td>" +
-        '<td data-label="大学名"><strong>' + esc(r.university_name) + "</strong></td>" +
+        '<td data-label="大学"><strong>' + esc(uniDisp(r.university_name)) + "</strong></td>" +
         '<td data-label="方式">' + esc(r.schedule) + "</td>" +
-        '<td data-label="大問番号">大問' + esc(qLabel(r)) + "</td>" +
-        '<td data-label="問題種別">' + (r.category ? esc(r.category) : '<span class="hint">—</span>') + "</td>" +
+        '<td data-label="大問">' + esc(qLabel(r)) + "</td>" +
+        '<td data-label="種別">' + (r.category ? esc(r.category) : '<span class="hint">—</span>') + "</td>" +
         (showWords ? '<td data-label="語数"><span class="pill">' + esc(r.words != null ? r.words : 0) + "</span></td>" : "") +
         (showWords ? '<td data-label="レベル">' + (r.level ? '<span class="pill" title="合成 ' + esc(r.level.toFixed(2)) + '（語彙 ' + esc((r.levelVocab || 0).toFixed(2)) + ' ・ 平均文長 ' + esc(Math.round(r.levelAsl || 0)) + '語）／' + esc(LEVEL_BAND_LABEL[r.levelBand] || "") + '">' + esc(r.level.toFixed(1)) + " " + esc(r.levelBand) + "</span>" : '<span class="hint">—</span>') + "</td>" : "") +
         (showOcc ? '<td data-label="出現回数"><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
@@ -518,7 +526,7 @@
     var uniNames = Object.keys(unis).sort(uniCmp);
     var html = '<div class="tree card">';
     uniNames.forEach(function (u) {
-      html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
+      html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(uniDisp(u))) + '<div class="tree-children" hidden>';
       Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
         html += '<div class="tree-node">' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
         Object.keys(unis[u][y]).sort(function (a, b) { return (schedOrder(a) - schedOrder(b)) || a.localeCompare(b, "ja"); }).forEach(function (s) {
@@ -597,7 +605,7 @@
     el("exam-modal-body").innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';
     Api.getExam(examId).then(function (data) {
       var ex = data.exam;
-      var title = ex.year + "年 " + ex.university_name + " " + ex.schedule;
+      var title = ex.year + "年 " + uniDisp(ex.university_name) + " " + ex.schedule;
       if (qnum != null) {
         var titleQ = (ex.questions || []).filter(function (q) { return q.question_number === qnum; })[0];
         title += " 大問" + qLabel(titleQ || { question_number: qnum });
@@ -930,7 +938,7 @@
       });
       var html = '<div class="tree">';
       Object.keys(unis).sort(uniCmp).forEach(function (u) {
-        html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
+        html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(uniDisp(u))) + '<div class="tree-children" hidden>';
         Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
           html += '<div class="tree-node">' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
           Object.keys(unis[u][y]).sort(function (a, b) { return (schedOrder(a) - schedOrder(b)) || a.localeCompare(b, "ja"); }).forEach(function (s) {
@@ -1221,7 +1229,7 @@
     // ドキュメント（KWIC用ラベル付き）と全文。選択セクションのみ対象。
     var secSet = state.corpusFilter.sections;  // 配列 or null（全セクション）
     var docs = qs.map(function (q) {
-      return { text: questionSectionText(q, secSet), label: q.year + " " + q.university_name + " 大問" + qLabel(q) };
+      return { text: questionSectionText(q, secSet), label: q.year + " " + uniDisp(q.university_name) + " 大問" + qLabel(q) };
     }).filter(function (d) { return d.text.trim(); });
     var fullText = docs.map(function (d) { return d.text; }).join("\n");
     var tokens = Corpus.tokenize(fullText);

@@ -46,6 +46,15 @@ async function ensureUniversityReadingColumn(env: Env) {
   }
 }
 
+// universities テーブルに abbreviation（略称。表示用）列が無い既存DBへの後方互換マイグレーション
+async function ensureUniversityAbbreviationColumn(env: Env) {
+  try {
+    await env.DB.exec("ALTER TABLE universities ADD COLUMN abbreviation TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // 既に列が存在する場合は無視
+  }
+}
+
 // question_number = 0 のレコードを修正（各 exam 内で id 順に 1 始まりで採番）
 async function fixZeroQuestionNumbers(env: Env) {
   const zeros = await env.DB.prepare(
@@ -546,6 +555,7 @@ export default {
       // ── GET /api/universities ──────────────────────────────────────
       if (path === "/api/universities" && request.method === "GET") {
         await ensureUniversityReadingColumn(env);
+        await ensureUniversityAbbreviationColumn(env);
         const { results } = await env.DB.prepare(
           "SELECT * FROM universities ORDER BY name ASC"
         ).all();
@@ -635,8 +645,9 @@ export default {
       const putUniMatch = path.match(/^\/api\/universities\/(\d+)$/);
       if (putUniMatch && request.method === "PUT") {
         await ensureUniversityReadingColumn(env);
+        await ensureUniversityAbbreviationColumn(env);
         const uniId = Number(putUniMatch[1]);
-        const body = await request.json<{ name?: string; reading?: string }>().catch(() => ({}));
+        const body = await request.json<{ name?: string; reading?: string; abbreviation?: string }>().catch(() => ({}));
         const name = (body.name || "").trim();
         const reading = (body.reading || "").trim();
         if (!name) return json({ error: "大学名を入力してください。" }, 400, origin);
@@ -646,6 +657,14 @@ export default {
           "SELECT id FROM universities WHERE name = ? AND id != ?"
         ).bind(name, uniId).first<{ id: number }>();
         if (exists) return json({ error: `「${name}」は既に登録されています。` }, 400, origin);
+        // abbreviation は指定があるときのみ更新（名前編集だけのときは既存の略称を保持）
+        if (body.abbreviation !== undefined) {
+          const abbreviation = (body.abbreviation || "").trim();
+          await env.DB.prepare(
+            "UPDATE universities SET name = ?, reading = ?, abbreviation = ? WHERE id = ?"
+          ).bind(name, reading, abbreviation, uniId).run();
+          return json({ success: true, id: uniId, name, reading, abbreviation }, 200, origin);
+        }
         await env.DB.prepare(
           "UPDATE universities SET name = ?, reading = ? WHERE id = ?"
         ).bind(name, reading, uniId).run();
