@@ -178,7 +178,7 @@
                 <option value="難">難しめ</option>
                 <option value="最難">最難</option>
               </select>
-              <button type="button" class="btn ghost sm" id="sm-level-weight" title="語彙と文長の重みを設定（全端末で共有）"><i class="fa-solid fa-sliders"></i> 重み設定</button>
+              <button type="button" class="btn ghost sm" id="sm-level-weight" title="語彙と文長の重みを設定（この端末に保存）"><i class="fa-solid fa-sliders"></i> 重み設定</button>
             </div>
             <p class="hint" style="margin-top:6px"><i class="fa-solid fa-circle-info"></i> 本文の語彙レベル（Oxford5000 の加重平均。機能語・固有名詞を除外、リスト外は最難相当）と平均文長を重み付きで合成し、登録済み長文の分布を四分位で区切った相対難易度帯で絞り込みます。結果に合成スコアと難易度を表示します。</p>
           </div>
@@ -209,7 +209,7 @@
         <button class="icon-btn" data-close title="閉じる"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="modal-body">
-        <p class="hint" style="margin-bottom:12px">語彙レベルと平均文長を、難易度スコアにどの比率で反映するかを設定します。設定は Worker に保存され、<strong>すべての端末で共有</strong>されます。</p>
+        <p class="hint" style="margin-bottom:12px">語彙レベルと平均文長を、難易度スコアにどの比率で反映するかを設定します。設定は<strong>この端末に保存</strong>されます（localStorage）。</p>
         <div class="field">
           <span class="field-label">語彙 <strong id="lw-vocab-val">50</strong>％ ／ 文長 <strong id="lw-sent-val">50</strong>％</span>
           <input type="range" id="lw-range" min="0" max="100" step="5" value="50" style="width:100%" />
@@ -282,11 +282,11 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="assets/data/oxford5000.js?v=20260612a"></script>
   <script src="assets/data/target1900.js?v=20260613h"></script>
-  <script src="assets/js/store.js?v=20260616b"></script>
+  <script src="assets/js/store.js?v=20260701f"></script>
   <script src="assets/js/api.js?v=20260624g"></script>
   <script src="assets/js/ui.js?v=20260612z"></script>
   <script src="assets/js/markup.js?v=20260628b"></script>
   <script src="assets/js/corpus.js?v=20260613j"></script>
-  <script src="assets/js/viewer.js?v=20260701e"></script>
+  <script src="assets/js/viewer.js?v=20260701f"></script>
 </body>
 </html>

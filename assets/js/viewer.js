@@ -227,7 +227,6 @@
     el("lw-sent-val").textContent = 100 - v;
   }
   function openLevelWeight() {
-    if (!Store.getWorkerUrl()) { UI.toast("Worker URL が未設定です（設定ページ）", "err"); return; }
     el("lw-range").value = String(Math.round(difficultyWeights().vocab * 100));
     el("lw-status").textContent = "";
     updateLevelWeightLabels();
@@ -235,20 +234,11 @@
   }
   function saveLevelWeight() {
     var v = Math.max(0, Math.min(1, Number(el("lw-range").value) / 100));
-    var btn = el("lw-save"); btn.disabled = true;
-    el("lw-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> 保存中…';
-    Api.updateConfig({ difficulty_vocab_weight: v }).then(function () {
-      if (!state.config) state.config = {};
-      state.config.difficulty_vocab_weight = v;
-      state.longLevel = null;  // 重み変更で相対帯を再計算
-      el("lw-status").textContent = "";
-      UI.toast("重みを保存しました（全端末で共有）", "ok");
-      UI.closeModal(el("level-weight-modal"));
-      if (state.filter.category === "長文") loadResults();  // 表示中なら反映
-    }).catch(function (e) {
-      el("lw-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
-      UI.toast(e.message || "保存に失敗しました", "err");
-    }).then(function () { btn.disabled = false; });
+    Store.setDifficultyVocabWeight(v);
+    state.longLevel = null;  // 重み変更で相対帯を再計算
+    UI.toast("重みを保存しました（この端末）", "ok");
+    UI.closeModal(el("level-weight-modal"));
+    if (state.filter.category === "長文") loadResults();  // 表示中なら反映
   }
   function openSearch() {
     el("sm-word").value = state.filter.word;
@@ -338,10 +328,9 @@
     return sum / s.tokenTotal;
   }
 
-  // 難易度の重み（語彙 : 文長）。Worker(config) の difficulty_vocab_weight（0〜1）を使用。既定 0.5。
+  // 難易度の重み（語彙 : 文長）。localStorage（この端末）に保存。既定 0.5。
   function difficultyWeights() {
-    var v = (state.config && typeof state.config.difficulty_vocab_weight === "number") ? state.config.difficulty_vocab_weight : 0.5;
-    v = Math.max(0, Math.min(1, v));
+    var v = Store.getDifficultyVocabWeight();
     return { vocab: v, sentence: 1 - v };
   }
 
