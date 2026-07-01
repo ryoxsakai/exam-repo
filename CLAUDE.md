@@ -54,6 +54,14 @@
 
 データモデル: `universities`(name, reading=よみがな, abbreviation=略称表示用) 1—N `exams`(year, schedule) 1—N `questions`(question_number, label, problem_text, answer_text, commentary_text)。`label` は大問の表示ラベル（任意。例「1A」。空なら「大問」+`question_number` を表示する表示専用の上書き。並び順・識別は常に整数 `question_number` を使用）。
 
+### 自動修復（`worker/index.ts`）
+
+リクエスト時に以下を自動で直す（`ensureXColumn` と同じ「毎回チェックして冪等に直す」パターン）。曖昧な判断を伴わない安全なケースのみ自動修正し、判断が割れるケースは統合せずスキップする。
+
+- `fixZeroQuestionNumbers`（全リクエスト）: `question_number <= 0` を大問内で採番し直す。
+- `fixOrphanedRecords`（全リクエスト）: 親が存在しない `questions`（無効な `exam_id`）・`exams`（無効な `university_id`）を削除。D1 は既定で外部キー制約を強制しないため、削除時に `ON DELETE CASCADE` が効かず子レコードが孤児化する場合がある。
+- `mergeDuplicateUniversities`（`GET/PUT /api/universities`）: `normalizeUniversityName`（取り込み・登録時の表記統一と同じルール。末尾の「大学」「大」・括弧注記を除去）で同じ名前になる大学を統合し、`exams` を統合先へ付け替える。統合先に同じ `(year, schedule)` の `exams` が既にある組は自動判断できないためスキップする。
+
 ## コーパス分析（`assets/js/corpus.js`）
 
 `GET /api/corpus` の全英文を対象に、クライアント側で分析:
