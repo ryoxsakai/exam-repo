@@ -831,6 +831,8 @@
     });
     el("ext-clear").addEventListener("click", function () { el("ext-json").value = ""; el("ext-status").innerHTML = ""; });
     el("ext-load").addEventListener("click", loadExtJson);
+    // クリップボードから貼り付け欄へ転写
+    if (el("ext-paste-btn")) el("ext-paste-btn").addEventListener("click", pasteExtJson);
     // ファイル選択（.json / .txt）で読み込み
     if (el("ext-file") && el("ext-file-btn")) {
       el("ext-file-btn").addEventListener("click", function () { el("ext-file").click(); });
@@ -858,6 +860,21 @@
     if (el("ext-uni-select")) {
       el("ext-uni-select").addEventListener("change", function () { loadExtPrompt(true); });
     }
+  }
+  // クリップボードの内容を貼り付け欄へ転写して読み込む
+  function pasteExtJson() {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      toast("このブラウザはクリップボード読み取りに対応していません。手動で貼り付けてください", "err");
+      return;
+    }
+    navigator.clipboard.readText().then(function (text) {
+      if (!text || !text.trim()) { toast("クリップボードが空です", "err"); return; }
+      el("ext-json").value = text;
+      el("ext-status").innerHTML = '<span class="hint"><i class="fa-solid fa-paste"></i> クリップボードから貼り付けました</span>';
+      loadExtJson();
+    }, function () {
+      toast("クリップボードの読み取りに失敗しました（権限を確認してください）", "err");
+    });
   }
   // .json / .txt ファイルをテキストとして読み、貼り付け欄に入れて読み込む
   function readExtFile(file) {
