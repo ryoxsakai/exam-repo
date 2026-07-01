@@ -218,6 +218,32 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
 /* ---------- Table ---------- */
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
 table.data { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 560px; }
+/* 入試問題一覧（閲覧・設定）: 幅固定・横スクロールなし */
+.table-wrap.exam-list-wrap { overflow-x: visible; }
+table.data.exam-list-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 0;
+}
+table.data.exam-list-table .col-year { width: 13%; }
+table.data.exam-list-table .col-uni { width: 30%; }
+table.data.exam-list-table .col-schedule { width: 14%; }
+table.data.exam-list-table .col-qnum { width: 11%; }
+table.data.exam-list-table .col-category { width: auto; }
+table.data.exam-list-table .col-occ { width: 10%; }
+table.data.exam-list-table .col-actions { width: 2.75rem; }
+table.data.exam-list-table.settings-list .col-actions { width: 6.5rem; }
+table.data.exam-list-table thead th,
+table.data.exam-list-table tbody td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+table.data.exam-list-table thead th.col-actions,
+table.data.exam-list-table tbody td.row-actions {
+  overflow: visible;
+  white-space: nowrap;
+}
 table.data thead th {
   text-align: left; font-weight: 700; color: var(--ink-soft); font-size: 12.5px;
   background: var(--grad-chip); border-bottom: 1px solid var(--line);
@@ -232,6 +258,23 @@ table.data tbody tr { transition: background .12s; }
 table.data tbody tr:hover { background: #f8fafc; }
 table.data tbody tr:last-child td { border-bottom: 0; }
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+@media (max-width: 640px) {
+  table.data.exam-list-table thead th,
+  table.data.exam-list-table tbody td { padding: 9px 8px; font-size: 12.5px; }
+  table.data.exam-list-table thead th .sort-ic { margin-left: 3px; }
+  table.data.exam-list-table .col-year { width: 3.25rem; }
+  table.data.exam-list-table .col-schedule { width: 3.25rem; }
+  table.data.exam-list-table .col-qnum { width: 2.75rem; }
+  table.data.exam-list-table .col-actions { width: 2.5rem; }
+  table.data.exam-list-table.settings-list .col-actions { width: 5.5rem; }
+  /* 同一試験内の大問一覧では年度・大学・方式を非表示（ツールバーに表示済み） */
+  table.data.exam-list-table.same-exam-context th:nth-child(1),
+  table.data.exam-list-table.same-exam-context td:nth-child(1),
+  table.data.exam-list-table.same-exam-context th:nth-child(2),
+  table.data.exam-list-table.same-exam-context td:nth-child(2),
+  table.data.exam-list-table.same-exam-context th:nth-child(3),
+  table.data.exam-list-table.same-exam-context td:nth-child(3) { display: none; }
+}
 
 .pill {
   display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;

@@ -459,6 +459,9 @@
       return av < bv ? -dir : av > bv ? dir : 0;
     });
     if (!rows.length) { el("list-area").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>該当する入試問題がありません。</div></div>'; return; }
+    var sameCtx = rows.length > 0 && rows.every(function (r) {
+      return r.year === rows[0].year && r.university_name === rows[0].university_name && r.schedule === rows[0].schedule;
+    });
     var cols = [
       { key: "year", label: "年度" },
       { key: "university_name", label: "大学名" },
@@ -466,13 +469,16 @@
       { key: "question_number", label: "大問" },
       { key: "category", label: "種別" }
     ];
-    var html = '<div class="table-wrap"><table class="data"><thead><tr>';
+    var tableCls = "data exam-list-table settings-list" + (sameCtx ? " same-exam-context" : "");
+    var html = '<div class="table-wrap exam-list-wrap"><table class="' + tableCls + '"><colgroup>' +
+      '<col class="col-year"><col class="col-uni"><col class="col-schedule"><col class="col-qnum"><col class="col-category">' +
+      '<col class="col-actions"></colgroup><thead><tr>';
     cols.forEach(function (c) {
       var sorted = state.list.sort.key === c.key;
       var ic = sorted ? (state.list.sort.dir === "asc" ? "fa-arrow-up-short-wide" : "fa-arrow-down-wide-short") : "fa-sort";
       html += '<th class="sortable' + (sorted ? " sorted" : "") + '" data-sort="' + c.key + '">' + esc(c.label) + '<i class="fa-solid ' + ic + ' sort-ic"></i></th>';
     });
-    html += '<th style="text-align:right">操作</th></tr></thead><tbody>';
+    html += '<th class="col-actions" style="text-align:right">操作</th></tr></thead><tbody>';
     rows.forEach(function (r) {
       html += "<tr>" +
         "<td><span class=\"pill em\">" + esc(r.year) + "</span></td>" +
