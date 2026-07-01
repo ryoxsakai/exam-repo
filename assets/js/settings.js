@@ -2043,8 +2043,8 @@
     Api.getUniversities().then(function (d) {
       var us = (d.universities || []).slice();
       us.sort(function (a, b) { return (a.reading || a.name).localeCompare(b.reading || b.name, "ja") || a.name.localeCompare(b.name, "ja"); });
-      state.universities = us.map(function (u) { return { id: u.id, name: u.name, reading: u.reading || "" }; });
-      uniYomiRows = state.universities.map(function (u) { return { id: u.id, name: u.name, reading: u.reading }; });
+      state.universities = us.map(function (u) { return { id: u.id, name: u.name, reading: u.reading || "", abbreviation: u.abbreviation || "" }; });
+      uniYomiRows = state.universities.map(function (u) { return { id: u.id, name: u.name, reading: u.reading, abbreviation: u.abbreviation }; });
       renderUniYomi();
     }).catch(function (e) {
       box.innerHTML = '<div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div>";
@@ -2055,30 +2055,37 @@
     if (!uniYomiRows.length) { box.innerHTML = '<p class="hint">登録された大学がありません。</p>'; return; }
     var h = '<ul class="sort-list">';
     uniYomiRows.forEach(function (u, i) {
-      h += '<li class="sort-item">' +
+      h += '<li class="sort-item uniyomi-item">' +
         '<span class="label">' + esc(u.name) + "</span>" +
         '<input class="edit-item-input edit-item-reading" type="text" data-yomi="' + i + '" value="' + esc(u.reading) + '" placeholder="よみがな（ひらがな）" />' +
+        '<input class="edit-item-input edit-item-abbr" type="text" data-abbr="' + i + '" value="' + esc(u.abbreviation || "") + '" placeholder="略称（表示用・任意）" />' +
         "</li>";
     });
     box.innerHTML = h + "</ul>";
     $all("[data-yomi]", box).forEach(function (inp) {
       inp.addEventListener("input", function () { uniYomiRows[+inp.getAttribute("data-yomi")].reading = inp.value; });
     });
+    $all("[data-abbr]", box).forEach(function (inp) {
+      inp.addEventListener("input", function () { uniYomiRows[+inp.getAttribute("data-abbr")].abbreviation = inp.value; });
+    });
   }
   function saveUniYomi() {
     if (!Store.getWorkerUrl()) { toast("Worker URL が未設定です（接続設定タブ）", "err"); return; }
-    var orig = {}; (state.universities || []).forEach(function (u) { orig[u.id] = u.reading || ""; });
+    var orig = {}; (state.universities || []).forEach(function (u) { orig[u.id] = { reading: u.reading || "", abbreviation: u.abbreviation || "" }; });
     var ops = [];
     uniYomiRows.forEach(function (u) {
-      if (u.id != null && (u.reading || "").trim() !== (orig[u.id] || "")) {
-        ops.push(Api.updateUniversity(u.id, u.name, (u.reading || "").trim()));
+      if (u.id == null) return;
+      var o = orig[u.id] || { reading: "", abbreviation: "" };
+      var reading = (u.reading || "").trim(), abbr = (u.abbreviation || "").trim();
+      if (reading !== o.reading || abbr !== o.abbreviation) {
+        ops.push(Api.updateUniversity(u.id, u.name, reading, abbr));
       }
     });
     if (!ops.length) { toast("変更はありません", "ok"); return; }
     el("uniyomi-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> 保存中…';
     Promise.all(ops).then(function () {
       el("uniyomi-status").textContent = "";
-      toast(ops.length + " 件のよみがなを保存しました", "ok");
+      toast(ops.length + " 件を保存しました", "ok");
       loadUniYomi();
     }).catch(function (e) {
       el("uniyomi-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
