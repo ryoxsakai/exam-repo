@@ -24,7 +24,8 @@
     printLineHeight: "exam_print_lineheight", // 問題印刷の行間（表紙以外。1〜5）
     regDraft:      "exam_reg_draft",         // 問題登録フォームの下書き（リロードしても保持）
     printSections: "exam_print_sections",    // 印刷対象セクション {種別: bool}（全問題で共有）
-    replaceRules:  "exam_replace_rules"      // 登録データ一括置換のルール [{from,to,regex}]
+    replaceRules:  "exam_replace_rules",     // 登録データ一括置換のルール [{from,to,regex}]
+    difficultyVocabWeight: "exam_difficulty_vocab_weight" // 長文難易度の語彙:文長の重み(0〜1、この端末のみ)
   };
 
   function read(key, fallback) {
@@ -211,6 +212,17 @@
     /* 登録データ一括置換のルール（この端末に保持） */
     getReplaceRules: function () { var r = read(KEYS.replaceRules, null); return Array.isArray(r) ? r : []; },
     setReplaceRules: function (r) { write(KEYS.replaceRules, r); },
+
+    /* 長文難易度の語彙:文長の重み（0〜1。この端末に保持。既定 0.5） */
+    getDifficultyVocabWeight: function () {
+      var v = Number(read(KEYS.difficultyVocabWeight, 0.5));
+      if (isNaN(v)) v = 0.5;
+      return Math.max(0, Math.min(1, v));
+    },
+    setDifficultyVocabWeight: function (w) {
+      var v = Number(w); if (isNaN(v)) v = 0.5;
+      write(KEYS.difficultyVocabWeight, Math.max(0, Math.min(1, v)));
+    },
 
     /* 問題閲覧モーダルの文字サイズ */
     getFontSize: function () {
