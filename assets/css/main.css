@@ -218,6 +218,33 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
 /* ---------- Table ---------- */
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
 table.data { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 560px; }
+/* 入試問題一覧（閲覧・設定）: 幅固定・横スクロールなし */
+.table-wrap.exam-list-wrap { overflow-x: visible; }
+table.data.exam-list-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 0;
+}
+table.data.exam-list-table .col-year { width: 13%; }
+table.data.exam-list-table .col-uni { width: 30%; }
+table.data.exam-list-table .col-schedule { width: 14%; }
+table.data.exam-list-table .col-qnum { width: 11%; }
+table.data.exam-list-table .col-category { width: auto; }
+table.data.exam-list-table .col-occ { width: 10%; }
+table.data.exam-list-table .col-words { width: 10%; }
+table.data.exam-list-table .col-level { width: 12%; }
+table.data.exam-list-table .col-actions { width: 2.75rem; }
+table.data.exam-list-table thead th,
+table.data.exam-list-table tbody td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+table.data.exam-list-table thead th.col-actions,
+table.data.exam-list-table tbody td.row-actions {
+  overflow: visible;
+  white-space: nowrap;
+}
 table.data thead th {
   text-align: left; font-weight: 700; color: var(--ink-soft); font-size: 12.5px;
   background: var(--grad-chip); border-bottom: 1px solid var(--line);
@@ -239,27 +266,37 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
   /* 分布バーは幅が不要なのでコンパクトに */
   .bar-track { min-width: 30px; }
 
-  /* メイン検索結果: 幅が狭くてもカード化せず、文字とパディングを詰めて
-     表のまま各行を1行に収める（data-label を持つ #results-area のテーブルのみ対象） */
-  #results-area table.data { min-width: 0; width: 100%; table-layout: auto; font-size: 12px; }
-  #results-area table.data thead th { padding: 8px 6px; font-size: 11px; white-space: nowrap; }
-  #results-area table.data thead th .sort-ic { margin-left: 3px; font-size: 9px; }
-  #results-area table.data tbody td { padding: 8px 6px; white-space: nowrap; }
-  /* 表示ボタン列は内容幅に固定（種別との間に余白ができないように） */
-  #results-area table.data th:last-child,
-  #results-area table.data td.row-actions { width: 1px; white-space: nowrap; }
-  /* 大学名列は余白を吸収し、長い正式名は折り返して横スクロールを防ぐ */
-  #results-area table.data td[data-label="大学"] { white-space: normal; word-break: break-word; }
+  /* メイン検索結果: 幅固定で横スクロールなし（exam-list-table） */
+  #results-area table.data.exam-list-table {
+    min-width: 0; width: 100%; table-layout: fixed; font-size: 12px;
+  }
+  #results-area table.data.exam-list-table thead th { padding: 8px 6px; font-size: 11px; white-space: nowrap; }
+  #results-area table.data.exam-list-table thead th .sort-ic { margin-left: 3px; font-size: 9px; }
+  #results-area table.data.exam-list-table tbody td { padding: 8px 6px; white-space: nowrap; }
+  #results-area table.data.exam-list-table .col-year { width: 3.25rem; }
+  #results-area table.data.exam-list-table .col-schedule { width: 3.25rem; }
+  #results-area table.data.exam-list-table .col-qnum { width: 2.75rem; }
+  #results-area table.data.exam-list-table .col-actions { width: 2.5rem; }
+  #results-area table.data.exam-list-table thead th.col-actions,
+  #results-area table.data.exam-list-table tbody td.row-actions { width: 2.5rem; white-space: nowrap; }
+  #results-area table.data.exam-list-table td[data-label="大学"] { overflow: hidden; text-overflow: ellipsis; }
   #results-area .row-actions { gap: 4px; }
   /* モバイルの検索表のみ略称を表示（他は正式名） */
   #results-area .uni-abbr { display: inline; }
   #results-area .uni-full { display: none; }
+  /* 同一試験内の大問一覧では年度・大学・方式を非表示（ツールバーに表示済み） */
+  #results-area table.data.exam-list-table.same-exam-context th:nth-child(1),
+  #results-area table.data.exam-list-table.same-exam-context td:nth-child(1),
+  #results-area table.data.exam-list-table.same-exam-context th:nth-child(2),
+  #results-area table.data.exam-list-table.same-exam-context td:nth-child(2),
+  #results-area table.data.exam-list-table.same-exam-context th:nth-child(3),
+  #results-area table.data.exam-list-table.same-exam-context td:nth-child(3) { display: none; }
 }
 /* さらに狭い画面ではより詰める */
 @media (max-width: 420px) {
-  #results-area table.data { font-size: 11px; }
-  #results-area table.data thead th { padding: 6px 4px; font-size: 10px; }
-  #results-area table.data tbody td { padding: 6px 4px; }
+  #results-area table.data.exam-list-table { font-size: 11px; }
+  #results-area table.data.exam-list-table thead th { padding: 6px 4px; font-size: 10px; }
+  #results-area table.data.exam-list-table tbody td { padding: 6px 4px; }
   #results-area table.data .pill { padding: 1px 6px; font-size: 10px; }
   #results-area .icon-btn.sm { width: 28px; height: 28px; }
 }
