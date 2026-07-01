@@ -169,15 +169,18 @@
             <p class="hint" style="margin-top:6px"><i class="fa-solid fa-circle-info"></i> 結果に本文の語数を表示し、指定範囲で絞り込みます（空欄なら無制限）。</p>
           </div>
           <div id="sm-level-row" class="field" style="display:none;margin-top:10px">
-            <span class="field-label">難易度（語彙レベル：Oxford5000 の加重平均）</span>
-            <select id="sm-level">
-              <option value="">指定なし</option>
-              <option value="易">易しめ</option>
-              <option value="標準">標準</option>
-              <option value="難">難しめ</option>
-              <option value="最難">最難</option>
-            </select>
-            <p class="hint" style="margin-top:6px"><i class="fa-solid fa-circle-info"></i> 本文の内容語（機能語・固有名詞を除外）を CEFR で加重平均し（Oxford5000 基準。リスト外の語は最難相当として算入）、登録済み長文の分布を四分位で区切った相対難易度帯で絞り込みます。結果に数値レベルも表示します。</p>
+            <span class="field-label">難易度（語彙レベル＋文長の合成）</span>
+            <div class="inline-add" style="gap:8px;align-items:center">
+              <select id="sm-level" style="flex:1">
+                <option value="">指定なし</option>
+                <option value="易">易しめ</option>
+                <option value="標準">標準</option>
+                <option value="難">難しめ</option>
+                <option value="最難">最難</option>
+              </select>
+              <button type="button" class="btn ghost sm" id="sm-level-weight" title="語彙と文長の重みを設定（全端末で共有）"><i class="fa-solid fa-sliders"></i> 重み設定</button>
+            </div>
+            <p class="hint" style="margin-top:6px"><i class="fa-solid fa-circle-info"></i> 本文の語彙レベル（Oxford5000 の加重平均。機能語・固有名詞を除外、リスト外は最難相当）と平均文長を重み付きで合成し、登録済み長文の分布を四分位で区切った相対難易度帯で絞り込みます。結果に合成スコアと難易度を表示します。</p>
           </div>
         </div>
 
@@ -192,6 +195,31 @@
       <div class="modal-foot">
         <button class="btn ghost" data-close>キャンセル</button>
         <button class="btn primary" id="sm-run"><i class="fa-solid fa-magnifying-glass"></i> 検索</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 難易度の重み設定モーダル ===== -->
+  <div class="modal-overlay" id="level-weight-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <i class="fa-solid fa-sliders ic"></i>
+        <h3>難易度の重み設定</h3>
+        <span class="spacer"></span>
+        <button class="icon-btn" data-close title="閉じる"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <p class="hint" style="margin-bottom:12px">語彙レベルと平均文長を、難易度スコアにどの比率で反映するかを設定します。設定は Worker に保存され、<strong>すべての端末で共有</strong>されます。</p>
+        <div class="field">
+          <span class="field-label">語彙 <strong id="lw-vocab-val">50</strong>％ ／ 文長 <strong id="lw-sent-val">50</strong>％</span>
+          <input type="range" id="lw-range" min="0" max="100" step="5" value="50" style="width:100%" />
+          <div style="display:flex;justify-content:space-between"><span class="hint">文長重視</span><span class="hint">語彙重視</span></div>
+        </div>
+        <p class="hint" id="lw-status" style="margin-top:8px"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-close>キャンセル</button>
+        <button class="btn primary" id="lw-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
       </div>
     </div>
   </div>
@@ -259,6 +287,6 @@
   <script src="assets/js/ui.js?v=20260612z"></script>
   <script src="assets/js/markup.js?v=20260628b"></script>
   <script src="assets/js/corpus.js?v=20260613j"></script>
-  <script src="assets/js/viewer.js?v=20260701d"></script>
+  <script src="assets/js/viewer.js?v=20260701e"></script>
 </body>
 </html>

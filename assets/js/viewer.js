@@ -102,6 +102,13 @@
     el("sm-run").addEventListener("click", runSearch);
     if (el("sm-category")) el("sm-category").addEventListener("change", toggleWordsRow);
     el("btn-clear-filter").addEventListener("click", clearFilter);
+    // 難易度の重み設定モーダル
+    if (el("level-weight-modal")) {
+      UI.wireModal(el("level-weight-modal"));
+      if (el("sm-level-weight")) el("sm-level-weight").addEventListener("click", openLevelWeight);
+      if (el("lw-range")) el("lw-range").addEventListener("input", updateLevelWeightLabels);
+      if (el("lw-save")) el("lw-save").addEventListener("click", saveLevelWeight);
+    }
     el("btn-run-corpus").addEventListener("click", runCorpus);
     UI.wireModal(el("corpus-filter-modal"));
     el("btn-corpus-filter").addEventListener("click", openCorpusFilter);
@@ -212,6 +219,37 @@
     if (el("sm-words-row")) el("sm-words-row").style.display = on ? "" : "none";
     if (el("sm-level-row")) el("sm-level-row").style.display = on ? "" : "none";
   }
+
+  /* ---- 難易度の重み設定（語彙 : 文長。Worker config で全端末共有） ---- */
+  function updateLevelWeightLabels() {
+    var v = Number(el("lw-range").value);
+    el("lw-vocab-val").textContent = v;
+    el("lw-sent-val").textContent = 100 - v;
+  }
+  function openLevelWeight() {
+    if (!Store.getWorkerUrl()) { UI.toast("Worker URL が未設定です（設定ページ）", "err"); return; }
+    el("lw-range").value = String(Math.round(difficultyWeights().vocab * 100));
+    el("lw-status").textContent = "";
+    updateLevelWeightLabels();
+    UI.openModal(el("level-weight-modal"));
+  }
+  function saveLevelWeight() {
+    var v = Math.max(0, Math.min(1, Number(el("lw-range").value) / 100));
+    var btn = el("lw-save"); btn.disabled = true;
+    el("lw-status").innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> 保存中…';
+    Api.updateConfig({ difficulty_vocab_weight: v }).then(function () {
+      if (!state.config) state.config = {};
+      state.config.difficulty_vocab_weight = v;
+      state.longLevel = null;  // 重み変更で相対帯を再計算
+      el("lw-status").textContent = "";
+      UI.toast("重みを保存しました（全端末で共有）", "ok");
+      UI.closeModal(el("level-weight-modal"));
+      if (state.filter.category === "長文") loadResults();  // 表示中なら反映
+    }).catch(function (e) {
+      el("lw-status").innerHTML = '<span style="color:#b91c1c"><i class="fa-solid fa-circle-xmark"></i> ' + esc(e.message) + "</span>";
+      UI.toast(e.message || "保存に失敗しました", "err");
+    }).then(function () { btn.disabled = false; });
+  }
   function openSearch() {
     el("sm-word").value = state.filter.word;
     el("sm-university").value = state.filter.universityName;
@@ -300,16 +338,64 @@
     return sum / s.tokenTotal;
   }
 
+  // 難易度の重み（語彙 : 文長）。Worker(config) の difficulty_vocab_weight（0〜1）を使用。既定 0.5。
+  function difficultyWeights() {
+    var v = (state.config && typeof state.config.difficulty_vocab_weight === "number") ? state.config.difficulty_vocab_weight : 0.5;
+    v = Math.max(0, Math.min(1, v));
+    return { vocab: v, sentence: 1 - v };
+  }
+
+  // 文数のカウント（略語・小数・省略記号・閉じ引用符などを補正して過剰分割を防ぐ）
+  var SENT_ABBR = /\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Mt|vs|etc|No|Vol|Fig|cf|ca|pp|Inc|Ltd|Co|Corp|Ave|Rd|Gen|Sen|Rev|Gov|Capt|Sgt|Lt|Col|Univ|approx)\b\./gi;
+  function sentenceCount(text) {
+    var t = String(text || "");
+    if (!t.trim()) return 0;
+    t = t.replace(/(\d)[.,](\d)/g, "$1$2");            // 小数・桁区切り 3.14 / 1,000
+    t = t.replace(/\.\.\.+|…/g, " ");                   // 省略記号は区切りにしない
+    t = t.replace(SENT_ABBR, " ");                      // 略語 Dr. Mr. etc.
+    t = t.replace(/\b(?:e\.g|i\.e|a\.m|p\.m)\.?/gi, " "); // e.g. i.e. a.m. p.m.
+    t = t.replace(/\b([A-Za-z])\./g, "$1");            // 単独イニシャル J. K. / U.S.A.
+    // 文末: . ! ? の連続 ＋ 閉じ引用符/括弧 ＋（空白 or 終端）
+    var m = t.match(/[.!?]+["'”’)\]）」』]*(?=\s|$)/g);
+    var n = m ? m.length : 0;
+    return n > 0 ? n : 1;                               // 終端記号が無くても本文があれば1文
+  }
+  // 本文の平均文長（1文あたりの語数）
+  function bodyAvgSentenceLen(q) {
+    var text = Markup.strip(bodyText(q));
+    var words = Corpus.tokenize(text).length;
+    if (!words) return 0;
+    var sents = sentenceCount(text);
+    return sents ? words / sents : 0;
+  }
+  // 平均文長 → CEFR と同じ 1〜6 スケールへ（12語以下=1、34語以上=6 の目安）
+  var SL_MIN = 12, SL_MAX = 34;
+  function slToLevel(asl) {
+    if (!asl) return 0;
+    return Math.max(1, Math.min(6, 1 + (asl - SL_MIN) / (SL_MAX - SL_MIN) * 5));
+  }
+  // 合成スコア（語彙レベルと文長レベルを重み付き平均。欠損側は在る方のみ）
+  function compositeScore(vocab, asl, w) {
+    var sl = slToLevel(asl);
+    if (!vocab && !sl) return 0;
+    if (!vocab) return sl;
+    if (!sl) return vocab;
+    return w.vocab * vocab + w.sentence * sl;
+  }
+
   // 登録済み「長文」大問のレベル分布を四分位に区切り、相対難易度帯の境界を作る。
   // コーパス（state.corpus）単位でキャッシュ。全大問で共通の基準にするため他の絞り込みには依存しない。
   function ensureLongLevels(levelMap, stopSet) {
-    if (state.longLevel && state.longLevel.src === state.corpus) return state.longLevel;
+    var w = difficultyWeights();
+    if (state.longLevel && state.longLevel.src === state.corpus && state.longLevel.wv === w.vocab) return state.longLevel;
     var byKey = Object.create(null), vals = [];
     (state.corpus || []).forEach(function (q) {
       if ((q.category || "") !== "長文") return;
-      var v = bodyLevelAvg(q, levelMap, stopSet);
-      byKey[q.exam_id + ":" + q.question_number] = v;
-      if (v) vals.push(v);
+      var vocab = bodyLevelAvg(q, levelMap, stopSet);
+      var asl = bodyAvgSentenceLen(q);
+      var score = compositeScore(vocab, asl, w);
+      byKey[q.exam_id + ":" + q.question_number] = { score: score, vocab: vocab, asl: asl };
+      if (score) vals.push(score);
     });
     vals.sort(function (a, b) { return a - b; });
     var cutoffs = null;
@@ -320,7 +406,7 @@
         vals[Math.floor(0.75 * (vals.length - 1))]
       ];
     }
-    state.longLevel = { src: state.corpus, byKey: byKey, cutoffs: cutoffs };
+    state.longLevel = { src: state.corpus, wv: w.vocab, byKey: byKey, cutoffs: cutoffs };
     return state.longLevel;
   }
   // 加重平均値 → 難易度帯ラベル（cutoffs=四分位境界。無ければ絶対フォールバック。""=判定不能）
@@ -374,7 +460,10 @@
           var key = r.exam_id + ":" + r.question_number;
           var q = corpusByKey[key];
           r.words = q ? bodyWordCount(q) : 0;
-          r.level = ll.byKey[key] != null ? ll.byKey[key] : (q ? bodyLevelAvg(q, levelMap, stopSet) : 0);
+          var e = ll.byKey[key];
+          r.level = e ? e.score : 0;
+          r.levelVocab = e ? e.vocab : 0;
+          r.levelAsl = e ? e.asl : 0;
           r.levelBand = bandFromCutoffs(r.level, ll.cutoffs);
         });
         var mn = state.filter.wordsMin !== "" ? Number(state.filter.wordsMin) : null;
@@ -458,7 +547,7 @@
         '<td data-label="大問番号">大問' + esc(qLabel(r)) + "</td>" +
         '<td data-label="問題種別">' + (r.category ? esc(r.category) : '<span class="hint">—</span>') + "</td>" +
         (showWords ? '<td data-label="語数"><span class="pill">' + esc(r.words != null ? r.words : 0) + "</span></td>" : "") +
-        (showWords ? '<td data-label="レベル">' + (r.level ? '<span class="pill" title="Oxford5000 加重平均 ' + esc(r.level.toFixed(2)) + '（' + esc(LEVEL_BAND_LABEL[r.levelBand] || "") + '）">' + esc(r.level.toFixed(1)) + " " + esc(r.levelBand) + "</span>" : '<span class="hint">—</span>') + "</td>" : "") +
+        (showWords ? '<td data-label="レベル">' + (r.level ? '<span class="pill" title="合成 ' + esc(r.level.toFixed(2)) + '（語彙 ' + esc((r.levelVocab || 0).toFixed(2)) + ' ・ 平均文長 ' + esc(Math.round(r.levelAsl || 0)) + '語）／' + esc(LEVEL_BAND_LABEL[r.levelBand] || "") + '">' + esc(r.level.toFixed(1)) + " " + esc(r.levelBand) + "</span>" : '<span class="hint">—</span>') + "</td>" : "") +
         (showOcc ? '<td data-label="出現回数"><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
         '<td class="row-actions"><button class="icon-btn sm" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
         "</tr>";

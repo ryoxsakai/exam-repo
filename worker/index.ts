@@ -587,6 +587,9 @@ export default {
         const uniNotesRow = await env.DB.prepare(
           "SELECT value FROM config WHERE key = 'university_notes'"
         ).first<{ value: string }>();
+        const diffWeightRow = await env.DB.prepare(
+          "SELECT value FROM config WHERE key = 'difficulty_vocab_weight'"
+        ).first<{ value: string }>();
         const curYear = new Date().getFullYear();
         const defaultSchedules = ["前期","後期","一般前期","一般後期","推薦","AO","その他"];
         const defaultYears = Array.from({ length: 8 }, (_, i) => String(curYear - i));
@@ -603,6 +606,7 @@ export default {
           section_types: sectionTypesRow ? JSON.parse(sectionTypesRow.value) : defaultSectionTypes,
           ingest_prompt: ingestPromptRow ? JSON.parse(ingestPromptRow.value) : "",
           university_notes: uniNotesRow ? JSON.parse(uniNotesRow.value) : {},
+          difficulty_vocab_weight: diffWeightRow ? JSON.parse(diffWeightRow.value) : 0.5,
         }, 200, origin);
       }
 
@@ -611,7 +615,7 @@ export default {
         await env.DB.exec(
           "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         );
-        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string; site_subtitle?: string; question_categories?: string[]; section_types?: string[]; ingest_prompt?: string; university_notes?: Record<string, string> };
+        type ConfigBody = { schedules?: string[]; year_presets?: string[]; site_title?: string; markup_css?: string; custom_domain?: string; site_subtitle?: string; question_categories?: string[]; section_types?: string[]; ingest_prompt?: string; university_notes?: Record<string, string>; difficulty_vocab_weight?: number };
         const body = await request.json<ConfigBody>();
         const upsert = async (key: string, val: unknown) => {
           await env.DB.prepare(
@@ -628,6 +632,7 @@ export default {
         if (body.section_types !== undefined) await upsert("section_types", body.section_types);
         if (body.ingest_prompt !== undefined) await upsert("ingest_prompt", body.ingest_prompt);
         if (body.university_notes !== undefined) await upsert("university_notes", body.university_notes);
+        if (body.difficulty_vocab_weight !== undefined) await upsert("difficulty_vocab_weight", body.difficulty_vocab_weight);
         return json({ success: true }, 200, origin);
       }
 
