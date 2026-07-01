@@ -345,6 +345,8 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
 .exam-shortcuts .sc-btn.sc-q { color: var(--emerald-dark); border-color: var(--emerald-soft); background: var(--emerald-soft); }
 /* 本文の語数の右に出す難易度（合成スコア＋帯） */
 .exam-doc .word-count .level-inline { margin-left: .6em; color: var(--emerald-dark); font-weight: 600; }
+/* hidden 属性のとき確実に隠す（display:flex が UA の [hidden] を上書きするため） */
+.exam-shortcuts[hidden], .exam-replace-bar[hidden] { display: none !important; }
 /* 閲覧モーダル: この問題内のみ置換するバー（フッターの上に出る） */
 .exam-replace-bar {
   display: flex; align-items: center; gap: 8px; flex-shrink: 0;
