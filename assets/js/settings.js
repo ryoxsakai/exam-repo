@@ -881,7 +881,13 @@
       return;
     }
     navigator.clipboard.readText().then(function (text) {
-      if (!text || !text.trim()) { toast("クリップボードが空です", "err"); return; }
+      if (!text || !text.trim()) {
+        // readText() は text/plain のみを読む。チャットAIの「コピー」ボタンなど
+        // text/html のみでクリップボードに書き込まれた場合は空文字になることがある
+        // （手動の Ctrl+V はブラウザが自動で形式変換するため常に成功する）。
+        focusExtJsonForManualPaste("クリップボードにテキスト形式のデータが見つかりませんでした（コピー元によって起こり得ます）");
+        return;
+      }
       el("ext-json").value = text;
       el("ext-status").innerHTML = '<span class="hint"><i class="fa-solid fa-paste"></i> クリップボードから貼り付けました</span>';
       loadExtJson();
