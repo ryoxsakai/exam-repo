@@ -50,6 +50,7 @@
     printExam: null,     // 印刷タブで構築した {year,university_name,schedule,questions[]}
     printSel: { uni: "", year: "", sched: "" },  // 印刷タブで選んだ大学/年度/方式
     printQSel: {},       // 印刷タブで選んだ大問（key=question_number文字列, value=真偽。未設定は印刷対象）
+    longLevel: null,     // 長文レベルのキャッシュ {src, byKey, cutoffs}（四分位の相対難易度帯用）
     printTreeLoaded: false,
     treeLoaded: false,   // ツリー検索を読み込み済みか
     uniReading: {},      // 大学名 → よみがな（五十音ソート用）
@@ -255,15 +256,41 @@
   // 1大問の「本文」セクションの英単語数
   function bodyWordCount(q) { return wordCount(bodyText(q)); }
 
-  // CEFR レベルの重み（A1=1 … C2=6。Oxford5000 は C1=5 まで）と難易度帯のしきい値。
+  // CEFR レベルの重み（A1=1 … C2=6。Oxford5000 は C1=5 まで）。
   // リスト外の語は最難（C1超）相当として 6 で算入する（C2・専門語がリスト外に落ちるため）。
   var LEVEL_WEIGHT = { A1: 1, A2: 2, B1: 3, B2: 4, C1: 5, C2: 6 };
   var OFFLIST_WEIGHT = 6;
-  var LEVEL_BAND_TH = [1.8, 2.5, 3.4];  // 未満で 易 / 標準 / 難、以上で 最難（暫定・実データで要調整）
-  // 本文の内容語（ストップワード除外）を Oxford5000 で CEFR 加重平均（リスト外=6 算入。0=判定不能）
+  var LEVEL_BAND_TH = [1.8, 2.5, 3.4];  // 長文が少なく四分位が作れないときの絶対フォールバック
+  var LEVEL_BAND_LABEL = { "易": "易しめ", "標準": "標準", "難": "難しめ", "最難": "最難" };
+
+  // 原文で「常に大文字始まり」かつ Oxford5000 外の語を固有名詞候補として集める
+  // （人名・地名・固有名など。語彙難易度から除外するため）。文頭でのみ大文字になる
+  // 一般語は小文字出現もあるので除外されない。リスト内の語も難易度に効くので残す。
+  function properNounSet(text, levelMap) {
+    var seenLower = Object.create(null), capOnly = Object.create(null);
+    var toks = Corpus.tokenizeWithCase(text);
+    for (var i = 0; i < toks.length; i++) {
+      var w = toks[i], lw = w.toLowerCase();
+      if (/^[A-Z]/.test(w)) { if (!(lw in seenLower)) capOnly[lw] = true; }
+      else { seenLower[lw] = true; }
+    }
+    var pn = Object.create(null);
+    Object.keys(capOnly).forEach(function (lw) {
+      if (seenLower[lw]) return;                              // 小文字でも出現 → 一般語
+      if (Corpus.resolveBase(lw, levelMap) !== null) return;  // リスト内 → 残す
+      pn[lw] = true;
+    });
+    return pn;
+  }
+
+  // 本文の内容語（機能語・固有名詞を除外）を Oxford5000 で CEFR 加重平均
+  // （リスト外=6 算入。0=判定不能）
   function bodyLevelAvg(q, levelMap, stopSet) {
-    var toks = Corpus.tokenize(Markup.strip(bodyText(q)));
-    if (stopSet) toks = toks.filter(function (w) { return !stopSet[w]; });
+    var text = Markup.strip(bodyText(q));
+    var pn = properNounSet(text, levelMap);
+    var toks = Corpus.tokenize(text).filter(function (w) {
+      return !(stopSet && stopSet[w]) && !pn[w];
+    });
     if (!toks.length) return 0;
     var s = Corpus.levelStats(toks, levelMap);
     if (!s.tokenTotal) return 0;
@@ -272,15 +299,39 @@
     sum += OFFLIST_WEIGHT * s.tokenOff;
     return sum / s.tokenTotal;
   }
-  // 加重平均値 → 難易度帯ラベル（""=判定不能）
-  function levelBand(v) {
+
+  // 登録済み「長文」大問のレベル分布を四分位に区切り、相対難易度帯の境界を作る。
+  // コーパス（state.corpus）単位でキャッシュ。全大問で共通の基準にするため他の絞り込みには依存しない。
+  function ensureLongLevels(levelMap, stopSet) {
+    if (state.longLevel && state.longLevel.src === state.corpus) return state.longLevel;
+    var byKey = Object.create(null), vals = [];
+    (state.corpus || []).forEach(function (q) {
+      if ((q.category || "") !== "長文") return;
+      var v = bodyLevelAvg(q, levelMap, stopSet);
+      byKey[q.exam_id + ":" + q.question_number] = v;
+      if (v) vals.push(v);
+    });
+    vals.sort(function (a, b) { return a - b; });
+    var cutoffs = null;
+    if (vals.length >= 4) {
+      cutoffs = [
+        vals[Math.floor(0.25 * (vals.length - 1))],
+        vals[Math.floor(0.50 * (vals.length - 1))],
+        vals[Math.floor(0.75 * (vals.length - 1))]
+      ];
+    }
+    state.longLevel = { src: state.corpus, byKey: byKey, cutoffs: cutoffs };
+    return state.longLevel;
+  }
+  // 加重平均値 → 難易度帯ラベル（cutoffs=四分位境界。無ければ絶対フォールバック。""=判定不能）
+  function bandFromCutoffs(v, cutoffs) {
     if (!v) return "";
-    if (v < LEVEL_BAND_TH[0]) return "易";
-    if (v < LEVEL_BAND_TH[1]) return "標準";
-    if (v < LEVEL_BAND_TH[2]) return "難";
+    var th = cutoffs || LEVEL_BAND_TH;
+    if (v < th[0]) return "易";
+    if (v < th[1]) return "標準";
+    if (v < th[2]) return "難";
     return "最難";
   }
-  var LEVEL_BAND_LABEL = { "易": "易しめ", "標準": "標準", "難": "難しめ", "最難": "最難" };
 
   /* ---------------- 結果テーブル ---------------- */
   function loadResults() {
@@ -318,11 +369,13 @@
         (state.corpus || []).forEach(function (q) { corpusByKey[q.exam_id + ":" + q.question_number] = q; });
         var levelMap = (Store.builtinLevelList && Store.builtinLevelList()) ? Store.builtinLevelList().levels : {};
         var stopSet = Corpus.toSet(Store.builtinStopList().words || []);
+        var ll = ensureLongLevels(levelMap, stopSet);
         rows.forEach(function (r) {
-          var q = corpusByKey[r.exam_id + ":" + r.question_number];
+          var key = r.exam_id + ":" + r.question_number;
+          var q = corpusByKey[key];
           r.words = q ? bodyWordCount(q) : 0;
-          r.level = q ? bodyLevelAvg(q, levelMap, stopSet) : 0;
-          r.levelBand = levelBand(r.level);
+          r.level = ll.byKey[key] != null ? ll.byKey[key] : (q ? bodyLevelAvg(q, levelMap, stopSet) : 0);
+          r.levelBand = bandFromCutoffs(r.level, ll.cutoffs);
         });
         var mn = state.filter.wordsMin !== "" ? Number(state.filter.wordsMin) : null;
         var mx = state.filter.wordsMax !== "" ? Number(state.filter.wordsMax) : null;
