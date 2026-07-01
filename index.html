@@ -177,7 +177,7 @@
               <option value="難">難しめ</option>
               <option value="最難">最難</option>
             </select>
-            <p class="hint" style="margin-top:6px"><i class="fa-solid fa-circle-info"></i> 本文の内容語（機能語を除外）を CEFR レベルで加重平均し、難易度帯で絞り込みます（Oxford5000 基準。リスト外の語は最難相当として算入）。結果に数値レベルも表示します。</p>
+            <p class="hint" style="margin-top:6px"><i class="fa-solid fa-circle-info"></i> 本文の内容語（機能語・固有名詞を除外）を CEFR で加重平均し（Oxford5000 基準。リスト外の語は最難相当として算入）、登録済み長文の分布を四分位で区切った相対難易度帯で絞り込みます。結果に数値レベルも表示します。</p>
           </div>
         </div>
 
@@ -259,6 +259,6 @@
   <script src="assets/js/ui.js?v=20260612z"></script>
   <script src="assets/js/markup.js?v=20260628b"></script>
   <script src="assets/js/corpus.js?v=20260613j"></script>
-  <script src="assets/js/viewer.js?v=20260701c"></script>
+  <script src="assets/js/viewer.js?v=20260701d"></script>
 </body>
 </html>
