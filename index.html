@@ -168,6 +168,17 @@
             </div>
             <p class="hint" style="margin-top:6px"><i class="fa-solid fa-circle-info"></i> 結果に本文の語数を表示し、指定範囲で絞り込みます（空欄なら無制限）。</p>
           </div>
+          <div id="sm-level-row" class="field" style="display:none;margin-top:10px">
+            <span class="field-label">難易度（語彙レベル：Oxford5000 の加重平均）</span>
+            <select id="sm-level">
+              <option value="">指定なし</option>
+              <option value="易">易しめ</option>
+              <option value="標準">標準</option>
+              <option value="難">難しめ</option>
+              <option value="最難">最難</option>
+            </select>
+            <p class="hint" style="margin-top:6px"><i class="fa-solid fa-circle-info"></i> 本文の内容語（機能語を除外）を CEFR レベルで加重平均し、難易度帯で絞り込みます（Oxford5000 基準。リスト外の語は最難相当として算入）。結果に数値レベルも表示します。</p>
+          </div>
         </div>
 
         <div data-mpanel="keyword" style="display:none">
@@ -248,6 +259,6 @@
   <script src="assets/js/ui.js?v=20260612z"></script>
   <script src="assets/js/markup.js?v=20260628b"></script>
   <script src="assets/js/corpus.js?v=20260613j"></script>
-  <script src="assets/js/viewer.js?v=20260701a"></script>
+  <script src="assets/js/viewer.js?v=20260701c"></script>
 </body>
 </html>
