@@ -203,16 +203,11 @@ async function fixOrphanedRecords(env: Env) {
 // uid は Firebase Auth の ID トークンの sub クレーム。exam_id + question_number で大問を特定する
 // （questions テーブルの id ではなく、他のAPIと同じ (examId, questionNumber) の識別方式に合わせる）。
 async function ensureFavoritesTable(env: Env) {
-  await env.DB.exec(`
-    CREATE TABLE IF NOT EXISTS favorites (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      uid TEXT NOT NULL,
-      exam_id INTEGER NOT NULL,
-      question_number INTEGER NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(uid, exam_id, question_number)
-    )
-  `);
+  // D1Database.exec() は改行を含む複数行SQLを1文として解釈できないため、他の
+  // CREATE TABLE と同様に必ず1行の文字列で渡す（改行を挟むと SQLITE_ERROR: incomplete input になる）。
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, uid TEXT NOT NULL, exam_id INTEGER NOT NULL, question_number INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE(uid, exam_id, question_number))"
+  );
 }
 
 // ───────────────────────────────────────────────────────────────────
