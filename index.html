@@ -35,6 +35,14 @@
         </div>
       </div>
       <div class="topbar-spacer"></div>
+      <div id="auth-area" class="auth-area">
+        <button class="icon-btn" id="btn-login" title="Googleでログイン"><i class="fa-brands fa-google"></i></button>
+        <div id="user-chip" class="user-chip" hidden>
+          <img id="user-avatar" class="user-avatar" alt="" />
+          <span id="user-name" class="user-name"></span>
+          <button class="icon-btn sm" id="btn-logout" title="ログアウト"><i class="fa-solid fa-right-from-bracket"></i></button>
+        </div>
+      </div>
       <button class="icon-btn" id="btn-open-search" title="検索"><i class="fa-solid fa-magnifying-glass"></i></button>
     </div>
   </header>
@@ -61,6 +69,16 @@
         <button class="icon-btn" id="btn-tree-refresh" title="再読み込み"><i class="fa-solid fa-rotate-right"></i></button>
       </div>
       <div id="tree-area"></div>
+    </section>
+
+    <!-- ===== タブ: お気に入り ===== -->
+    <section data-panel="favorites" class="panel">
+      <div class="toolbar">
+        <span class="hint"><i class="fa-solid fa-star"></i> 問題閲覧モーダルの星アイコンでお気に入り登録した大問がここに並びます（Googleログインが必要）。</span>
+        <span class="spacer"></span>
+        <button class="icon-btn" id="btn-favorites-refresh" title="再読み込み"><i class="fa-solid fa-rotate-right"></i></button>
+      </div>
+      <div id="favorites-area"></div>
     </section>
 
     <!-- ===== タブ2: コーパス検索 ===== -->
@@ -263,6 +281,7 @@
         <i class="fa-solid fa-file-lines ic"></i>
         <h3 id="exam-modal-title">入試問題</h3>
         <span class="spacer"></span>
+        <button class="icon-btn" id="exam-favorite" title="お気に入りに追加" hidden><i class="fa-regular fa-star"></i></button>
         <button class="icon-btn" id="exam-fontsize" title="文字サイズ変更"><i class="fa-solid fa-text-height"></i></button>
         <button class="icon-btn" id="exam-copy" title="コピー"><i class="fa-solid fa-copy"></i></button>
         <button class="icon-btn" id="exam-print" title="印刷"><i class="fa-solid fa-print"></i></button>
@@ -283,12 +302,16 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="assets/data/oxford5000.js?v=20260612a"></script>
   <script src="assets/data/target1900.js?v=20260613h"></script>
+  <!-- Firebase Authentication（Googleログイン用。Firestore等は未使用） -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="assets/js/store.js?v=20260701f"></script>
-  <script src="assets/js/api.js?v=20260701i"></script>
+  <script src="assets/js/auth.js?v=20260706a"></script>
+  <script src="assets/js/api.js?v=20260706a"></script>
   <script src="assets/js/ui.js?v=20260612z"></script>
   <script src="assets/js/markup.js?v=20260704a"></script>
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260701h"></script>
-  <script src="assets/js/viewer.js?v=20260701k"></script>
+  <script src="assets/js/viewer.js?v=20260706a"></script>
 </body>
 </html>

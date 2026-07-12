@@ -5,12 +5,13 @@
 ## 構成
 
 - **フロントエンド**: 素の HTML/CSS/JS（ビルド不要の静的サイト）。GitHub Pages（`exam.lrnr.jp`）に **deploy from a branch** で配信。
-  - `index.html` … 閲覧ページ（通常検索 / コーパス検索）
+  - `index.html` … 閲覧ページ（通常検索 / お気に入り / コーパス検索）
   - `setting/index.html` … 設定ページ（メイン設定 / 接続設定 / 入試問題一覧 / 問題登録 / コーパス検索設定）
   - `assets/css/main.css` … デザインシステム（Noto Sans JP / Source Serif 4、エメラルド+ブルー）
-  - `assets/js/` … `store`(localStorage) / `api`(Worker) / `ui` / `markup` / `corpus` / `viewer` / `settings`
+  - `assets/js/` … `store`(localStorage) / `auth`(Firebase Auth) / `api`(Worker) / `ui` / `markup` / `corpus` / `viewer` / `settings`
 - **バックエンド**: `worker/index.ts`（Cloudflare Worker） + `schema.sql`（D1 / SQLite）。`wrangler.toml` で設定。
   - `.github/workflows/worker-deploy.yml` が `worker/**` 変更時に自動デプロイ。
+- **認証**: Firebase Authentication（Googleログイン）。Firestore 等のデータストアは使わず、ログイン識別のみに使用（`assets/js/auth.js`。config はコード内に直書き。値は公開情報のため秘匿不要）。
 
 > フロントは各 HTML の `<head>` にキャッシュ無効化メタ + アセットURLの `?v=` クエリでキャッシュをクリアする。
 
@@ -51,8 +52,15 @@
 | `GET /api/search` | 全文検索（word,universityName,year,schedule。出現回数つき） |
 | `GET /api/corpus` | **全大問の英文テキスト一括取得**（クライアント側コーパス分析用） |
 | `POST /api/upload` / `GET /api/image/:key` | 問題画像を R2 へ保存 / 配信（`wrangler.toml` の `[[r2_buckets]] binding=IMAGES`） |
+| `GET/POST /api/favorites` `DELETE /api/favorites/:examId/:questionNumber` | ログインユーザーの大問お気に入り（要 `Authorization: Bearer <Firebase IDトークン>`） |
 
-データモデル: `universities`(name, reading=よみがな, abbreviation=略称表示用) 1—N `exams`(year, schedule) 1—N `questions`(question_number, label, problem_text, answer_text, commentary_text)。`label` は大問の表示ラベル（任意。例「1A」。空なら「大問」+`question_number` を表示する表示専用の上書き。並び順・識別は常に整数 `question_number` を使用）。
+データモデル: `universities`(name, reading=よみがな, abbreviation=略称表示用) 1—N `exams`(year, schedule) 1—N `questions`(question_number, label, problem_text, answer_text, commentary_text)。`label` は大問の表示ラベル（任意。例「1A」。空なら「大問」+`question_number` を表示する表示専用の上書き。並び順・識別は常に整数 `question_number` を使用）。`favorites`(uid, exam_id, question_number) は `questions.id` ではなく他APIと同じ `(exam_id, question_number)` で大問を識別する。
+
+### 認証（Firebase Auth / Googleログイン）
+
+- クライアント: `assets/js/auth.js`（`window.Auth`）が Firebase の compat SDK（CDN）を初期化し、`signIn`/`signOut`/`getIdToken`/`onChange` を提供。Firestore は使わず、ログイン識別のみ。
+- サーバー: `worker/index.ts` が Firebase ID トークン（JWT/RS256）を **npm依存なし・Web Crypto API のみ**で検証する（`verifyFirebaseIdToken`）。署名鍵は Google の JWKS（`securetoken@system.gserviceaccount.com`）を Workers の Cache API でエッジキャッシュして取得。`getAuthUid(request)` が `Authorization: Bearer <idToken>` から検証済み `uid`（Firebaseの`sub`クレーム）を返す。
+- 認可が必要なのは `/api/favorites` 系のみ。閲覧・検索など既存APIは引き続き無認証。
 
 ### 自動修復（`worker/index.ts`）
 

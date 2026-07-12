@@ -24,12 +24,13 @@
   }
 
   var TAB_DEFS = {
-    search: { id: "search", label: "通常検索", icon: "fa-table-list" },
-    tree:   { id: "tree",   label: "ツリー検索", icon: "fa-sitemap" },
-    corpus: { id: "corpus", label: "コーパス検索", icon: "fa-language" },
-    print:  { id: "print",  label: "問題印刷",   icon: "fa-print" }
+    search:    { id: "search",    label: "通常検索",   icon: "fa-table-list" },
+    tree:      { id: "tree",      label: "ツリー検索", icon: "fa-sitemap" },
+    favorites: { id: "favorites", label: "お気に入り", icon: "fa-star" },
+    corpus:    { id: "corpus",    label: "コーパス検索", icon: "fa-language" },
+    print:     { id: "print",     label: "問題印刷",   icon: "fa-print" }
   };
-  var DEFAULT_ORDER = ["tree", "search", "corpus", "print"];
+  var DEFAULT_ORDER = ["tree", "search", "favorites", "corpus", "print"];
 
   // 状態
   var state = {
@@ -55,7 +56,9 @@
     treeLoaded: false,   // ツリー検索を読み込み済みか
     uniReading: {},      // 大学名 → よみがな（五十音ソート用）
     uniAbbr: {},         // 大学名 → 略称（表示用。無ければ正式名）
-    charts: {}
+    charts: {},
+    favSet: null,        // ログイン中ユーザーのお気に入り Set("examId:qnum")。null=未取得
+    favRows: []          // お気に入りタブ表示用（Api.getFavorites の結果）
   };
 
   // 大学名の並び替え比較（よみがな優先 → 名前。ともに ja ロケール）
@@ -83,12 +86,19 @@
     if (DEFAULT_ORDER.indexOf(active) < 0) active = order[0];
     UI.buildTabs({
       tabsEl: el("main-tabs"), order: order, defs: TAB_DEFS, active: active, page: "main", iconOnly: true,
-      onChange: function (id) { Store.setLastTab("main", id); if (id === "corpus") refreshCorpusLists(); if (id === "print") openPrintTab(); if (id === "tree") loadTree(); }
+      onChange: function (id) {
+        Store.setLastTab("main", id);
+        if (id === "corpus") refreshCorpusLists();
+        if (id === "print") openPrintTab();
+        if (id === "tree") loadTree();
+        if (id === "favorites") loadFavorites();
+      }
     });
     UI.setActiveTab(el("main-tabs"), active);
     if (active === "corpus") refreshCorpusLists(); else ensureCorpusControls();
     if (active === "print") openPrintTab();
     if (active === "tree") loadTree();
+    if (active === "favorites") loadFavorites();
 
     // モーダル配線
     UI.wireModal(el("search-modal"));
@@ -132,6 +142,13 @@
     el("exam-show-all").addEventListener("click", function () {
       if (state.nav.examId != null) openExam(state.nav.examId, null);
     });
+
+    // Googleログイン（Firebase Auth）
+    wireAuth();
+    var favBtn = el("exam-favorite");
+    if (favBtn) favBtn.addEventListener("click", toggleFavoriteCurrent);
+    var favRefresh = el("btn-favorites-refresh");
+    if (favRefresh) favRefresh.addEventListener("click", function () { loadFavorites(true); });
 
     // ツリー検索 再読み込み
     var treeRefresh = el("btn-tree-refresh");
@@ -478,6 +495,143 @@
     el("exam-show-all").style.display = (state.nav.qnum != null) ? "" : "none";
   }
 
+  /* ---------------- Googleログイン（Firebase Auth）・お気に入り ---------------- */
+  function wireAuth() {
+    if (!window.Auth) return;
+    Auth.init();
+    el("btn-login").addEventListener("click", function () {
+      Auth.signIn().catch(function (e) { UI.toast("ログインに失敗しました: " + (e && e.message || e), "err"); });
+    });
+    el("btn-logout").addEventListener("click", function () {
+      Auth.signOut();
+    });
+    Auth.onChange(function (user) {
+      updateAuthUI(user);
+      state.favSet = null;  // ログイン状態が変わったらキャッシュ破棄
+      state.favRows = [];
+      if (el("exam-favorite") && state.nav.examId != null) updateExamFavoriteButton(state.nav.examId, state.nav.qnum);
+      var favTabBtn = $('.tab[data-tab="favorites"].active', el("main-tabs"));
+      if (favTabBtn) loadFavorites(true);
+    });
+  }
+  function updateAuthUI(user) {
+    var loginBtn = el("btn-login"), chip = el("user-chip");
+    if (user) {
+      loginBtn.hidden = true;
+      chip.hidden = false;
+      el("user-avatar").src = user.photoURL || "";
+      el("user-name").textContent = user.displayName || user.email || "";
+    } else {
+      loginBtn.hidden = false;
+      chip.hidden = true;
+    }
+  }
+
+  // お気に入り一覧を取得しキャッシュ（Set("examId:qnum") と生データ）。未ログイン時は空。
+  function ensureFavoritesLoaded(force) {
+    if (state.favSet && !force) return Promise.resolve(state.favSet);
+    if (!window.Auth || !Auth.getCurrentUser()) { state.favSet = new Set(); state.favRows = []; return Promise.resolve(state.favSet); }
+    return Api.getFavorites().then(function (data) {
+      state.favRows = data.favorites || [];
+      state.favSet = new Set(state.favRows.map(function (f) { return f.exam_id + ":" + f.question_number; }));
+      return state.favSet;
+    }).catch(function () {
+      state.favSet = new Set();
+      return state.favSet;
+    });
+  }
+
+  // 表示モーダルの星ボタンの表示・状態を更新（qnum が特定の大問を指しているときのみ表示）
+  function updateExamFavoriteButton(examId, qnum) {
+    var btn = el("exam-favorite");
+    if (!btn) return;
+    if (qnum == null || !window.Auth || !Auth.getCurrentUser()) { btn.hidden = true; return; }
+    btn.hidden = false;
+    ensureFavoritesLoaded().then(function (set) {
+      // 表示中に大問が変わっていたら反映しない（非同期の描画競合を避ける）
+      if (state.nav.examId !== examId || state.nav.qnum !== qnum) return;
+      var isFav = set.has(examId + ":" + qnum);
+      btn.classList.toggle("is-fav", isFav);
+      btn.title = isFav ? "お気に入りから外す" : "お気に入りに追加";
+      btn.innerHTML = isFav ? '<i class="fa-solid fa-star"></i>' : '<i class="fa-regular fa-star"></i>';
+    });
+  }
+  function toggleFavoriteCurrent() {
+    var examId = state.nav.examId, qnum = state.nav.qnum;
+    if (examId == null || qnum == null) return;
+    if (!window.Auth || !Auth.getCurrentUser()) { UI.toast("ログインが必要です", "err"); return; }
+    var key = examId + ":" + qnum;
+    var isFav = state.favSet && state.favSet.has(key);
+    var p = isFav ? Api.removeFavorite(examId, qnum) : Api.addFavorite(examId, qnum);
+    p.then(function () {
+      ensureFavoritesLoaded(true).then(function () { updateExamFavoriteButton(examId, qnum); });
+      UI.toast(isFav ? "お気に入りから外しました" : "お気に入りに追加しました", "ok");
+    }).catch(function (e) {
+      UI.toast(e.message || "操作に失敗しました", "err");
+    });
+  }
+
+  // お気に入りタブの読み込み・描画
+  function loadFavorites(force) {
+    var box = el("favorites-area");
+    if (!box) return;
+    if (!window.Auth || !Auth.getCurrentUser()) {
+      box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-right-to-bracket ic"></i>' +
+        'お気に入りを見るには、右上の <i class="fa-brands fa-google"></i> からGoogleでログインしてください。</div></div>';
+      return;
+    }
+    box.innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
+    ensureFavoritesLoaded(force).then(function () {
+      renderFavorites();
+    }).catch(function (e) {
+      box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message || "取得に失敗しました") + "</div></div>";
+    });
+  }
+  function renderFavorites() {
+    var box = el("favorites-area");
+    if (!box) return;
+    var rows = state.favRows || [];
+    if (!rows.length) {
+      box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-star ic"></i>お気に入りはまだありません。問題閲覧モーダルの星アイコンから登録できます。</div></div>';
+      return;
+    }
+    var html = '<div class="table-wrap"><table class="data"><thead><tr>' +
+      "<th>年度</th><th>大学</th><th>方式</th><th>大問</th><th>種別</th><th style=\"text-align:right\">操作</th>" +
+      "</tr></thead><tbody>";
+    rows.forEach(function (r) {
+      html += "<tr>" +
+        '<td data-label="年度"><span class="pill em">' + esc(r.year) + "</span></td>" +
+        '<td data-label="大学"><strong>' + esc(r.university_name) + "</strong></td>" +
+        '<td data-label="方式">' + esc(r.schedule) + "</td>" +
+        '<td data-label="大問">' + esc(qLabel(r)) + "</td>" +
+        '<td data-label="種別">' + (r.category ? esc(r.category) : '<span class="hint">—</span>') + "</td>" +
+        '<td class="row-actions">' +
+          '<button class="icon-btn sm" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button>' +
+          '<button class="icon-btn sm" data-unfav="' + r.exam_id + ":" + r.question_number + '" title="お気に入りから外す"><i class="fa-solid fa-star"></i></button>' +
+        "</td></tr>";
+    });
+    html += "</tbody></table></div>";
+    box.innerHTML = html;
+    $all("[data-view]", box).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var parts = b.getAttribute("data-view").split(":");
+        openExam(Number(parts[0]), Number(parts[1]));
+      });
+    });
+    $all("[data-unfav]", box).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var parts = b.getAttribute("data-unfav").split(":");
+        var examId = Number(parts[0]), qnum = Number(parts[1]);
+        Api.removeFavorite(examId, qnum).then(function () {
+          return ensureFavoritesLoaded(true);
+        }).then(function () {
+          renderFavorites();
+          if (state.nav.examId === examId && state.nav.qnum === qnum) updateExamFavoriteButton(examId, qnum);
+        }).catch(function (e) { UI.toast(e.message || "削除に失敗しました", "err"); });
+      });
+    });
+  }
+
   /* ---------------- ツリー検索（大学→年度→方式→大問） ---------------- */
   function loadTree(force) {
     var box = el("tree-area");
@@ -607,6 +761,7 @@
   function openExam(examId, qnum) {
     state.nav = { examId: examId, qnum: qnum };
     updateExamNav();
+    updateExamFavoriteButton(examId, qnum);
     saveOpenExam(examId, qnum);
     UI.openModal(el("exam-modal"));
     if (el("exam-shortcuts")) { el("exam-shortcuts").hidden = true; el("exam-shortcuts").innerHTML = ""; }

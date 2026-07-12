@@ -183,7 +183,7 @@ function normalizeUniversityName(name: string): string {
   return n || (name || "").trim();
 }
 
-// 孤立レコードの自動削除: 親が存在しない questions / exams を除去する。
+// 孤立レコードの自動削除: 親が存在しない questions / exams / favorites を除去する。
 // D1(SQLite) は既定では外部キー制約を強制しないため、過去に大学・試験を
 // 削除した際 ON DELETE CASCADE が効かず子レコードが残っている場合がある。
 // 参照先が無い行の削除のみ行う（曖昧な判断を伴わない安全な処理）。
@@ -194,6 +194,105 @@ async function fixOrphanedRecords(env: Env) {
   await env.DB.prepare(
     "DELETE FROM exams WHERE university_id NOT IN (SELECT id FROM universities)"
   ).run();
+  await env.DB.prepare(
+    "DELETE FROM favorites WHERE exam_id NOT IN (SELECT id FROM exams)"
+  ).run().catch(() => { /* favorites テーブル未作成の初回は無視 */ });
+}
+
+// お気に入り（Googleログインしたユーザーごとの大問ブックマーク）テーブルの後方互換マイグレーション。
+// uid は Firebase Auth の ID トークンの sub クレーム。exam_id + question_number で大問を特定する
+// （questions テーブルの id ではなく、他のAPIと同じ (examId, questionNumber) の識別方式に合わせる）。
+async function ensureFavoritesTable(env: Env) {
+  await env.DB.exec(`
+    CREATE TABLE IF NOT EXISTS favorites (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uid TEXT NOT NULL,
+      exam_id INTEGER NOT NULL,
+      question_number INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(uid, exam_id, question_number)
+    )
+  `);
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Firebase Authentication（Googleログイン）の ID トークン検証。
+// npm 依存を増やさないため、Web Crypto API のみで RS256 署名を検証する
+// （Cloudflare Workers は crypto.subtle をネイティブにサポートする）。
+// ───────────────────────────────────────────────────────────────────
+const FIREBASE_PROJECT_ID = "todo-tracker-25501";
+const FIREBASE_JWKS_URL = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
+
+function base64UrlToUint8Array(b64url: string): Uint8Array {
+  const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(b64url.length / 4) * 4, "=");
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function base64UrlDecodeJson(b64url: string): any {
+  return JSON.parse(new TextDecoder().decode(base64UrlToUint8Array(b64url)));
+}
+
+// Google の JWKS（Firebase ID トークン署名鍵）を取得。Workers の Cache API でエッジキャッシュする。
+async function fetchFirebaseJwks(): Promise<{ keys: any[] }> {
+  const cache = (globalThis as any).caches?.default;
+  const cacheKey = new Request(FIREBASE_JWKS_URL);
+  if (cache) {
+    const cached = await cache.match(cacheKey);
+    if (cached) return cached.json();
+  }
+  const res = await fetch(FIREBASE_JWKS_URL);
+  if (cache && res.ok) {
+    await cache.put(cacheKey, res.clone());
+  }
+  return res.json();
+}
+
+// Firebase ID トークン（JWT）を検証し、成功すれば uid（sub クレーム）を返す。失敗時は null。
+async function verifyFirebaseIdToken(idToken: string): Promise<string | null> {
+  const parts = idToken.split(".");
+  if (parts.length !== 3) return null;
+  const [headerB64, payloadB64, sigB64] = parts;
+  let header: any, payload: any;
+  try {
+    header = base64UrlDecodeJson(headerB64);
+    payload = base64UrlDecodeJson(payloadB64);
+  } catch { return null; }
+
+  if (header.alg !== "RS256") return null;
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof payload.exp !== "number" || payload.exp < now) return null;
+  if (typeof payload.iat !== "number" || payload.iat > now + 60) return null;
+  if (payload.aud !== FIREBASE_PROJECT_ID) return null;
+  if (payload.iss !== `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`) return null;
+  if (!payload.sub || typeof payload.sub !== "string") return null;
+
+  let jwks: { keys: any[] };
+  try { jwks = await fetchFirebaseJwks(); } catch { return null; }
+  const jwk = (jwks.keys || []).find((k) => k.kid === header.kid);
+  if (!jwk) return null;
+
+  let cryptoKey: CryptoKey;
+  try {
+    cryptoKey = await crypto.subtle.importKey(
+      "jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]
+    );
+  } catch { return null; }
+
+  const signingInput = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+  const signature = base64UrlToUint8Array(sigB64);
+  const valid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", cryptoKey, signature, signingInput);
+  return valid ? payload.sub : null;
+}
+
+// リクエストの Authorization: Bearer <idToken> から uid を取り出す。無い/不正なら null。
+async function getAuthUid(request: Request): Promise<string | null> {
+  const auth = request.headers.get("Authorization") || "";
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  if (!m) return null;
+  return verifyFirebaseIdToken(m[1]);
 }
 
 // 大学名の表記ゆれによる重複統合。normalizeUniversityName（取り込み・登録時の
@@ -1108,6 +1207,55 @@ export default {
         // DELETE /api/wordlists/:id
         if (wlMatch && request.method === "DELETE") {
           await env.DB.prepare("DELETE FROM word_lists WHERE id = ?").bind(Number(wlMatch[1])).run();
+          return json({ success: true }, 200, origin);
+        }
+      }
+
+      // ── /api/favorites（Googleログインしたユーザーの大問お気に入り） ──
+      if (path === "/api/favorites" || /^\/api\/favorites\/\d+\/\d+$/.test(path)) {
+        await ensureFavoritesTable(env);
+        const uid = await getAuthUid(request);
+        if (!uid) return json({ error: "ログインが必要です。" }, 401, origin);
+
+        // GET /api/favorites（自分のお気に入り一覧。表示用に試験・大学情報を結合して返す）
+        if (path === "/api/favorites" && request.method === "GET") {
+          const { results } = await env.DB.prepare(`
+            SELECT f.exam_id, f.question_number, f.created_at,
+                   e.year, e.schedule, u.name AS university_name,
+                   q.category, q.label
+            FROM favorites f
+            JOIN exams e ON f.exam_id = e.id
+            JOIN universities u ON e.university_id = u.id
+            LEFT JOIN questions q ON q.exam_id = f.exam_id AND q.question_number = f.question_number
+            WHERE f.uid = ?
+            ORDER BY f.created_at DESC
+          `).bind(uid).all();
+          return json({ favorites: results }, 200, origin);
+        }
+
+        // POST /api/favorites  body: { examId, questionNumber }
+        if (path === "/api/favorites" && request.method === "POST") {
+          type Body = { examId?: number; questionNumber?: number };
+          const body = await request.json<Body>().catch(() => ({}) as Body);
+          const examId = Number(body.examId);
+          const questionNumber = Number(body.questionNumber);
+          if (!examId || !questionNumber) {
+            return json({ error: "examId と questionNumber が必要です。" }, 400, origin);
+          }
+          const exam = await env.DB.prepare("SELECT id FROM exams WHERE id = ?").bind(examId).first();
+          if (!exam) return json({ error: "対象の試験が見つかりません。" }, 404, origin);
+          await env.DB.prepare(
+            "INSERT INTO favorites (uid, exam_id, question_number) VALUES (?, ?, ?) ON CONFLICT(uid, exam_id, question_number) DO NOTHING"
+          ).bind(uid, examId, questionNumber).run();
+          return json({ success: true }, 201, origin);
+        }
+
+        // DELETE /api/favorites/:examId/:questionNumber
+        const favMatch = path.match(/^\/api\/favorites\/(\d+)\/(\d+)$/);
+        if (favMatch && request.method === "DELETE") {
+          await env.DB.prepare(
+            "DELETE FROM favorites WHERE uid = ? AND exam_id = ? AND question_number = ?"
+          ).bind(uid, Number(favMatch[1]), Number(favMatch[2])).run();
           return json({ success: true }, 200, origin);
         }
       }
