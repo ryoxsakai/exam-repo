@@ -95,13 +95,9 @@ a { color: var(--blue); text-decoration: none; }
 
 /* ---------- Google ログイン（Firebase Auth） ---------- */
 .auth-area { display: flex; align-items: center; }
-.user-chip {
-  display: flex; align-items: center; gap: 7px;
-  border: 1px solid var(--line); background: var(--grad-soft);
-  border-radius: 999px; padding: 4px 6px 4px 4px; box-shadow: var(--shadow);
-}
-.user-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; background: var(--line); }
-.user-name { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ログイン後はユーザーアイコンのみのボタンに（クリックでログアウト） */
+.user-avatar-btn { padding: 0; overflow: hidden; }
+.user-avatar { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; background: var(--line); }
 /* お気に入り星ボタン（未登録=アウトライン, 登録済み=塗りつぶし・黄） */
 #exam-favorite.is-fav { color: #ca8a04; border-color: #fde68a; background: #fffbeb; }
 
