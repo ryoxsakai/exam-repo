@@ -515,15 +515,16 @@
     });
   }
   function updateAuthUI(user) {
-    var loginBtn = el("btn-login"), chip = el("user-chip");
+    var loginBtn = el("btn-login"), avatarBtn = el("btn-logout");
     if (user) {
       loginBtn.hidden = true;
-      chip.hidden = false;
+      avatarBtn.hidden = false;
+      avatarBtn.title = (user.displayName || user.email || "") + "（クリックでログアウト）";
       el("user-avatar").src = user.photoURL || "";
-      el("user-name").textContent = user.displayName || user.email || "";
+      el("user-avatar").alt = user.displayName || user.email || "";
     } else {
       loginBtn.hidden = false;
-      chip.hidden = true;
+      avatarBtn.hidden = true;
     }
   }
 
