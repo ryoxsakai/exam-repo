@@ -145,7 +145,30 @@
     createWordList:   function (d) { return call("/api/wordlists", { method: "POST", body: JSON.stringify(d) }); },
     updateWordList:   function (id, d) { return call("/api/wordlists/" + id, { method: "PUT", body: JSON.stringify(d) }); },
     deleteWordList:   function (id) { return call("/api/wordlists/" + id, { method: "DELETE" }); },
-    testConnection:   function () { return call("/api/universities"); }
+    testConnection:   function () { return call("/api/universities"); },
+    // お気に入り（Googleログイン必須。Auth の ID トークンを Authorization ヘッダで送る）
+    getFavorites:     async function () {
+      var token = await Auth.getIdToken();
+      if (!token) throw new Error("ログインが必要です。");
+      return call("/api/favorites", { headers: { "Authorization": "Bearer " + token } });
+    },
+    addFavorite:      async function (examId, questionNumber) {
+      var token = await Auth.getIdToken();
+      if (!token) throw new Error("ログインが必要です。");
+      return call("/api/favorites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+        body: JSON.stringify({ examId: examId, questionNumber: questionNumber })
+      });
+    },
+    removeFavorite:   async function (examId, questionNumber) {
+      var token = await Auth.getIdToken();
+      if (!token) throw new Error("ログインが必要です。");
+      return call("/api/favorites/" + examId + "/" + questionNumber, {
+        method: "DELETE",
+        headers: { "Authorization": "Bearer " + token }
+      });
+    }
   };
 
   global.Api = Api;

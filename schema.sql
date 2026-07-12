@@ -47,11 +47,24 @@ CREATE TABLE IF NOT EXISTS word_lists (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Favorites table (Googleログイン(Firebase Auth)したユーザーごとの大問お気に入り)
+--   uid: Firebase Auth の ID トークンの sub クレーム
+--   exam_id + question_number で大問を特定（questions.id ではなく他APIと同じ識別方式）
+CREATE TABLE IF NOT EXISTS favorites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uid TEXT NOT NULL,
+  exam_id INTEGER NOT NULL,
+  question_number INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(uid, exam_id, question_number)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_exams_university_id ON exams(university_id);
 CREATE INDEX IF NOT EXISTS idx_exams_year ON exams(year);
 CREATE INDEX IF NOT EXISTS idx_questions_exam_id ON questions(exam_id);
 CREATE INDEX IF NOT EXISTS idx_questions_problem_text ON questions(problem_text);
+CREATE INDEX IF NOT EXISTS idx_favorites_uid ON favorites(uid);
 
 -- Trigger to update updated_at on questions update
 CREATE TRIGGER IF NOT EXISTS questions_updated_at
