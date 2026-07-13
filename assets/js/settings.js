@@ -609,16 +609,47 @@
     openPreview(m || "解析結果プレビュー", body);
   }
 
+  // 「リード文」セクションは独立したセクションにせず、直後のセクションへ統合する
+  // （太字・字下げなし @@** ** で先頭に付け、下に空行を1つ挟んで本来の内容を続ける）。
+  // 連続する「リード文」はまとめて統合。直後にセクションが無いまま終わる場合はデータを失わないよう
+  // 「リード文」のまま残す。
+  function mergeLeadSections(sections) {
+    var out = [], pendingLead = [];
+    (sections || []).forEach(function (sec) {
+      if (sec.type === "リード文") {
+        var t = (sec.text || "").trim();
+        if (t) pendingLead.push(t);
+        return;
+      }
+      if (pendingLead.length) {
+        var leadBlock = pendingLead.map(function (block) {
+          return block.split("\n").map(function (line) {
+            var l = line.trim();
+            return l ? "@@**" + l + "**" : "";
+          }).join("\n");
+        }).join("\n\n");
+        var body = sec.text || "";
+        out.push({ type: sec.type, text: body ? (leadBlock + "\n\n" + body) : leadBlock });
+        pendingLead = [];
+      } else {
+        out.push(sec);
+      }
+    });
+    if (pendingLead.length) out.push({ type: "リード文", text: pendingLead.join("\n\n") });
+    return out;
+  }
+
   // セクション配列を保存用の {problemText, answerText, commentaryText} へ（問題登録と同じ規則）
   function ingSectionsToQuestion(q) {
+    var sections = mergeLeadSections(q.sections);
     var problemLines = [];
-    q.sections.forEach(function (sec) {
+    sections.forEach(function (sec) {
       var t = sec.text || "";
       if (sec.type !== "問題") problemLines.push("{{" + sec.type + "}}");
       if (t) problemLines.push(t);
     });
     var answer = [], commentary = [];
-    q.sections.forEach(function (sec) {
+    sections.forEach(function (sec) {
       if (sec.type === "解答") answer.push(sec.text || "");
       else if (sec.type === "解説") commentary.push(sec.text || "");
     });
@@ -1777,9 +1808,11 @@
     var label = el("reg-label") ? el("reg-label").value.trim() : "";
     var category = el("reg-category").value || "";
 
-    // problemText に全セクションを順序どおり統合（セクション区切り {{名}} 付き）
+    // problemText に全セクションを順序どおり統合（セクション区切り {{名}} 付き。
+    // 「リード文」は独立セクションにせず直後のセクションへ統合する）
+    var sections = mergeLeadSections(state.reg.sections);
     var problemLines = [];
-    state.reg.sections.forEach(function (sec) {
+    sections.forEach(function (sec) {
       var t = sec.text || "";
       if (sec.type !== "問題") problemLines.push("{{" + sec.type + "}}");
       if (t) problemLines.push(t);
@@ -1788,7 +1821,7 @@
 
     // 後方互換のため、解答・解説も別途抽出
     var answer = [], commentary = [];
-    state.reg.sections.forEach(function (sec) {
+    sections.forEach(function (sec) {
       if (sec.type === "解答") answer.push(sec.text || "");
       else if (sec.type === "解説") commentary.push(sec.text || "");
     });
