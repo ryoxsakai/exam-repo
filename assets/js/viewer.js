@@ -58,7 +58,10 @@
     uniAbbr: {},         // 大学名 → 略称（表示用。無ければ正式名）
     charts: {},
     favSet: null,        // ログイン中ユーザーのお気に入り Set("examId:qnum")。null=未取得
-    favRows: []          // お気に入りタブ表示用（Api.getFavorites の結果）
+    favRows: [],         // お気に入りタブ表示用（Api.getFavorites の favorites）
+    favFolders: [],        // お気に入りフォルダ（Api.getFavorites の folders）
+    favCollapsed: {},      // 折りたたみ中のフォルダ id → true（デフォルトは展開表示）
+    favDrag: null          // ドラッグ中のノード情報。null=非ドラッグ中
   };
 
   // 大学名の並び替え比較（よみがな優先 → 名前。ともに ja ロケール）
@@ -149,6 +152,13 @@
     if (favBtn) favBtn.addEventListener("click", toggleFavoriteCurrent);
     var favRefresh = el("btn-favorites-refresh");
     if (favRefresh) favRefresh.addEventListener("click", function () { loadFavorites(true); });
+    if (el("favorite-folder-modal")) {
+      UI.wireModal(el("favorite-folder-modal"));
+      var favNewFolderBtn = el("btn-favorites-new-folder");
+      if (favNewFolderBtn) favNewFolderBtn.addEventListener("click", function () { openFavoriteFolderModal({ mode: "create", parentId: null }); });
+      if (el("fav-folder-save")) el("fav-folder-save").addEventListener("click", saveFavoriteFolderModal);
+    }
+    initFavoritesArea();
 
     // ツリー検索 再読み込み
     var treeRefresh = el("btn-tree-refresh");
@@ -531,9 +541,13 @@
   // お気に入り一覧を取得しキャッシュ（Set("examId:qnum") と生データ）。未ログイン時は空。
   function ensureFavoritesLoaded(force) {
     if (state.favSet && !force) return Promise.resolve(state.favSet);
-    if (!window.Auth || !Auth.getCurrentUser()) { state.favSet = new Set(); state.favRows = []; return Promise.resolve(state.favSet); }
+    if (!window.Auth || !Auth.getCurrentUser()) {
+      state.favSet = new Set(); state.favRows = []; state.favFolders = [];
+      return Promise.resolve(state.favSet);
+    }
     return Api.getFavorites().then(function (data) {
       state.favRows = data.favorites || [];
+      state.favFolders = data.folders || [];
       state.favSet = new Set(state.favRows.map(function (f) { return f.exam_id + ":" + f.question_number; }));
       return state.favSet;
     }).catch(function () {
@@ -588,49 +602,416 @@
       box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message || "取得に失敗しました") + "</div></div>";
     });
   }
+  // 大問の1件を表す一意キー。フォルダは "folder:<id>"、お気に入りは "fav:<examId>:<qnum>"
+  function favNodeKey(it) {
+    return it.kind === "folder" ? "folder:" + it.folder.id : "fav:" + it.favorite.exam_id + ":" + it.favorite.question_number;
+  }
+
+  // 指定コンテナ（フォルダ id。null=ルート直下）の子要素を、フォルダ・お気に入りをまとめて sort_order 順に返す
+  function favChildrenOf(parentId) {
+    var folders = (state.favFolders || []).filter(function (f) {
+      return (f.parent_id == null ? null : Number(f.parent_id)) === parentId;
+    }).map(function (f) { return { kind: "folder", folder: f }; });
+    var favs = (state.favRows || []).filter(function (f) {
+      return (f.folder_id == null ? null : Number(f.folder_id)) === parentId;
+    }).map(function (f) { return { kind: "favorite", favorite: f }; });
+    var items = folders.concat(favs);
+    items.sort(function (a, b) {
+      var sa = Number(a.kind === "folder" ? a.folder.sort_order : a.favorite.sort_order) || 0;
+      var sb = Number(b.kind === "folder" ? b.folder.sort_order : b.favorite.sort_order) || 0;
+      return sa - sb;
+    });
+    return items;
+  }
+
   function renderFavorites() {
     var box = el("favorites-area");
     if (!box) return;
-    var rows = state.favRows || [];
-    if (!rows.length) {
+    var hasAny = (state.favRows && state.favRows.length) || (state.favFolders && state.favFolders.length);
+    if (!hasAny) {
       box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-star ic"></i>お気に入りはまだありません。問題閲覧モーダルの星アイコンから登録できます。</div></div>';
       return;
     }
-    var html = '<div class="table-wrap"><table class="data"><thead><tr>' +
-      "<th>年度</th><th>大学</th><th>方式</th><th>大問</th><th>種別</th><th style=\"text-align:right\">操作</th>" +
-      "</tr></thead><tbody>";
-    rows.forEach(function (r) {
-      html += "<tr>" +
-        '<td data-label="年度"><span class="pill em">' + esc(r.year) + "</span></td>" +
-        '<td data-label="大学"><strong>' + esc(r.university_name) + "</strong></td>" +
-        '<td data-label="方式">' + esc(r.schedule) + "</td>" +
-        '<td data-label="大問">' + esc(qLabel(r)) + "</td>" +
-        '<td data-label="種別">' + (r.category ? esc(r.category) : '<span class="hint">—</span>') + "</td>" +
-        '<td class="row-actions">' +
-          '<button class="icon-btn sm" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button>' +
-          '<button class="icon-btn sm" data-unfav="' + r.exam_id + ":" + r.question_number + '" title="お気に入りから外す"><i class="fa-solid fa-star"></i></button>' +
-        "</td></tr>";
-    });
-    html += "</tbody></table></div>";
-    box.innerHTML = html;
-    $all("[data-view]", box).forEach(function (b) {
-      b.addEventListener("click", function () {
-        var parts = b.getAttribute("data-view").split(":");
-        openExam(Number(parts[0]), Number(parts[1]));
-      });
-    });
-    $all("[data-unfav]", box).forEach(function (b) {
-      b.addEventListener("click", function () {
-        var parts = b.getAttribute("data-unfav").split(":");
-        var examId = Number(parts[0]), qnum = Number(parts[1]);
+    box.innerHTML = '<div class="fav-tree">' + renderFavContainer(null, 0) + "</div>";
+  }
+
+  function renderFavContainer(parentId, depth) {
+    var items = favChildrenOf(parentId);
+    var html = '<div class="fav-children" data-parent="' + (parentId == null ? "root" : parentId) + '">';
+    items.forEach(function (it) { html += renderFavNode(it, depth); });
+    if (!items.length && depth > 0) html += '<div class="fav-drop-hint">ここにドラッグで移動</div>';
+    html += "</div>";
+    return html;
+  }
+
+  function renderFavNode(it, depth) {
+    var key = favNodeKey(it);
+    if (it.kind === "folder") {
+      var f = it.folder;
+      var collapsed = !!state.favCollapsed[f.id];
+      var childCount = favChildrenOf(Number(f.id)).length;
+      return '<div class="fav-node fav-folder" data-node="' + key + '">' +
+        '<div class="fav-row" draggable="true">' +
+          '<span class="fav-drag-handle" title="ドラッグ／長押しで並べ替え"><i class="fa-solid fa-grip-vertical"></i></span>' +
+          '<button class="fav-toggle" data-toggle="' + f.id + '" title="' + (collapsed ? "展開" : "折りたたみ") + '">' +
+            '<i class="fa-solid ' + (collapsed ? "fa-chevron-right" : "fa-chevron-down") + '"></i></button>' +
+          '<i class="fa-solid fa-folder fav-folder-ic"></i>' +
+          '<span class="fav-name">' + esc(f.name) + "</span>" +
+          '<span class="fav-count">' + childCount + "</span>" +
+          '<span class="spacer"></span>' +
+          '<button class="icon-btn sm" data-fav-rename="' + f.id + '" title="名前を変更"><i class="fa-solid fa-pen"></i></button>' +
+          '<button class="icon-btn sm" data-fav-delete-folder="' + f.id + '" title="フォルダを削除"><i class="fa-solid fa-trash"></i></button>' +
+        "</div>" +
+        (collapsed ? "" : renderFavContainer(Number(f.id), depth + 1)) +
+        "</div>";
+    }
+    var r = it.favorite;
+    return '<div class="fav-node fav-item" data-node="' + key + '">' +
+      '<div class="fav-row" draggable="true">' +
+        '<span class="fav-drag-handle" title="ドラッグ／長押しで並べ替え"><i class="fa-solid fa-grip-vertical"></i></span>' +
+        '<span class="pill em">' + esc(r.year) + "</span>" +
+        '<strong class="fav-uni">' + esc(r.university_name) + "</strong>" +
+        '<span class="fav-sched">' + esc(r.schedule) + "</span>" +
+        '<span class="fav-qnum">大問' + esc(qLabel(r)) + "</span>" +
+        (r.category ? '<span class="fav-cat">' + esc(r.category) + "</span>" : "") +
+        '<span class="spacer"></span>' +
+        '<button class="icon-btn sm" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button>' +
+        '<button class="icon-btn sm" data-unfav="' + r.exam_id + ":" + r.question_number + '" title="お気に入りから外す"><i class="fa-solid fa-star"></i></button>' +
+      "</div></div>";
+  }
+
+  // お気に入りタブのクリック（表示／解除／展開折りたたみ／フォルダ改名・削除）とドラッグ&ドロップの配線。
+  // #favorites-area は再描画のたびに innerHTML だけが差し替わる（要素自体は不変）ため、
+  // 委譲イベントは init() から一度だけ登録する。
+  function initFavoritesArea() {
+    var box = el("favorites-area");
+    if (!box) return;
+
+    box.addEventListener("click", function (e) {
+      var t = e.target;
+      var viewBtn = t.closest && t.closest("[data-view]");
+      if (viewBtn) {
+        var vp = viewBtn.getAttribute("data-view").split(":");
+        openExam(Number(vp[0]), Number(vp[1]));
+        return;
+      }
+      var unfavBtn = t.closest && t.closest("[data-unfav]");
+      if (unfavBtn) {
+        var up = unfavBtn.getAttribute("data-unfav").split(":");
+        var examId = Number(up[0]), qnum = Number(up[1]);
         Api.removeFavorite(examId, qnum).then(function () {
           return ensureFavoritesLoaded(true);
         }).then(function () {
           renderFavorites();
           if (state.nav.examId === examId && state.nav.qnum === qnum) updateExamFavoriteButton(examId, qnum);
-        }).catch(function (e) { UI.toast(e.message || "削除に失敗しました", "err"); });
-      });
+        }).catch(function (e2) { UI.toast(e2.message || "削除に失敗しました", "err"); });
+        return;
+      }
+      var toggleBtn = t.closest && t.closest("[data-toggle]");
+      if (toggleBtn) {
+        var fid = Number(toggleBtn.getAttribute("data-toggle"));
+        state.favCollapsed[fid] = !state.favCollapsed[fid];
+        renderFavorites();
+        return;
+      }
+      var renameBtn = t.closest && t.closest("[data-fav-rename]");
+      if (renameBtn) {
+        var rid = Number(renameBtn.getAttribute("data-fav-rename"));
+        var folder = (state.favFolders || []).filter(function (f) { return Number(f.id) === rid; })[0];
+        if (folder) openFavoriteFolderModal({ mode: "rename", id: rid, name: folder.name });
+        return;
+      }
+      var delBtn = t.closest && t.closest("[data-fav-delete-folder]");
+      if (delBtn) {
+        deleteFavoriteFolderConfirm(Number(delBtn.getAttribute("data-fav-delete-folder")));
+      }
     });
+
+    wireFavDragMouse(box);
+    wireFavDragTouch(box);
+  }
+
+  /* ---- お気に入り: ドラッグ&ドロップ（PC）／タップ長押し（スマホ）での並べ替え ---- */
+
+  // ドロップ先の判定: ホバー中の行の上25%=直前へ挿入、下25%=直後へ挿入、
+  // フォルダ行の中央50%=そのフォルダの中へ、行の外（コンテナ背景）=末尾へ追加
+  function computeFavDropTarget(clientX, clientY) {
+    var hit = document.elementFromPoint(clientX, clientY);
+    if (!hit) return null;
+    var row = hit.closest && hit.closest(".fav-row");
+    if (row) {
+      var node = row.closest(".fav-node");
+      if (!node) return null;
+      var key = node.getAttribute("data-node");
+      var isFolder = key.indexOf("folder:") === 0;
+      var container = node.parentElement; // .fav-children（このノードが属するコンテナ）
+      var pAttr = container && container.getAttribute("data-parent");
+      var ownParentId = pAttr === "root" ? null : Number(pAttr);
+      var rect = row.getBoundingClientRect();
+      var relY = rect.height ? (clientY - rect.top) / rect.height : 0.5;
+      if (isFolder) {
+        if (relY < 0.25) return { parentId: ownParentId, before: key };
+        if (relY > 0.75) return { parentId: ownParentId, after: key };
+        return { parentId: Number(key.split(":")[1]) };
+      }
+      return relY < 0.5 ? { parentId: ownParentId, before: key } : { parentId: ownParentId, after: key };
+    }
+    var childrenBox = hit.closest && hit.closest(".fav-children");
+    if (childrenBox) {
+      var pa = childrenBox.getAttribute("data-parent");
+      return { parentId: pa === "root" ? null : Number(pa) };
+    }
+    return null;
+  }
+
+  function clearFavRowIndicators() {
+    var area = el("favorites-area");
+    if (!area) return;
+    $all(".fav-row.drag-over-top, .fav-row.drag-over-bottom, .fav-row.drag-over-inside", area).forEach(function (n) {
+      n.classList.remove("drag-over-top", "drag-over-bottom", "drag-over-inside");
+    });
+  }
+
+  function updateFavDropIndicator(clientX, clientY) {
+    clearFavRowIndicators();
+    var info = computeFavDropTarget(clientX, clientY);
+    if (!info) return;
+    var area = el("favorites-area");
+    if (info.before || info.after) {
+      var node = $('.fav-node[data-node="' + (info.before || info.after) + '"]', area);
+      var row = node && $(".fav-row", node);
+      if (row) row.classList.add(info.before ? "drag-over-top" : "drag-over-bottom");
+    } else if (info.parentId != null) {
+      var fnode = $('.fav-node[data-node="folder:' + info.parentId + '"]', area);
+      var frow = fnode && $(".fav-row", fnode);
+      if (frow) frow.classList.add("drag-over-inside");
+    }
+  }
+
+  function clearFavDragVisuals() {
+    var area = el("favorites-area");
+    if (area) $all(".fav-node.dragging", area).forEach(function (n) { n.classList.remove("dragging"); });
+    clearFavRowIndicators();
+    document.body.classList.remove("fav-dragging-touch");
+    var ghost = el("fav-drag-ghost");
+    if (ghost) ghost.remove();
+  }
+
+  // ドロップを確定: 移動元の除去→移動先コンテナへの挿入をローカルで組み立てて楽観的に再描画し、
+  // /api/favorite-folders/reorder で確定する（失敗時はサーバー状態で再読み込み）
+  function commitFavDrop(dragKey, dropInfo) {
+    if (!dropInfo || !dragKey) return;
+    if (dropInfo.before === dragKey || dropInfo.after === dragKey) return; // 自分自身の上へのドロップは無視
+    var dragParts = dragKey.split(":");
+    var isDragFolder = dragParts[0] === "folder";
+    var dragFolderId = isDragFolder ? Number(dragParts[1]) : null;
+    var dragExamId = isDragFolder ? null : Number(dragParts[1]);
+    var dragQnum = isDragFolder ? null : Number(dragParts[2]);
+    var targetParentId = dropInfo.parentId != null ? Number(dropInfo.parentId) : null;
+
+    if (isDragFolder) {
+      if (targetParentId === dragFolderId) { UI.toast("フォルダを自分自身の中には移動できません", "err"); return; }
+      var p = targetParentId, guard = 0;
+      while (p != null && guard++ < 200) {
+        if (p === dragFolderId) { UI.toast("フォルダを自分自身の中には移動できません", "err"); return; }
+        var pf = (state.favFolders || []).filter(function (f) { return Number(f.id) === p; })[0];
+        p = pf && pf.parent_id != null ? Number(pf.parent_id) : null;
+      }
+    }
+
+    var items = favChildrenOf(targetParentId).filter(function (it) {
+      if (isDragFolder) return !(it.kind === "folder" && Number(it.folder.id) === dragFolderId);
+      return !(it.kind === "favorite" && Number(it.favorite.exam_id) === dragExamId && Number(it.favorite.question_number) === dragQnum);
+    });
+
+    var dragItem = isDragFolder
+      ? { kind: "folder", folder: (state.favFolders || []).filter(function (f) { return Number(f.id) === dragFolderId; })[0] }
+      : { kind: "favorite", favorite: (state.favRows || []).filter(function (f) { return Number(f.exam_id) === dragExamId && Number(f.question_number) === dragQnum; })[0] };
+    if (!dragItem.folder && !dragItem.favorite) return;
+
+    var insertIndex = items.length;
+    if (dropInfo.before || dropInfo.after) {
+      var refKey = dropInfo.before || dropInfo.after;
+      var refIdx = items.findIndex(function (it) { return favNodeKey(it) === refKey; });
+      if (refIdx < 0) refIdx = items.length - 1;
+      insertIndex = dropInfo.before ? refIdx : refIdx + 1;
+    }
+    items.splice(Math.max(0, insertIndex), 0, dragItem);
+
+    items.forEach(function (it, idx) {
+      if (it.kind === "folder") { it.folder.parent_id = targetParentId; it.folder.sort_order = idx; }
+      else { it.favorite.folder_id = targetParentId; it.favorite.sort_order = idx; }
+    });
+    renderFavorites();
+
+    var apiItems = items.map(function (it) {
+      return it.kind === "folder"
+        ? { type: "folder", id: it.folder.id }
+        : { type: "favorite", examId: it.favorite.exam_id, questionNumber: it.favorite.question_number };
+    });
+    Api.reorderFavorites(targetParentId, apiItems).catch(function (e) {
+      UI.toast(e.message || "並べ替えに失敗しました", "err");
+      loadFavorites(true);
+    });
+  }
+
+  // PC: HTML5 Drag and Drop API
+  function wireFavDragMouse(box) {
+    box.addEventListener("dragstart", function (e) {
+      if (e.target.closest && (e.target.closest(".icon-btn") || e.target.closest(".fav-toggle"))) { e.preventDefault(); return; }
+      var row = e.target.closest && e.target.closest(".fav-row");
+      var node = row && row.closest(".fav-node");
+      if (!node) return;
+      state.favDrag = { key: node.getAttribute("data-node") };
+      node.classList.add("dragging");
+      try { e.dataTransfer.setData("text/plain", state.favDrag.key); } catch (err) {}
+      e.dataTransfer.effectAllowed = "move";
+    });
+    box.addEventListener("dragend", function () {
+      clearFavDragVisuals();
+      state.favDrag = null;
+    });
+    box.addEventListener("dragover", function (e) {
+      if (!state.favDrag) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      updateFavDropIndicator(e.clientX, e.clientY);
+    });
+    box.addEventListener("drop", function (e) {
+      if (!state.favDrag) return;
+      e.preventDefault();
+      var dropInfo = computeFavDropTarget(e.clientX, e.clientY);
+      var dragKey = state.favDrag.key;
+      clearFavDragVisuals();
+      state.favDrag = null;
+      commitFavDrop(dragKey, dropInfo);
+    });
+  }
+
+  // スマホ: タップ長押しでドラッグ開始。長押し判定中に指が動いたらスクロールとみなして中止する。
+  // 長押しでのドラッグが始まった瞬間だけ、JavaScriptでその行のテキスト選択・コールアウトを禁止する
+  // （body に fav-dragging-touch クラスを付与し、CSS側は常時ではなくこのクラスが付いた時だけ選択禁止にする）。
+  var favTouch = null;
+  function wireFavDragTouch(box) {
+    box.addEventListener("touchstart", function (e) {
+      var t = e.target;
+      if (t.closest && (t.closest(".icon-btn") || t.closest(".fav-toggle"))) return;
+      var row = t.closest && t.closest(".fav-row");
+      var node = row && row.closest(".fav-node");
+      if (!node) return;
+      var touch = e.touches[0];
+      if (favTouch && favTouch.timer) clearTimeout(favTouch.timer);
+      favTouch = {
+        node: node,
+        key: node.getAttribute("data-node"),
+        startX: touch.clientX,
+        startY: touch.clientY,
+        dragging: false,
+        timer: setTimeout(function () { beginFavTouchDrag(touch.clientX, touch.clientY); }, 450)
+      };
+    }, { passive: true });
+
+    box.addEventListener("touchmove", function (e) {
+      if (!favTouch) return;
+      var touch = e.touches[0];
+      if (!favTouch.dragging) {
+        var dx = touch.clientX - favTouch.startX, dy = touch.clientY - favTouch.startY;
+        if (Math.sqrt(dx * dx + dy * dy) > 10) {
+          clearTimeout(favTouch.timer);
+          favTouch = null;
+        }
+        return;
+      }
+      e.preventDefault();
+      moveFavGhost(touch.clientX, touch.clientY);
+      updateFavDropIndicator(touch.clientX, touch.clientY);
+    }, { passive: false });
+
+    box.addEventListener("touchend", function (e) {
+      if (!favTouch) return;
+      clearTimeout(favTouch.timer);
+      if (favTouch.dragging) {
+        e.preventDefault();
+        var touch = (e.changedTouches && e.changedTouches[0]) || favTouch;
+        var info = computeFavDropTarget(touch.clientX, touch.clientY);
+        var dragKey = favTouch.key;
+        endFavTouchDrag();
+        commitFavDrop(dragKey, info);
+      }
+      favTouch = null;
+    });
+
+    box.addEventListener("touchcancel", function () {
+      if (favTouch) {
+        clearTimeout(favTouch.timer);
+        if (favTouch.dragging) endFavTouchDrag();
+        favTouch = null;
+      }
+    });
+
+    // 長押し中に発火するコンテキストメニュー（コピー等）を抑止
+    box.addEventListener("contextmenu", function (e) {
+      if (favTouch && favTouch.dragging) e.preventDefault();
+    });
+  }
+
+  function beginFavTouchDrag(clientX, clientY) {
+    if (!favTouch) return;
+    favTouch.dragging = true;
+    state.favDrag = { key: favTouch.key };
+    favTouch.node.classList.add("dragging");
+    document.body.classList.add("fav-dragging-touch");
+    var srcRow = favTouch.node.querySelector(".fav-row");
+    var ghost = create("div", { id: "fav-drag-ghost", class: "fav-drag-ghost" }, srcRow ? srcRow.innerHTML : "");
+    document.body.appendChild(ghost);
+    moveFavGhost(clientX, clientY);
+  }
+
+  function moveFavGhost(clientX, clientY) {
+    var ghost = el("fav-drag-ghost");
+    if (!ghost) return;
+    ghost.style.left = clientX + "px";
+    ghost.style.top = clientY + "px";
+  }
+
+  function endFavTouchDrag() {
+    clearFavDragVisuals();
+    state.favDrag = null;
+  }
+
+  /* ---- お気に入りフォルダの作成・改名・削除モーダル ---- */
+  var favFolderModalState = null;
+  function openFavoriteFolderModal(opts) {
+    if (!el("favorite-folder-modal")) return;
+    favFolderModalState = opts;
+    el("favorite-folder-modal-title").textContent = opts.mode === "rename" ? "フォルダ名を変更" : "新規フォルダ";
+    el("fav-folder-name").value = opts.mode === "rename" ? (opts.name || "") : "";
+    UI.openModal(el("favorite-folder-modal"));
+    setTimeout(function () { el("fav-folder-name").focus(); }, 0);
+  }
+  function saveFavoriteFolderModal() {
+    if (!favFolderModalState) return;
+    var name = (el("fav-folder-name").value || "").trim();
+    if (!name) { UI.toast("フォルダ名を入力してください", "err"); return; }
+    var opts = favFolderModalState;
+    var p = opts.mode === "rename" ? Api.renameFavoriteFolder(opts.id, name) : Api.createFavoriteFolder(name, opts.parentId);
+    p.then(function () {
+      UI.closeModal(el("favorite-folder-modal"));
+      return ensureFavoritesLoaded(true);
+    }).then(function () {
+      renderFavorites();
+      UI.toast(opts.mode === "rename" ? "フォルダ名を変更しました" : "フォルダを作成しました", "ok");
+    }).catch(function (e) { UI.toast(e.message || "保存に失敗しました", "err"); });
+  }
+  function deleteFavoriteFolderConfirm(id) {
+    var folder = (state.favFolders || []).filter(function (f) { return Number(f.id) === id; })[0];
+    if (!confirm("フォルダ「" + (folder ? folder.name : "") + "」を削除しますか？（中のお気に入り・サブフォルダは親フォルダへ移動されます）")) return;
+    Api.deleteFavoriteFolder(id).then(function () {
+      return ensureFavoritesLoaded(true);
+    }).then(function () {
+      renderFavorites();
+      UI.toast("フォルダを削除しました", "ok");
+    }).catch(function (e) { UI.toast(e.message || "削除に失敗しました", "err"); });
   }
 
   /* ---------------- ツリー検索（大学→年度→方式→大問） ---------------- */

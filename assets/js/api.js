@@ -168,6 +168,43 @@
         method: "DELETE",
         headers: { "Authorization": "Bearer " + token }
       });
+    },
+    // お気に入りフォルダ（フォルダ分け・階層化・並べ替え）
+    createFavoriteFolder: async function (name, parentId) {
+      var token = await Auth.getIdToken();
+      if (!token) throw new Error("ログインが必要です。");
+      return call("/api/favorite-folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+        body: JSON.stringify({ name: name, parentId: parentId == null ? null : parentId })
+      });
+    },
+    renameFavoriteFolder: async function (id, name) {
+      var token = await Auth.getIdToken();
+      if (!token) throw new Error("ログインが必要です。");
+      return call("/api/favorite-folders/" + id, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+        body: JSON.stringify({ name: name })
+      });
+    },
+    deleteFavoriteFolder: async function (id) {
+      var token = await Auth.getIdToken();
+      if (!token) throw new Error("ログインが必要です。");
+      return call("/api/favorite-folders/" + id, {
+        method: "DELETE",
+        headers: { "Authorization": "Bearer " + token }
+      });
+    },
+    // items: [{type:"folder", id} | {type:"favorite", examId, questionNumber}]（並べ替え後の順序）
+    reorderFavorites: async function (parentId, items) {
+      var token = await Auth.getIdToken();
+      if (!token) throw new Error("ログインが必要です。");
+      return call("/api/favorite-folders/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+        body: JSON.stringify({ parentId: parentId == null ? null : parentId, items: items })
+      });
     }
   };
 

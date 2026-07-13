@@ -101,6 +101,52 @@ a { color: var(--blue); text-decoration: none; }
 /* お気に入り星ボタン（未登録=アウトライン, 登録済み=塗りつぶし・黄） */
 #exam-favorite.is-fav { color: #ca8a04; border-color: #fde68a; background: #fffbeb; }
 
+/* ---------- お気に入り: フォルダ分け・並べ替え（ドラッグ&ドロップ / スマホは長押し） ---------- */
+.fav-tree { border: 1px solid var(--line); border-radius: var(--radius); background: #fff; padding: 6px; }
+.fav-children { display: flex; flex-direction: column; }
+.fav-node { position: relative; }
+.fav-node.dragging { opacity: .4; }
+.fav-node > .fav-children { margin-left: 22px; border-left: 1px solid var(--line); padding-left: 8px; }
+.fav-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 8px; border-radius: 10px; border: 2px solid transparent;
+  font-size: 13.5px; color: var(--ink);
+}
+.fav-row:hover { background: var(--grad-chip); }
+.fav-row.drag-over-top { border-top-color: var(--emerald); }
+.fav-row.drag-over-bottom { border-bottom-color: var(--emerald); }
+.fav-row.drag-over-inside { background: var(--emerald-soft); border-color: var(--emerald); }
+.fav-drag-handle {
+  flex: 0 0 auto; width: 20px; text-align: center; color: var(--muted); cursor: grab;
+  touch-action: none; /* このハンドルは常にドラッグ操作用（ブラウザ標準のスクロール/選択ジェスチャーに奪われないようにする） */
+}
+.fav-drag-handle:active { cursor: grabbing; }
+.fav-toggle {
+  flex: 0 0 auto; width: 18px; height: 18px; padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--muted); font-size: 11px; display: flex; align-items: center; justify-content: center;
+}
+.fav-folder-ic { color: var(--blue); flex: 0 0 auto; font-size: 13px; }
+.fav-name { font-weight: 700; }
+.fav-count { font-size: 11.5px; color: var(--muted); }
+.fav-uni { font-weight: 700; }
+.fav-sched, .fav-qnum, .fav-cat { font-size: 12.5px; color: var(--muted); }
+.fav-drop-hint { margin: 2px 0 4px 22px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); font-size: 12px; }
+
+/* スマホの長押しドラッグ中だけ、その行のテキスト選択・長押しコールアウトをJavaScriptから禁止する */
+body.fav-dragging-touch .fav-row,
+body.fav-dragging-touch .fav-row * {
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+
+/* 長押しドラッグ中に指へ追従するゴースト（元の行の見た目を複製した非インタラクティブな表示専用要素） */
+.fav-drag-ghost {
+  position: fixed; top: 0; left: 0; z-index: 4000; pointer-events: none;
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  background: #fff; border: 1px solid var(--emerald); border-radius: 10px;
+  box-shadow: var(--shadow-lg); font-size: 13.5px; color: var(--ink);
+  transform: translate(-14px, -50%); opacity: .92; max-width: 80vw; white-space: nowrap; overflow: hidden;
+}
+
 /* ---------- Icon buttons ---------- */
 .icon-btn {
   appearance: none; border: 1px solid var(--line);
