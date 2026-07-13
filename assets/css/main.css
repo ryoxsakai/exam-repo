@@ -133,6 +133,7 @@ a { color: var(--blue); text-decoration: none; }
 .fav-uni { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 100%; }
 .fav-sched, .fav-qnum, .fav-cat { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .fav-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.fav-meta .pill { padding: 1px 7px; font-size: 11px; }
 .fav-drop-hint { margin: 2px 0 4px 22px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); font-size: 12px; }
 /* お気に入りタブの大学名: 既定（PC）は正式名。モバイルのみ略称に切替（下の @media 参照） */
 #favorites-area .uni-abbr { display: none; }
@@ -144,6 +145,7 @@ a { color: var(--blue); text-decoration: none; }
   .fav-row { padding: 7px 6px; gap: 6px; font-size: 12px; }
   .fav-meta { gap: 2px 7px; }
   .fav-sched, .fav-qnum, .fav-cat, .fav-count { font-size: 11px; }
+  .fav-meta .pill { padding: 1px 6px; font-size: 10px; }
   .fav-actions { gap: 2px; }
   .fav-actions .icon-btn.sm { width: 28px; height: 28px; border-radius: 8px; font-size: 12px; }
   #favorites-area .uni-abbr { display: inline; }
