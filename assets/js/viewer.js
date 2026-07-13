@@ -656,27 +656,38 @@
           '<button class="fav-toggle" data-toggle="' + f.id + '" title="' + (collapsed ? "展開" : "折りたたみ") + '">' +
             '<i class="fa-solid ' + (collapsed ? "fa-chevron-right" : "fa-chevron-down") + '"></i></button>' +
           '<i class="fa-solid fa-folder fav-folder-ic"></i>' +
-          '<span class="fav-name">' + esc(f.name) + "</span>" +
-          '<span class="fav-count">' + childCount + "</span>" +
-          '<span class="spacer"></span>' +
-          '<button class="icon-btn sm" data-fav-rename="' + f.id + '" title="名前を変更"><i class="fa-solid fa-pen"></i></button>' +
-          '<button class="icon-btn sm" data-fav-delete-folder="' + f.id + '" title="フォルダを削除"><i class="fa-solid fa-trash"></i></button>' +
+          '<span class="fav-meta">' +
+            '<span class="fav-name">' + esc(f.name) + "</span>" +
+            '<span class="fav-count">' + childCount + "</span>" +
+          "</span>" +
+          '<span class="fav-actions">' +
+            '<button class="icon-btn sm" data-fav-rename="' + f.id + '" title="名前を変更"><i class="fa-solid fa-pen"></i></button>' +
+            '<button class="icon-btn sm" data-fav-delete-folder="' + f.id + '" title="フォルダを削除"><i class="fa-solid fa-trash"></i></button>' +
+          "</span>" +
         "</div>" +
         (collapsed ? "" : renderFavContainer(Number(f.id), depth + 1)) +
         "</div>";
     }
     var r = it.favorite;
+    var uniFull = r.university_name || "";
+    var uniAbbr = state.uniAbbr[uniFull];
+    var uniHtml = (uniAbbr && uniAbbr !== uniFull)
+      ? '<strong class="fav-uni uni-full">' + esc(uniFull) + '</strong><strong class="fav-uni uni-abbr">' + esc(uniAbbr) + "</strong>"
+      : '<strong class="fav-uni">' + esc(uniFull) + "</strong>";
     return '<div class="fav-node fav-item" data-node="' + key + '">' +
       '<div class="fav-row" draggable="true">' +
         '<span class="fav-drag-handle" title="ドラッグ／長押しで並べ替え"><i class="fa-solid fa-grip-vertical"></i></span>' +
-        '<span class="pill em">' + esc(r.year) + "</span>" +
-        '<strong class="fav-uni">' + esc(r.university_name) + "</strong>" +
-        '<span class="fav-sched">' + esc(r.schedule) + "</span>" +
-        '<span class="fav-qnum">大問' + esc(qLabel(r)) + "</span>" +
-        (r.category ? '<span class="fav-cat">' + esc(r.category) + "</span>" : "") +
-        '<span class="spacer"></span>' +
-        '<button class="icon-btn sm" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button>' +
-        '<button class="icon-btn sm" data-unfav="' + r.exam_id + ":" + r.question_number + '" title="お気に入りから外す"><i class="fa-solid fa-star"></i></button>' +
+        '<span class="fav-meta">' +
+          '<span class="pill em">' + esc(r.year) + "</span>" +
+          uniHtml +
+          '<span class="fav-sched">' + esc(r.schedule) + "</span>" +
+          '<span class="fav-qnum">大問' + esc(qLabel(r)) + "</span>" +
+          (r.category ? '<span class="fav-cat">' + esc(r.category) + "</span>" : "") +
+        "</span>" +
+        '<span class="fav-actions">' +
+          '<button class="icon-btn sm" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button>' +
+          '<button class="icon-btn sm" data-unfav="' + r.exam_id + ":" + r.question_number + '" title="お気に入りから外す"><i class="fa-solid fa-star"></i></button>' +
+        "</span>" +
       "</div></div>";
   }
 
