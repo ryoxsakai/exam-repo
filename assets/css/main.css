@@ -109,15 +109,15 @@ a { color: var(--blue); text-decoration: none; }
 .fav-node > .fav-children { margin-left: 22px; border-left: 1px solid var(--line); padding-left: 8px; }
 .fav-row {
   display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 8px; border-radius: 10px; border: 2px solid transparent;
-  font-size: 13.5px; color: var(--ink);
+  padding: 7px 8px; border-radius: 10px; border: 2px solid transparent;
+  font-size: 13px; color: var(--ink);
 }
 .fav-row:hover { background: var(--grad-chip); }
 .fav-row.drag-over-top { border-top-color: var(--emerald); }
 .fav-row.drag-over-bottom { border-bottom-color: var(--emerald); }
 .fav-row.drag-over-inside { background: var(--emerald-soft); border-color: var(--emerald); }
 .fav-drag-handle {
-  flex: 0 0 auto; width: 20px; text-align: center; color: var(--muted); cursor: grab;
+  flex: 0 0 auto; width: 18px; text-align: center; color: var(--muted); cursor: grab;
   touch-action: none; /* このハンドルは常にドラッグ操作用（ブラウザ標準のスクロール/選択ジェスチャーに奪われないようにする） */
 }
 .fav-drag-handle:active { cursor: grabbing; }
@@ -126,11 +126,29 @@ a { color: var(--blue); text-decoration: none; }
   color: var(--muted); font-size: 11px; display: flex; align-items: center; justify-content: center;
 }
 .fav-folder-ic { color: var(--blue); flex: 0 0 auto; font-size: 13px; }
-.fav-name { font-weight: 700; }
-.fav-count { font-size: 11.5px; color: var(--muted); }
-.fav-uni { font-weight: 700; }
-.fav-sched, .fav-qnum, .fav-cat { font-size: 12.5px; color: var(--muted); }
+/* 情報部分（名称・年度・大学等）は伸縮させ、右側のボタン列（fav-actions）を常に右端へ固定する */
+.fav-meta { flex: 1 1 140px; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 3px 10px; }
+.fav-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+.fav-count { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
+.fav-uni { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 100%; }
+.fav-sched, .fav-qnum, .fav-cat { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.fav-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; margin-left: auto; }
 .fav-drop-hint { margin: 2px 0 4px 22px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); font-size: 12px; }
+/* お気に入りタブの大学名: 既定（PC）は正式名。モバイルのみ略称に切替（下の @media 参照） */
+#favorites-area .uni-abbr { display: none; }
+#favorites-area .uni-full { display: inline; }
+
+@media (max-width: 640px) {
+  .fav-tree { padding: 4px; }
+  .fav-node > .fav-children { margin-left: 14px; padding-left: 6px; }
+  .fav-row { padding: 7px 6px; gap: 6px; font-size: 12px; }
+  .fav-meta { gap: 2px 7px; }
+  .fav-sched, .fav-qnum, .fav-cat, .fav-count { font-size: 11px; }
+  .fav-actions { gap: 2px; }
+  .fav-actions .icon-btn.sm { width: 28px; height: 28px; border-radius: 8px; font-size: 12px; }
+  #favorites-area .uni-abbr { display: inline; }
+  #favorites-area .uni-full { display: none; }
+}
 
 /* スマホの長押しドラッグ中だけ、その行のテキスト選択・長押しコールアウトをJavaScriptから禁止する */
 body.fav-dragging-touch .fav-row,
@@ -143,7 +161,7 @@ body.fav-dragging-touch .fav-row * {
   position: fixed; top: 0; left: 0; z-index: 4000; pointer-events: none;
   display: flex; align-items: center; gap: 8px; padding: 8px 12px;
   background: #fff; border: 1px solid var(--emerald); border-radius: 10px;
-  box-shadow: var(--shadow-lg); font-size: 13.5px; color: var(--ink);
+  box-shadow: var(--shadow-lg); font-size: 13px; color: var(--ink);
   transform: translate(-14px, -50%); opacity: .92; max-width: 80vw; white-space: nowrap; overflow: hidden;
 }
 
