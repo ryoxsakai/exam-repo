@@ -47,14 +47,30 @@ CREATE TABLE IF NOT EXISTS word_lists (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Favorite folders table (お気に入りのフォルダ分け。階層化可能)
+--   uid: Firebase Auth の ID トークンの sub クレーム
+--   parent_id: 自己参照（NULL = ルート直下）
+--   sort_order: コンテナ（uid + parent_id）内での表示順（フォルダ・お気に入り共通の並び）
+CREATE TABLE IF NOT EXISTS favorite_folders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uid TEXT NOT NULL,
+  name TEXT NOT NULL,
+  parent_id INTEGER,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Favorites table (Googleログイン(Firebase Auth)したユーザーごとの大問お気に入り)
 --   uid: Firebase Auth の ID トークンの sub クレーム
 --   exam_id + question_number で大問を特定（questions.id ではなく他APIと同じ識別方式）
+--   folder_id: 所属フォルダ（NULL = ルート直下）。sort_order はコンテナ内での表示順
 CREATE TABLE IF NOT EXISTS favorites (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   uid TEXT NOT NULL,
   exam_id INTEGER NOT NULL,
   question_number INTEGER NOT NULL,
+  folder_id INTEGER,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(uid, exam_id, question_number)
 );
@@ -65,6 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_exams_year ON exams(year);
 CREATE INDEX IF NOT EXISTS idx_questions_exam_id ON questions(exam_id);
 CREATE INDEX IF NOT EXISTS idx_questions_problem_text ON questions(problem_text);
 CREATE INDEX IF NOT EXISTS idx_favorites_uid ON favorites(uid);
+CREATE INDEX IF NOT EXISTS idx_favorite_folders_uid ON favorite_folders(uid);
 
 -- Trigger to update updated_at on questions update
 CREATE TRIGGER IF NOT EXISTS questions_updated_at
