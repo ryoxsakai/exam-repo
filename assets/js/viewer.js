@@ -1067,6 +1067,22 @@
     var i = cfg.indexOf(s);
     return i < 0 ? 999 : i;
   }
+  // 方式名から自然な並び順を判定（前期<中期<後期、N日目はN昇順）。認識できなければ null。
+  // 設定の並び順（schedOrder）に関わらず、同じ種類同士は常にこの順で表示する。
+  function schedNaturalRank(s) {
+    var str = String(s || "");
+    var m = str.match(/(\d+)\s*日目/);
+    if (m) return { group: "day", rank: Number(m[1]) };
+    if (/前期/.test(str)) return { group: "term", rank: 0 };
+    if (/中期/.test(str)) return { group: "term", rank: 1 };
+    if (/後期/.test(str)) return { group: "term", rank: 2 };
+    return null;
+  }
+  function schedCompare(a, b) {
+    var ra = schedNaturalRank(a), rb = schedNaturalRank(b);
+    if (ra && rb && ra.group === rb.group) return ra.rank - rb.rank;
+    return (schedOrder(a) - schedOrder(b)) || String(a).localeCompare(String(b), "ja");
+  }
 
   function treeRow(lvl, icon, label, data) {
     var attrs = "";
@@ -1084,7 +1100,7 @@
       html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
       Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
         html += '<div class="tree-node">' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
-        Object.keys(unis[u][y]).sort(function (a, b) { return (schedOrder(a) - schedOrder(b)) || a.localeCompare(b, "ja"); }).forEach(function (s) {
+        Object.keys(unis[u][y]).sort(schedCompare).forEach(function (s) {
           html += '<div class="tree-node">' +
             treeRow("sched", "fa-layer-group", esc(s), { exams: unis[u][y][s].join(","), uni: u, year: y, sched: s }) +
             '<div class="tree-children" hidden data-loaded="0"></div></div>';
@@ -1503,7 +1519,7 @@
         html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
         Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
           html += '<div class="tree-node">' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
-          Object.keys(unis[u][y]).sort(function (a, b) { return (schedOrder(a) - schedOrder(b)) || a.localeCompare(b, "ja"); }).forEach(function (s) {
+          Object.keys(unis[u][y]).sort(schedCompare).forEach(function (s) {
             var picked = (state.printSel.uni === u && state.printSel.year === y && state.printSel.sched === s);
             html += '<button type="button" class="tree-row tree-row-sched tree-row-pick' + (picked ? " selected" : "") + '"' +
               ' data-uni="' + esc(u) + '" data-year="' + esc(y) + '" data-sched="' + esc(s) + '">' +
