@@ -1229,6 +1229,21 @@
     var i = cfg.indexOf(s);
     return i < 0 ? 999 : i;
   }
+  // 方式名から自然な並び順を判定（前期<中期<後期、N日目はN昇順）。認識できなければ null。
+  function schedNaturalRankS(s) {
+    var str = String(s || "");
+    var m = str.match(/(\d+)\s*日目/);
+    if (m) return { group: "day", rank: Number(m[1]) };
+    if (/前期/.test(str)) return { group: "term", rank: 0 };
+    if (/中期/.test(str)) return { group: "term", rank: 1 };
+    if (/後期/.test(str)) return { group: "term", rank: 2 };
+    return null;
+  }
+  function schedCompareS(a, b) {
+    var ra = schedNaturalRankS(a), rb = schedNaturalRankS(b);
+    if (ra && rb && ra.group === rb.group) return ra.rank - rb.rank;
+    return (schedOrderS(a) - schedOrderS(b)) || String(a).localeCompare(String(b), "ja");
+  }
   function treeRowS(lvl, icon, label) {
     return '<button type="button" class="tree-row tree-row-' + lvl + '">' +
       '<i class="fa-solid fa-chevron-right tree-chev"></i>' +
@@ -1256,7 +1271,7 @@
       html += '<div class="tree-node">' + treeRowS("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
       Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
         html += '<div class="tree-node">' + treeRowS("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
-        Object.keys(unis[u][y]).sort(function (a, b) { return (schedOrderS(a) - schedOrderS(b)) || a.localeCompare(b, "ja"); }).forEach(function (s) {
+        Object.keys(unis[u][y]).sort(schedCompareS).forEach(function (s) {
           var qrows = unis[u][y][s].slice().sort(function (a, b) { return (Number(a.question_number) || 0) - (Number(b.question_number) || 0); });
           html += '<div class="tree-node">' + treeRowS("sched", "fa-layer-group", esc(s)) + '<div class="tree-children" hidden>';
           qrows.forEach(function (r) {
@@ -1960,9 +1975,7 @@
     });
   }
   function renderLabelBatch() {
-    var exams = labelBatch.exams.slice().sort(function (a, b) {
-      return (schedOrderS(a.schedule) - schedOrderS(b.schedule)) || String(a.schedule).localeCompare(String(b.schedule), "ja");
-    });
+    var exams = labelBatch.exams.slice().sort(function (a, b) { return schedCompareS(a.schedule, b.schedule); });
     var h = '<p class="hint" style="margin-bottom:12px"><i class="fa-solid fa-circle-info"></i> 各大問の表示ラベルをまとめて編集できます。空欄にすると「大問＋番号」に戻ります。並び順は番号のままで、ラベルは表示だけを上書きします。</p>';
     exams.forEach(function (ex) {
       var qs = (ex.questions || []).slice().sort(function (a, b) { return (Number(a.question_number) || 0) - (Number(b.question_number) || 0); });

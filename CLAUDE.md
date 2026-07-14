@@ -54,7 +54,7 @@
 
 | メソッド / パス | 用途 |
 |------|------|
-| `GET /api/config` / `PUT /api/config` | サイト設定（`schedules`=方式, `year_presets`=年度, `site_title`, `markup_css`, `ingest_prompt`=取り込み追加プロンプト, `university_notes`=大学ごとの注意点 `{大学名:注意点}`） |
+| `GET /api/config` / `PUT /api/config` | サイト設定（`schedules`=方式, `year_presets`=年度, `site_title`, `markup_css`, `ingest_prompt`=取り込み追加プロンプト, `university_notes`=大学ごとの注意点 `{大学名:注意点}`）。方式の並びはツリー表示時に基本 `schedules` の登録順に従うが、「前期/中期/後期」「N日目」は `schedules` の並び順に関わらず常にこの自然順（前期<中期<後期、日目は昇順）で表示される（`schedNaturalRank`/`schedCompare`、閲覧ページ・設定ページの両方に実装） |
 | `GET /api/ingest-prompt?universityName=` | 外部LLM取り込み用プロンプト（`universityName` 指定でその大学の注意点を追記） |
 | `GET /api/universities` / `PUT /api/universities/:id` / `DELETE /api/universities/:id` | 大学一覧 / 名前・`reading`(よみがな)・`abbreviation`(略称) 更新 / 削除 |
 | `GET /api/exams` `POST /api/exams` | 試験一覧（filter: universityName,year,schedule）/ 登録 |
