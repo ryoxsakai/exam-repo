@@ -703,7 +703,17 @@
       var viewBtn = t.closest && t.closest("[data-view]");
       if (viewBtn) {
         var vp = viewBtn.getAttribute("data-view").split(":");
-        openExam(Number(vp[0]), Number(vp[1]));
+        var vExamId = Number(vp[0]), vQnum = Number(vp[1]);
+        // 表示モーダルの前/次ボタンが、そのお気に入りが属するフォルダの並び順（ドラッグ&ドロップで
+        // 並べ替えた順）で動くよう、開く前に nav リストをそのフォルダの中身に限定する
+        var favRow = (state.favRows || []).filter(function (f) { return Number(f.exam_id) === vExamId && Number(f.question_number) === vQnum; })[0];
+        if (favRow) {
+          var parentId = favRow.folder_id == null ? null : Number(favRow.folder_id);
+          state.sortedRows = favChildrenOf(parentId)
+            .filter(function (it) { return it.kind === "favorite"; })
+            .map(function (it) { return it.favorite; });
+        }
+        openExam(vExamId, vQnum);
         return;
       }
       var unfavBtn = t.closest && t.closest("[data-unfav]");
