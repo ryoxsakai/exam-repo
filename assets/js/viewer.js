@@ -1125,7 +1125,13 @@
         (ex.questions || []).slice().sort(function (a, b) {
           return (Number(a.question_number) || 0) - (Number(b.question_number) || 0);
         }).forEach(function (q) {
-          rows.push({ exam_id: ex.id, question_number: q.question_number, label: q.label, university_name: ex.university_name, year: ex.year, schedule: ex.schedule, category: q.category });
+          // 種別「長文」は、全訳セクション冒頭の《タイトル》を「長文：タイトル」として一覧に表示
+          var catLabel = q.category || "";
+          if (catLabel === "長文") {
+            var title = Markup.extractZenyakuTitle(q.problem_text || "");
+            if (title) catLabel = "長文：" + title;
+          }
+          rows.push({ exam_id: ex.id, question_number: q.question_number, label: q.label, university_name: ex.university_name, year: ex.year, schedule: ex.schedule, category: q.category, categoryLabel: catLabel });
         });
       });
       if (!rows.length) { children.innerHTML = '<div class="tree-msg">大問が登録されていません。</div>'; return; }
@@ -1134,7 +1140,7 @@
         html += '<button type="button" class="tree-row tree-row-q" data-eid="' + r.exam_id + '" data-q="' + esc(String(r.question_number)) + '" data-i="' + i + '">' +
           '<i class="fa-solid fa-file-lines tree-ic"></i>' +
           '<span class="tree-label">大問' + esc(qLabel(r)) +
-          (r.category ? ' <span class="tree-cat">' + esc(r.category) + "</span>" : "") +
+          (r.categoryLabel ? ' <span class="tree-cat">' + esc(r.categoryLabel) + "</span>" : "") +
           "</span></button>";
       });
       children.innerHTML = html;

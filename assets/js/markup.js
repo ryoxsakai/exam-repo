@@ -364,6 +364,23 @@
     return sections;
   }
 
+  // 「全訳」セクション冒頭の《タイトル》を抽出（問題種別「長文」の一覧表示用。無ければ空文字）
+  function extractZenyakuTitle(text) {
+    var zenyaku = parseSections(text).filter(function (s) { return s.type === "全訳"; })[0];
+    if (!zenyaku) return "";
+    var lines = (zenyaku.text || "").split("\n");
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i].trim();
+      if (!l) continue;
+      var m = l.match(/^《([^》]+)》/);
+      return m ? m[1] : "";
+    }
+    return "";
+  }
+
   function setImageBase(b) { imageBase = String(b || ""); }
-  global.Markup = { render: render, strip: strip, escape: esc, parseSections: parseSections, setImageBase: setImageBase };
+  global.Markup = {
+    render: render, strip: strip, escape: esc, parseSections: parseSections,
+    extractZenyakuTitle: extractZenyakuTitle, setImageBase: setImageBase
+  };
 })(window);
