@@ -183,6 +183,34 @@ function normalizeUniversityName(name: string): string {
   return n || (name || "").trim();
 }
 
+// problem_text から「全訳」セクション冒頭の《タイトル》を抽出（問題種別「長文」の一覧表示用）。
+// フロントの Markup.parseSections と同じ区切りルール（{{セクション名}} 行。英数字を含むものは無視）。
+function extractZenyakuTitle(problemText: string): string {
+  const lines = (problemText || "").split("\n");
+  let curType = "問題";
+  let curLines: string[] = [];
+  let zenyakuLines: string[] | null = null;
+  for (const raw of lines) {
+    const m = raw.trim().match(/^\{\{([^0-9A-Za-z}]+)\}\}$/);
+    if (m) {
+      if (curType === "全訳" && zenyakuLines === null) zenyakuLines = curLines;
+      curType = m[1];
+      curLines = [];
+    } else {
+      curLines.push(raw);
+    }
+  }
+  if (curType === "全訳" && zenyakuLines === null) zenyakuLines = curLines;
+  if (!zenyakuLines) return "";
+  for (const raw of zenyakuLines) {
+    const l = raw.trim();
+    if (!l) continue;
+    const tm = l.match(/^《([^》]+)》/);
+    return tm ? tm[1] : "";
+  }
+  return "";
+}
+
 // 孤立レコードの自動削除: 親が存在しない questions / exams / favorites を除去する。
 // D1(SQLite) は既定では外部キー制約を強制しないため、過去に大学・試験を
 // 削除した際 ON DELETE CASCADE が効かず子レコードが残っている場合がある。
@@ -1148,8 +1176,9 @@ export default {
         const category = url.searchParams.get("category") || "";
 
         // 大問ごとに1行返す（exam_id + question_number で一意）
+        // problem_text は「長文」種別の全訳タイトル抽出にのみ使い、レスポンスには含めない（軽量化）
         let sql = `
-          SELECT q.id AS question_id, q.question_number, q.label, q.category,
+          SELECT q.id AS question_id, q.question_number, q.label, q.category, q.problem_text,
                  e.id AS exam_id, u.name AS university_name, e.year, e.schedule,
                  0 AS total_occurrences
           FROM questions q
@@ -1170,7 +1199,15 @@ export default {
 
         sql += " ORDER BY e.year DESC, u.name ASC, q.question_number ASC";
 
-        const { results: rows } = await env.DB.prepare(sql).bind(...params).all<Record<string, unknown>>();
+        const { results: rawRows } = await env.DB.prepare(sql).bind(...params).all<Record<string, unknown>>();
+
+        // 種別「長文」のみ、全訳冒頭の《タイトル》を抽出して zenyaku_title を付与する。
+        // problem_text 本体はレスポンスに含めない（一覧表示には不要で軽量化のため）。
+        const rows: Record<string, unknown>[] = rawRows.map((row) => {
+          const { problem_text, ...rest } = row as { problem_text?: string } & Record<string, unknown>;
+          const zenyaku_title = rest.category === "長文" ? extractZenyakuTitle(problem_text || "") : "";
+          return { ...rest, zenyaku_title };
+        });
 
         // キーワード検索時のみ大問ごとの出現回数を計算
         let enriched: Record<string, unknown>[] = rows;

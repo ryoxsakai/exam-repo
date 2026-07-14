@@ -1210,6 +1210,7 @@
         return {
           exam_id: r.exam_id, question_id: r.question_id,
           question_number: r.question_number, label: r.label || "", category: r.category || "",
+          zenyakuTitle: r.zenyaku_title || "",
           university_name: r.university_name, year: r.year, schedule: r.schedule
         };
       });
@@ -1260,10 +1261,13 @@
           html += '<div class="tree-node">' + treeRowS("sched", "fa-layer-group", esc(s)) + '<div class="tree-children" hidden>';
           qrows.forEach(function (r) {
             flat.push(r);
+            // 種別「長文」は、全訳セクション冒頭の《タイトル》を「長文：タイトル」として表示
+            var catLabel = r.category || "";
+            if (catLabel === "長文" && r.zenyakuTitle) catLabel = "長文：" + r.zenyakuTitle;
             html += '<button type="button" class="tree-row tree-row-q" data-eid="' + r.exam_id + '" data-q="' + esc(String(r.question_number)) + '">' +
               '<i class="fa-solid fa-file-lines tree-ic"></i>' +
               '<span class="tree-label">大問' + esc(qLabel(r)) +
-              (r.category ? ' <span class="tree-cat">' + esc(r.category) + "</span>" : "") + "</span></button>";
+              (catLabel ? ' <span class="tree-cat">' + esc(catLabel) + "</span>" : "") + "</span></button>";
           });
           html += "</div></div>";
         });
