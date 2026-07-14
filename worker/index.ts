@@ -1203,9 +1203,12 @@ export default {
         // 種別「長文」の行だけ、全訳冒頭の《タイトル》抽出のために problem_text を別途取得する
         // （全件のメイン検索クエリに problem_text を含めると、無条件検索時にDB全体の英文が
         //   毎回転送されて重くなる・D1のレスポンスサイズ上限に達する恐れがあるため、対象を絞る）。
+        // D1(SQLite) はバインド変数数の上限が100（通常のSQLiteの既定999よりかなり小さい）で、
+        // 101個目をbindすると "D1_ERROR: too many SQL variables" になることを実機で確認済み。
+        // 余裕を持って90件ずつに分割する。
         const longIds = rawRows.filter((r) => r.category === "長文").map((r) => r.question_id as number);
         const titleMap = new Map<number, string>();
-        const CHUNK = 200;
+        const CHUNK = 90;
         for (let i = 0; i < longIds.length; i += CHUNK) {
           const chunk = longIds.slice(i, i + CHUNK);
           const placeholders = chunk.map(() => "?").join(",");
