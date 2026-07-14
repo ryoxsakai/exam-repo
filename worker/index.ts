@@ -1176,9 +1176,8 @@ export default {
         const category = url.searchParams.get("category") || "";
 
         // 大問ごとに1行返す（exam_id + question_number で一意）
-        // problem_text は「長文」種別の全訳タイトル抽出にのみ使い、レスポンスには含めない（軽量化）
         let sql = `
-          SELECT q.id AS question_id, q.question_number, q.label, q.category, q.problem_text,
+          SELECT q.id AS question_id, q.question_number, q.label, q.category,
                  e.id AS exam_id, u.name AS university_name, e.year, e.schedule,
                  0 AS total_occurrences
           FROM questions q
@@ -1201,12 +1200,23 @@ export default {
 
         const { results: rawRows } = await env.DB.prepare(sql).bind(...params).all<Record<string, unknown>>();
 
-        // 種別「長文」のみ、全訳冒頭の《タイトル》を抽出して zenyaku_title を付与する。
-        // problem_text 本体はレスポンスに含めない（一覧表示には不要で軽量化のため）。
+        // 種別「長文」の行だけ、全訳冒頭の《タイトル》抽出のために problem_text を別途取得する
+        // （全件のメイン検索クエリに problem_text を含めると、無条件検索時にDB全体の英文が
+        //   毎回転送されて重くなる・D1のレスポンスサイズ上限に達する恐れがあるため、対象を絞る）。
+        const longIds = rawRows.filter((r) => r.category === "長文").map((r) => r.question_id as number);
+        const titleMap = new Map<number, string>();
+        const CHUNK = 200;
+        for (let i = 0; i < longIds.length; i += CHUNK) {
+          const chunk = longIds.slice(i, i + CHUNK);
+          const placeholders = chunk.map(() => "?").join(",");
+          const { results: longRows } = await env.DB.prepare(
+            `SELECT id, problem_text FROM questions WHERE id IN (${placeholders})`
+          ).bind(...chunk).all<{ id: number; problem_text: string }>();
+          longRows.forEach((r) => titleMap.set(r.id, extractZenyakuTitle(r.problem_text || "")));
+        }
         const rows: Record<string, unknown>[] = rawRows.map((row) => {
-          const { problem_text, ...rest } = row as { problem_text?: string } & Record<string, unknown>;
-          const zenyaku_title = rest.category === "長文" ? extractZenyakuTitle(problem_text || "") : "";
-          return { ...rest, zenyaku_title };
+          const zenyaku_title = row.category === "長文" ? (titleMap.get(row.question_id as number) || "") : "";
+          return { ...row, zenyaku_title };
         });
 
         // キーワード検索時のみ大問ごとの出現回数を計算
