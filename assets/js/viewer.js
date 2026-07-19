@@ -113,6 +113,7 @@
     $all("[data-close]", _examModal).forEach(function (b) { b.addEventListener("click", clearOpenExam); });
     el("btn-open-search").addEventListener("click", openSearch);
     el("btn-open-search-2").addEventListener("click", openSearch);
+    if (el("btn-onboarding")) el("btn-onboarding").addEventListener("click", startOnboarding);
     el("sm-run").addEventListener("click", runSearch);
     if (el("sm-category")) el("sm-category").addEventListener("change", toggleWordsRow);
     el("btn-clear-filter").addEventListener("click", clearFilter);
@@ -270,6 +271,20 @@
     UI.toast("重みを保存しました（この端末）", "ok");
     UI.closeModal(el("level-weight-modal"));
     if (state.filter.category === "長文") loadResults();  // 表示中なら反映
+  }
+  // 「？」ボタンから開始する使い方ガイド（Onboarding.start は onboarding.js の汎用エンジン）
+  function startOnboarding() {
+    var steps = [
+      { target: ".brand", title: "ようこそ", text: "英語の入試問題を検索・閲覧できるデータベースです。学習や教材研究にご活用ください。" },
+      { target: "#btn-open-search", title: "検索", text: "大学名・年度・方式・キーワードなどの条件で入試問題を検索できます。" },
+      { target: '.tab[data-tab="search"]', title: "通常検索", text: "検索結果を表形式の一覧で確認できます。" },
+      { target: '.tab[data-tab="tree"]', title: "ツリー検索", text: "大学 → 年度 → 方式 → 大問 の順にたどって問題を開けます。" },
+      { target: '.tab[data-tab="favorites"]', title: "お気に入り", text: "問題閲覧画面の星アイコンで登録した大問がここに並びます。フォルダ分けやドラッグ＆ドロップでの並べ替えも可能です（Googleログインが必要）。" },
+      { target: '.tab[data-tab="corpus"]', title: "コーパス検索", text: "登録済みの英文を対象に、頻度リストやKWICコンコーダンス、語彙レベルのカバー率などを分析できます。" },
+      { target: '.tab[data-tab="print"]', title: "問題印刷", text: "大学・年度・方式を選んで、大問ごとに問題を印刷用に出力できます。" },
+      { target: "#btn-login", title: "ログイン", text: "Googleでログインすると、お気に入り機能が使えるようになります。" }
+    ];
+    Onboarding.start(steps.filter(function (s) { return document.querySelector(s.target); }));
   }
   function openSearch() {
     el("sm-word").value = state.filter.word;

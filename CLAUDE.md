@@ -8,7 +8,7 @@
   - `index.html` … 閲覧ページ（通常検索 / お気に入り / コーパス検索）
   - `setting/index.html` … 設定ページ（メイン設定 / 接続設定 / 入試問題一覧 / 問題登録 / コーパス検索設定）
   - `assets/css/main.css` … デザインシステム（Noto Sans JP / Source Serif 4、エメラルド+ブルー）
-  - `assets/js/` … `store`(localStorage) / `auth`(Firebase Auth) / `api`(Worker) / `ui` / `markup` / `corpus` / `viewer` / `settings`
+  - `assets/js/` … `store`(localStorage) / `auth`(Firebase Auth) / `api`(Worker) / `ui` / `markup` / `corpus` / `onboarding`(使い方ガイド) / `viewer` / `settings`
 - **バックエンド**: `worker/index.ts`（Cloudflare Worker） + `schema.sql`（D1 / SQLite）。`wrangler.toml` で設定。
   - `.github/workflows/worker-deploy.yml` が `worker/**` 変更時に自動デプロイ。
 - **認証**: Firebase Authentication（Googleログイン）。Firestore 等のデータストアは使わず、ログイン識別のみに使用（`assets/js/auth.js`。config はコード内に直書き。値は公開情報のため秘匿不要）。
@@ -79,6 +79,12 @@
 - 並べ替え・フォルダ間移動・階層化（フォルダをフォルダへドロップ）は PC はネイティブ Drag and Drop API、スマホはタップ長押し（`touchstart`から一定時間後にドラッグ開始、閾値以上動いたらスクロールとみなし中止）で行い、いずれも `POST /api/favorite-folders/reorder` で確定する（ドロップ先コンテナの子要素を渡した順序で `sort_order`/`folder_id`(`parent_id`) に一括反映。移動元に残る要素の番号は詰め直さない）。
 - スマホの長押しドラッグ中だけ `body.fav-dragging-touch` を付与し、CSS側でその間だけテキスト選択・長押しコールアウトを禁止する（常時ではなく JS がドラッグ中と判定した時だけ適用）。
 - フォルダ削除時、配下のフォルダ・お気に入りは削除せず削除フォルダの親へ繰り上げる（`fixOrphanedRecords` でも念のため参照切れの `folder_id`/`parent_id` をルートへ戻す）。
+
+### 使い方ガイド（オンボーディング。`assets/js/onboarding.js` / `viewer.js`）
+
+- 閲覧ページのトップバー右側は右から「Googleログイン」「検索」「？（使い方ガイド）」の順。「？」は `.icon-btn.subtle` で他のアイコンより控えめな配色にしている。
+- `？` クリックで `startOnboarding()`（`viewer.js`）が画面の主要要素（ロゴ・検索ボタン・各タブ・ログインボタン）を順にステップ定義した配列を組み立て、`Onboarding.start(steps)`（`onboarding.js`。ページに依存しない汎用のスポットライト式ツアーエンジン）に渡す。存在しない対象（タブ並び替えで非表示にしたタブ等）は自動的にスキップする。
+- ツアー表示中は対象要素を `box-shadow` によるスポットライトでハイライトしつつ、近くにタイトル・説明・戻る/次へ/スキップボタン付きの吹き出しを表示する。背景クリック・✕ボタン・Escキーのいずれでも終了できる。
 
 ### 自動修復（`worker/index.ts`）
 

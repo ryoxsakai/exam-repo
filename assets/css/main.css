@@ -101,6 +101,38 @@ a { color: var(--blue); text-decoration: none; }
 /* お気に入り星ボタン（未登録=アウトライン, 登録済み=塗りつぶし・黄） */
 #exam-favorite.is-fav { color: #ca8a04; border-color: #fde68a; background: #fffbeb; }
 
+/* トップバーの控えめなアイコンボタン（「？」使い方ガイド等。他の操作系アイコンより主張を抑える） */
+.icon-btn.subtle { color: var(--muted); background: transparent; border-color: transparent; box-shadow: none; }
+.icon-btn.subtle:hover { color: var(--blue); border-color: var(--sky); background: var(--grad-soft); }
+
+/* ---------- オンボーディング（画面要素をハイライトしながら順に案内するガイドツアー） ---------- */
+.onboarding-overlay { position: fixed; inset: 0; z-index: 5000; }
+.onboarding-spot {
+  position: fixed; z-index: 5001; border-radius: 12px;
+  box-shadow: 0 0 0 9999px rgba(15, 18, 34, .58), 0 0 0 3px var(--emerald);
+  transition: top .25s ease, left .25s ease, width .25s ease, height .25s ease;
+  pointer-events: none;
+}
+.onboarding-tip {
+  position: fixed; z-index: 5002; width: 300px; max-width: calc(100vw - 24px);
+  background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-lg);
+  padding: 16px; transition: top .2s ease, left .2s ease;
+}
+.onboarding-tip-head { display: flex; align-items: center; }
+.onboarding-tip-step {
+  font-size: 11.5px; font-weight: 700; color: var(--emerald-dark);
+  background: var(--emerald-soft); border-radius: 20px; padding: 2px 9px;
+}
+.onboarding-tip-close {
+  margin-left: auto; border: 0; background: none; color: var(--muted); cursor: pointer;
+  width: 26px; height: 26px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;
+}
+.onboarding-tip-close:hover { background: var(--line-soft); color: var(--ink-soft); }
+.onboarding-tip-title { margin: 8px 0 6px; font-size: 15px; font-weight: 700; }
+.onboarding-tip-text { margin: 0; font-size: 13px; color: var(--ink-soft); line-height: 1.6; }
+.onboarding-tip-foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+.onboarding-tip-foot .spacer { flex: 1; }
+
 /* ---------- お気に入り: フォルダ分け・並べ替え（ドラッグ&ドロップ / スマホは長押し） ---------- */
 .fav-tree { border: 1px solid var(--line); border-radius: var(--radius); background: #fff; padding: 6px; }
 .fav-children { display: flex; flex-direction: column; }
