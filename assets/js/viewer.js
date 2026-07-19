@@ -284,7 +284,12 @@
       { target: '.tab[data-tab="print"]', title: "問題印刷", text: "大学・年度・方式を選んで、大問ごとに問題を印刷用に出力できます。" },
       { target: "#btn-login", title: "ログイン", text: "Googleでログインすると、お気に入り機能が使えるようになります。" }
     ];
-    Onboarding.start(steps.filter(function (s) { return document.querySelector(s.target); }));
+    // 対象要素が存在していても hidden/display:none で実際には見えない場合はスキップする
+    // （ログイン中は #btn-login が非表示になり、スポットライトが潰れて表示されてしまうため）
+    Onboarding.start(steps.filter(function (s) {
+      var t = document.querySelector(s.target);
+      return t && t.getClientRects().length > 0;
+    }));
   }
   function openSearch() {
     el("sm-word").value = state.filter.word;
