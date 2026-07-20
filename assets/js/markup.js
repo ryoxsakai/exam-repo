@@ -299,10 +299,11 @@
       }
       // 字下げ：本文・和訳ではバッジの無い「英字始まり」の段落先頭のみ字下げ
       // （日本語の指示文などは左寄せにする）。それ以外のセクションは英語大文字始まりのみ。
+      // 引用符（" ' " '）で始まる段落も、直後が英字なら英文段落とみなし字下げする。
       // 全訳セクションは常に日本語の全訳のため、たまたま固有名詞等の英字で始まる段落だけ
       // 字下げされるのを避け、常に字下げしない。
       var indent = (opts && opts.zenyaku) ? false :
-        (!noIndent && paraStart && (paraNum ? (!badgeNum && /^[A-Za-z]/.test(trimmed)) : /^[A-Z]/.test(trimmed)));
+        (!noIndent && paraStart && (paraNum ? (!badgeNum && /^["'“‘]?[A-Za-z]/.test(trimmed)) : /^["'“‘]?[A-Z]/.test(trimmed)));
       var prefix = badgeNum ? '<span class="para-badge">' + esc(badgeNum) + "</span>" : "";
       html += '<span class="blk' + (indent ? " indent" : "") + '">' + prefix + inline(line, footnotes) + "</span>";
       paraStart = false;
