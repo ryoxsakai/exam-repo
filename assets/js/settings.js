@@ -10,6 +10,13 @@
     return (q && q.label != null && String(q.label).trim()) ? String(q.label) : String(q && q.question_number);
   }
 
+  // problem_text を表示用のセクション一覧へ（「リード文」は直後のセクションへ統合済み）。
+  // 一括アップロード等で保存前に統合されていないデータが残っていても、プレビュー表示では
+  // 必ず統合された状態で見せる（登録フォームの編集用パース＝生データのままにしたい箇所には使わない）。
+  function examSections(problemText) {
+    return Markup.mergeLeadSections(Markup.parseSections(problemText || ""));
+  }
+
   var SET_TABS = {
     main:     { id: "main",     label: "メイン設定",       icon: "fa-sliders" },
     conn:     { id: "conn",     label: "接続設定",         icon: "fa-plug" },
@@ -609,39 +616,9 @@
     openPreview(m || "解析結果プレビュー", body);
   }
 
-  // 「リード文」セクションは独立したセクションにせず、直後のセクションへ統合する
-  // （太字・字下げなし @@** ** で先頭に付け、下に空行を1つ挟んで本来の内容を続ける）。
-  // 連続する「リード文」はまとめて統合。直後にセクションが無いまま終わる場合はデータを失わないよう
-  // 「リード文」のまま残す。
-  function mergeLeadSections(sections) {
-    var out = [], pendingLead = [];
-    (sections || []).forEach(function (sec) {
-      if (sec.type === "リード文") {
-        var t = (sec.text || "").trim();
-        if (t) pendingLead.push(t);
-        return;
-      }
-      if (pendingLead.length) {
-        var leadBlock = pendingLead.map(function (block) {
-          return block.split("\n").map(function (line) {
-            var l = line.trim();
-            return l ? "@@**" + l + "**" : "";
-          }).join("\n");
-        }).join("\n\n");
-        var body = sec.text || "";
-        out.push({ type: sec.type, text: body ? (leadBlock + "\n\n" + body) : leadBlock });
-        pendingLead = [];
-      } else {
-        out.push(sec);
-      }
-    });
-    if (pendingLead.length) out.push({ type: "リード文", text: pendingLead.join("\n\n") });
-    return out;
-  }
-
   // セクション配列を保存用の {problemText, answerText, commentaryText} へ（問題登録と同じ規則）
   function ingSectionsToQuestion(q) {
-    var sections = mergeLeadSections(q.sections);
+    var sections = Markup.mergeLeadSections(q.sections);
     var problemLines = [];
     sections.forEach(function (sec) {
       var t = sec.text || "";
@@ -1355,14 +1332,14 @@
 
       // 本文があり難易度帯の基準（四分位）が未取得なら、コーパスを取り込んでから描画
       var hasBody = questions.some(function (q) {
-        return Markup.parseSections(q.problem_text || "").some(function (s) { return s.type === "本文"; });
+        return examSections(q.problem_text).some(function (s) { return s.type === "本文"; });
       });
       var render = function () {
         if (hasBody) ensureLongLevels();
         var body = "";
         questions.forEach(function (q) {
           var fields = [];
-          var sections = Markup.parseSections(q.problem_text || "");
+          var sections = examSections(q.problem_text);
           var hasAnswer = sections.some(function (s) { return s.type === "解答"; });
           var hasCommentary = sections.some(function (s) { return s.type === "解説"; });
           sections.forEach(function (sec) {
@@ -1829,7 +1806,7 @@
 
     // problemText に全セクションを順序どおり統合（セクション区切り {{名}} 付き。
     // 「リード文」は独立セクションにせず直後のセクションへ統合する）
-    var sections = mergeLeadSections(state.reg.sections);
+    var sections = Markup.mergeLeadSections(state.reg.sections);
     var problemLines = [];
     sections.forEach(function (sec) {
       var t = sec.text || "";

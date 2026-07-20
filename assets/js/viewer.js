@@ -12,6 +12,13 @@
     return (q && q.label != null && String(q.label).trim()) ? String(q.label) : String(q && q.question_number);
   }
 
+  // problem_text を実際に表示・印刷・分析で使うセクション一覧へ（「リード文」は直後のセクションへ統合済み）。
+  // 登録・取り込み保存時（settings.js）は保存時点で統合されるが、一括アップロード等で保存前に
+  // 統合されていないデータが残っていても、表示側でも必ず統合されるようここで一元的に処理する。
+  function examSections(problemText) {
+    return Markup.mergeLeadSections(Markup.parseSections(problemText || ""));
+  }
+
   function saveOpenExam(examId, qnum) { try { sessionStorage.setItem("exam_open_id", examId + ":" + qnum); } catch (e) {} }
   function clearOpenExam() { try { sessionStorage.removeItem("exam_open_id"); } catch (e) {} }
   function getOpenExam() {
@@ -1228,7 +1235,7 @@
 
       // 本文があり難易度帯の基準（四分位）が未取得なら、コーパスを取り込んでから描画
       var hasBody = questions.some(function (q) {
-        return Markup.parseSections(q.problem_text || "").some(function (s) { return s.type === "本文"; });
+        return examSections(q.problem_text).some(function (s) { return s.type === "本文"; });
       });
       var finish = function () {
         if (hasBody) { ensureLongLevels(); }
@@ -1250,7 +1257,7 @@
     var body = "";
     questions.forEach(function (q) {
       var fields = [];
-      var sections = Markup.parseSections(q.problem_text || "");
+      var sections = examSections(q.problem_text);
       var hasAnswerSection = sections.some(function (s) { return s.type === "解答"; });
       var hasCommentarySection = sections.some(function (s) { return s.type === "解説"; });
       if (q.answer_text && q.answer_text.trim() && !hasAnswerSection) sections.push({ type: "解答", text: q.answer_text });
@@ -1412,7 +1419,7 @@
 
   // 1大問のセクション一覧（problem_text の {{セクション}} ＋ 旧カラム互換）
   function questionSections(q) {
-    var sections = Markup.parseSections(q.problem_text || "");
+    var sections = examSections(q.problem_text);
     var hasAns = sections.some(function (s) { return s.type === "解答"; });
     var hasCom = sections.some(function (s) { return s.type === "解説"; });
     if (q.answer_text && q.answer_text.trim() && !hasAns) sections.push({ type: "解答", text: q.answer_text });
@@ -1653,7 +1660,7 @@
   function corpusSectionTypes(qs) {
     var set = [];
     qs.forEach(function (q) {
-      var types = Markup.parseSections(q.problem_text || "").map(function (s) { return s.type; });
+      var types = examSections(q.problem_text).map(function (s) { return s.type; });
       if (q.answer_text && q.answer_text.trim() && types.indexOf("解答") < 0) types.push("解答");
       if (q.commentary_text && q.commentary_text.trim() && types.indexOf("解説") < 0) types.push("解説");
       types.forEach(function (t) { if (set.indexOf(t) < 0) set.push(t); });
@@ -1669,7 +1676,7 @@
 
   // 1問題の選択セクションだけを連結して記法除去（secSet=null は全セクション）
   function questionSectionText(q, secSet) {
-    var sections = Markup.parseSections(q.problem_text || "");
+    var sections = examSections(q.problem_text);
     var hasAns = sections.some(function (s) { return s.type === "解答"; });
     var hasCom = sections.some(function (s) { return s.type === "解説"; });
     if (q.answer_text && q.answer_text.trim() && !hasAns) sections.push({ type: "解答", text: q.answer_text });

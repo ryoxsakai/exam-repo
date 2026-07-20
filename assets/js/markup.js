@@ -364,6 +364,37 @@
     return sections;
   }
 
+  // 「リード文」セクションは独立したセクションにせず、直後のセクションへ統合する
+  // （太字・字下げなし @@** ** で先頭に付け、空行を1つ挟んで元のセクション内容を続ける）。
+  // 連続する「リード文」はまとめて統合。直後にセクションが無いまま終わる場合はデータを失わないよう
+  // 「リード文」のまま残す。登録・取り込み保存時（settings.js）と表示・印刷・コーパス分析時
+  // （viewer.js）の両方で使う共通ロジック。
+  function mergeLeadSections(sections) {
+    var out = [], pendingLead = [];
+    (sections || []).forEach(function (sec) {
+      if (sec.type === "リード文") {
+        var t = (sec.text || "").trim();
+        if (t) pendingLead.push(t);
+        return;
+      }
+      if (pendingLead.length) {
+        var leadBlock = pendingLead.map(function (block) {
+          return block.split("\n").map(function (line) {
+            var l = line.trim();
+            return l ? "@@**" + l + "**" : "";
+          }).join("\n");
+        }).join("\n\n");
+        var body = sec.text || "";
+        out.push({ type: sec.type, text: body ? (leadBlock + "\n\n" + body) : leadBlock });
+        pendingLead = [];
+      } else {
+        out.push(sec);
+      }
+    });
+    if (pendingLead.length) out.push({ type: "リード文", text: pendingLead.join("\n\n") });
+    return out;
+  }
+
   // 「全訳」セクション冒頭の《タイトル》を抽出（問題種別「長文」の一覧表示用。無ければ空文字）
   function extractZenyakuTitle(text) {
     var zenyaku = parseSections(text).filter(function (s) { return s.type === "全訳"; })[0];
@@ -381,6 +412,7 @@
   function setImageBase(b) { imageBase = String(b || ""); }
   global.Markup = {
     render: render, strip: strip, escape: esc, parseSections: parseSections,
-    extractZenyakuTitle: extractZenyakuTitle, setImageBase: setImageBase
+    mergeLeadSections: mergeLeadSections, extractZenyakuTitle: extractZenyakuTitle,
+    setImageBase: setImageBase
   };
 })(window);
