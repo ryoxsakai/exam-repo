@@ -25,7 +25,8 @@
     regDraft:      "exam_reg_draft",         // 問題登録フォームの下書き（リロードしても保持）
     printSections: "exam_print_sections",    // 印刷対象セクション {種別: bool}（全問題で共有）
     replaceRules:  "exam_replace_rules",     // 登録データ一括置換のルール [{from,to,regex}]
-    difficultyVocabWeight: "exam_difficulty_vocab_weight" // 長文難易度の語彙:文長の重み(0〜1、この端末のみ)
+    difficultyVocabWeight: "exam_difficulty_vocab_weight", // 長文難易度の語彙:文長の重み(0〜1、この端末のみ)
+    examFavCache:  "exam_fav_cache"          // お気に入り大問を含む試験のキャッシュ {examId: Api.getExamの結果}
   };
 
   function read(key, fallback) {
@@ -259,6 +260,30 @@
       var m = read(KEYS.printSections, {}) || {};
       m[type] = !!on;
       write(KEYS.printSections, m);
+    },
+
+    /* お気に入り大問を含む試験のキャッシュ（この端末のみ）。
+       Api.getExam の結果を examId 単位で保持し、次回以降その場で即座に表示できるようにする
+       （体感速度向上。裏で最新データを取得し直して差し替える stale-while-revalidate 方式）。
+       お気に入りから外れた試験は pruneCachedExams で削除し、際限なく増えないようにする。 */
+    getCachedExam: function (examId) {
+      var all = read(KEYS.examFavCache, {}) || {};
+      return all[examId] || null;
+    },
+    setCachedExam: function (examId, examData) {
+      var all = read(KEYS.examFavCache, {}) || {};
+      all[examId] = examData;
+      write(KEYS.examFavCache, all);
+    },
+    pruneCachedExams: function (keepExamIds) {
+      var all = read(KEYS.examFavCache, {}) || {};
+      var keep = {};
+      (keepExamIds || []).forEach(function (id) { keep[id] = true; });
+      var changed = false;
+      Object.keys(all).forEach(function (id) {
+        if (!keep[id]) { delete all[id]; changed = true; }
+      });
+      if (changed) write(KEYS.examFavCache, all);
     }
   };
 

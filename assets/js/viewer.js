@@ -576,6 +576,8 @@
       state.favRows = data.favorites || [];
       state.favFolders = data.folders || [];
       state.favSet = new Set(state.favRows.map(function (f) { return f.exam_id + ":" + f.question_number; }));
+      // お気に入りから外れた試験のキャッシュは削除し、際限なく増えないようにする
+      Store.pruneCachedExams(state.favRows.map(function (f) { return f.exam_id; }));
       return state.favSet;
     }).catch(function () {
       state.favSet = new Set();
@@ -1210,6 +1212,15 @@
   }
 
   /* ---------------- 入試問題 表示モーダル ---------------- */
+  // 現在ログイン中のユーザーが、指定した試験（examId）内のいずれかの大問をお気に入り登録しているか
+  function isExamFavorited(examId) {
+    if (!state.favSet) return false;
+    var prefix = examId + ":";
+    var hit = false;
+    state.favSet.forEach(function (key) { if (key.indexOf(prefix) === 0) hit = true; });
+    return hit;
+  }
+
   function openExam(examId, qnum) {
     state.nav = { examId: examId, qnum: qnum };
     updateExamNav();
@@ -1217,39 +1228,58 @@
     saveOpenExam(examId, qnum);
     UI.openModal(el("exam-modal"));
     if (el("exam-shortcuts")) { el("exam-shortcuts").hidden = true; el("exam-shortcuts").innerHTML = ""; }
-    el("exam-modal-body").innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';
+
+    // お気に入り登録済みの大問を含む試験は、この端末に前回表示した内容をキャッシュしてあれば
+    // まず即座に表示する（体感速度向上）。裏で最新データを取得して差し替える
+    // stale-while-revalidate 方式のため、編集内容もその取得完了時点で反映される。
+    var cached = Store.getCachedExam(examId);
+    if (cached) {
+      renderExamData(cached, qnum);
+    } else {
+      el("exam-modal-body").innerHTML = '<div class="loading-row"><span class="spinner"></span> 読み込み中…</div>';
+    }
+
     Api.getExam(examId).then(function (data) {
-      var ex = data.exam;
-      var title = ex.year + "年 " + ex.university_name + " " + ex.schedule;
-      if (qnum != null) {
-        var titleQ = (ex.questions || []).filter(function (q) { return q.question_number === qnum; })[0];
-        title += " 大問" + qLabel(titleQ || { question_number: qnum });
-      }
-      el("exam-modal-title").textContent = title;
-
-      // 指定された大問番号のみ表示（未指定の場合はすべて）
-      var questions = ex.questions || [];
-      if (qnum != null) {
-        questions = questions.filter(function (q) { return q.question_number === qnum; });
-      }
-
-      // 本文があり難易度帯の基準（四分位）が未取得なら、コーパスを取り込んでから描画
-      var hasBody = questions.some(function (q) {
-        return examSections(q.problem_text).some(function (s) { return s.type === "本文"; });
-      });
-      var finish = function () {
-        if (hasBody) { ensureLongLevels(); }
-        renderExamBody(questions, qnum == null && questions.length > 1);
-      };
-      if (hasBody && !state.longLevel) {
-        (state.corpus ? Promise.resolve() : Api.getCorpus().then(function (d) { state.corpus = d.questions || []; }, function () {}))
-          .then(finish, finish);
-      } else {
-        finish();
-      }
+      if (isExamFavorited(examId)) Store.setCachedExam(examId, data);
+      renderExamData(data, qnum);
     }).catch(function (e) {
-      el("exam-modal-body").innerHTML = '<div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div>";
+      // キャッシュから表示できている場合は、通信エラーでもその内容を表示したままにする
+      if (!cached) {
+        el("exam-modal-body").innerHTML = '<div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div>";
+      }
     });
+  }
+
+  // Api.getExam の結果（またはそのキャッシュ）からタイトル・本文を描画
+  function renderExamData(data, qnum) {
+    var ex = data.exam;
+    var title = ex.year + "年 " + ex.university_name + " " + ex.schedule;
+    if (qnum != null) {
+      var titleQ = (ex.questions || []).filter(function (q) { return q.question_number === qnum; })[0];
+      title += " 大問" + qLabel(titleQ || { question_number: qnum });
+    }
+    el("exam-modal-title").textContent = title;
+
+    // 指定された大問番号のみ表示（未指定の場合はすべて）
+    var questions = ex.questions || [];
+    if (qnum != null) {
+      questions = questions.filter(function (q) { return q.question_number === qnum; });
+    }
+
+    // 本文があり難易度帯の基準（四分位）が未取得なら、コーパスを取り込んでから描画
+    var hasBody = questions.some(function (q) {
+      return examSections(q.problem_text).some(function (s) { return s.type === "本文"; });
+    });
+    var finish = function () {
+      if (hasBody) { ensureLongLevels(); }
+      renderExamBody(questions, qnum == null && questions.length > 1);
+    };
+    if (hasBody && !state.longLevel) {
+      (state.corpus ? Promise.resolve() : Api.getCorpus().then(function (d) { state.corpus = d.questions || []; }, function () {}))
+        .then(finish, finish);
+    } else {
+      finish();
+    }
   }
 
   // 表示モーダルの本文 HTML を組み立てて反映（＋下部ショートカット）
