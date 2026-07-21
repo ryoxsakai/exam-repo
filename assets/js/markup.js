@@ -176,11 +176,12 @@
       }
       var plain = esc(smartQuotes(rem.slice(0, end)));
       // 文末の . ? ! の後（閉じ引用符・閉じ括弧 ”’"')]）】」』 が続く場合も含む）に
-      // 大文字が来る場合、スペースを &nbsp;&nbsp; に広げる（例: ?” He / .) The）
+      // 大文字、または開き引用符（“‘"' 等。次の文が引用符から始まる場合）が来る場合、
+      // スペースを &nbsp;&nbsp; に広げる（例: ?” He / .) The / . “Quote”）
       // （. のときのみ、かつ閉じ記号が無いときのみ Dr. / Mr. / Mt. などの略語・イニシャルを除外）
       // "(" "[" で始まる場合（. (1) 等）はチャンクが分かれるためここでは扱えず、
       // 次のチャンクへ進む直前の maybeWidenTrailingSpace で別途処理する。
-      plain = plain.replace(/([A-Za-z]*)([.?!])([”’"')\]）】」』]*)\s+(?=[A-Z])/g, function (full, w, p, q) {
+      plain = plain.replace(/([A-Za-z]*)([.?!])([”’"')\]）】」』]*)\s+(?=[A-Z“‘"'])/g, function (full, w, p, q) {
         if (p === "." && !q && ABBREV.test(w)) return full;
         return w + p + q + "&nbsp;&nbsp;";
       });
