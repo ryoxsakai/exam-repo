@@ -90,11 +90,13 @@
 
 ### 自動修復（`worker/index.ts`）
 
-リクエスト時に以下を自動で直す（`ensureXColumn` と同じ「毎回チェックして冪等に直す」パターン）。曖昧な判断を伴わない安全なケースのみ自動修正し、判断が割れるケースは統合せずスキップする。
+カラム追加等の `ensureXColumn`/`ensureXTable` 系マイグレーションと、以下の自動修復はすべて「毎回チェックして冪等に直す」パターン。曖昧な判断を伴わない安全なケースのみ自動修正し、判断が割れるケースは統合せずスキップする。
 
-- `fixZeroQuestionNumbers`（全リクエスト）: `question_number <= 0` を大問内で採番し直す。
-- `fixOrphanedRecords`（全リクエスト）: 親が存在しない `questions`（無効な `exam_id`）・`exams`（無効な `university_id`）を削除。D1 は既定で外部キー制約を強制しないため、削除時に `ON DELETE CASCADE` が効かず子レコードが孤児化する場合がある。
+- `fixZeroQuestionNumbers`: `question_number <= 0` を大問内で採番し直す。
+- `fixOrphanedRecords`: 親が存在しない `questions`（無効な `exam_id`）・`exams`（無効な `university_id`）を削除。D1 は既定で外部キー制約を強制しないため、削除時に `ON DELETE CASCADE` が効かず子レコードが孤児化する場合がある。
 - `mergeDuplicateUniversities`（`GET/PUT /api/universities`）: `normalizeUniversityName`（取り込み・登録時の表記統一と同じルール。末尾の「大学」「大」・括弧注記を除去）で同じ名前になる大学を統合し、`exams` を統合先へ付け替える。統合先に同じ `(year, schedule)` の `exams` が既にある組は自動判断できないためスキップする。
+
+**パフォーマンス**: `ensureXColumn`/`ensureXTable`（`ensureMigrations` に集約）と `fixZeroQuestionNumbers`/`fixOrphanedRecords`（`ensureRepairs` に集約）は、`fetch()` 冒頭で1回だけ呼び、モジュールスコープの `migrationsDone`/`repairsDone` フラグで同じ isolate 内では2回目以降スキップする（Cloudflare Workers は同じ isolate が複数リクエストにまたがって再利用されるため）。以前は各ルートが個別に `await ensureXColumn(env)` 等を毎回呼んでおり、`/api/exams/:id`・`/api/corpus`・`/api/search` など問題文の読み込み系エンドポイントも含め、全APIで無駄な D1 往復が発生していた。`mergeDuplicateUniversities` は都度発生しうる大学名の重複を拾う必要があるためキャッシュ対象外。また `questions.problem_text`（本文全文）に張っていた索引 `idx_questions_problem_text` は、検索が常に `LIKE '%word%'`（前後ワイルドカード）で行われ索引が使われないまま本文データを複製して肥大化させるだけだったため `dropUnusedIndexes` で撤去済み（`schema.sql` も追随済み）。
 
 ## コーパス分析（`assets/js/corpus.js`）
 

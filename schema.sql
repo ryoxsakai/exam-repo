@@ -76,10 +76,14 @@ CREATE TABLE IF NOT EXISTS favorites (
 );
 
 -- Indexes for performance
+-- 注: questions.problem_text（本文全文が入る最大のカラム）には索引を張らない。
+-- 検索（GET /api/search）は常に LIKE '%word%'（前後ワイルドカード）で問い合わせるため
+-- 通常のB-tree索引は使われず全表走査になり、索引があっても検索は速くならない一方、
+-- 索引自体が本文データをほぼ丸ごと複製して肥大化させ、登録・編集のたびの更新コストも
+-- 増やすだけだった（実際に worker/index.ts の dropUnusedIndexes で撤去済み）。
 CREATE INDEX IF NOT EXISTS idx_exams_university_id ON exams(university_id);
 CREATE INDEX IF NOT EXISTS idx_exams_year ON exams(year);
 CREATE INDEX IF NOT EXISTS idx_questions_exam_id ON questions(exam_id);
-CREATE INDEX IF NOT EXISTS idx_questions_problem_text ON questions(problem_text);
 CREATE INDEX IF NOT EXISTS idx_favorites_uid ON favorites(uid);
 CREATE INDEX IF NOT EXISTS idx_favorite_folders_uid ON favorite_folders(uid);
 

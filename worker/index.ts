@@ -55,6 +55,17 @@ async function ensureUniversityAbbreviationColumn(env: Env) {
   }
 }
 
+// 過去に作成した questions(problem_text) への索引を撤去（既にデプロイ済みのDB向け）。
+// 検索は常に LIKE '%word%' の前後ワイルドカードで行うため索引は使われず、本文全文を
+// 複製して肥大化させ、登録・編集の更新コストを増やすだけだった（schema.sql も参照）。
+async function dropUnusedIndexes(env: Env) {
+  try {
+    await env.DB.exec("DROP INDEX IF EXISTS idx_questions_problem_text");
+  } catch {
+    // 索引が無い場合は無視
+  }
+}
+
 // question_number = 0 のレコードを修正（各 exam 内で id 順に 1 始まりで採番）
 async function fixZeroQuestionNumbers(env: Env) {
   const zeros = await env.DB.prepare(
@@ -269,6 +280,39 @@ async function ensureFavoriteFolderColumns(env: Env) {
   }
 }
 
+// ───────────────────────────────────────────────────────────────────
+// 上の ensure*/fix* 系マイグレーション・自動修復はすべて冪等だが、これまで
+// ほぼ毎リクエスト実行しており、問題文の読み込み（/api/exams/:id, /api/corpus,
+// /api/search 等）を含む全APIで無駄な D1 往復（ALTER TABLE の試行や
+// チェック用SELECT）が発生していた。Cloudflare Workers は同じ isolate が
+// 複数リクエストにまたがって再利用されるため、モジュールスコープの
+// フラグで「この isolate では実行済み」を憶えておき、以降のリクエストでは
+// スキップする（isolate がリサイクルされれば自然にリセットされ再実行される
+// ため、マイグレーション漏れの心配はない）。
+// ───────────────────────────────────────────────────────────────────
+let migrationsDone = false;
+let repairsDone = false;
+
+async function ensureMigrations(env: Env) {
+  if (migrationsDone) return;
+  await ensureCategoryColumn(env);
+  await ensureLabelColumn(env);
+  await ensureUniversityReadingColumn(env);
+  await ensureUniversityAbbreviationColumn(env);
+  await ensureFavoritesTable(env);
+  await ensureFavoriteFoldersTable(env);
+  await ensureFavoriteFolderColumns(env);
+  await dropUnusedIndexes(env);
+  migrationsDone = true;
+}
+
+async function ensureRepairs(env: Env) {
+  if (repairsDone) return;
+  await fixZeroQuestionNumbers(env);
+  await fixOrphanedRecords(env);
+  repairsDone = true;
+}
+
 // 指定コンテナ（uid + parentId）内の末尾に新規追加する際の sort_order（フォルダ・お気に入り件数の合計）
 async function nextFavoriteSortOrder(env: Env, uid: string, parentId: number | null): Promise<number> {
   const folderCount = await env.DB.prepare(
@@ -441,8 +485,8 @@ function applyReplacements(text: string, rules: Replacement[]): { text: string; 
 }
 
 // 登録済み全問題に置換ルールを適用（dryRun=true なら件数のみ）。
+// 呼び出し元（POST /api/replace）は fetch() 冒頭の ensureMigrations() より後に実行される。
 async function handleBulkReplace(request: Request, env: Env, origin: string | null): Promise<Response> {
-  await ensureCategoryColumn(env);
   type Body = { rules?: Replacement[]; dryRun?: boolean };
   let body: Body;
   try { body = await request.json<Body>(); } catch { return json({ message: "リクエストの解析に失敗しました。" }, 400, origin); }
@@ -782,13 +826,13 @@ export default {
         return json({ key, path: "/api/image/" + key }, 201, origin);
       }
 
-      await fixZeroQuestionNumbers(env);
-      await fixOrphanedRecords(env);
+      // 冪等なマイグレーション・自動修復をこの1箇所にまとめて実行（isolate内では2回目以降スキップ）。
+      // これより下のルートは、この時点で全てのカラム/テーブルが揃っている前提でよい。
+      await ensureMigrations(env);
+      await ensureRepairs(env);
 
       // ── GET /api/universities ──────────────────────────────────────
       if (path === "/api/universities" && request.method === "GET") {
-        await ensureUniversityReadingColumn(env);
-        await ensureUniversityAbbreviationColumn(env);
         await mergeDuplicateUniversities(env);
         const { results } = await env.DB.prepare(
           "SELECT * FROM universities ORDER BY name ASC"
@@ -878,8 +922,6 @@ export default {
       // ── PUT /api/universities/:id（大学名のリネーム・よみがな更新） ───
       const putUniMatch = path.match(/^\/api\/universities\/(\d+)$/);
       if (putUniMatch && request.method === "PUT") {
-        await ensureUniversityReadingColumn(env);
-        await ensureUniversityAbbreviationColumn(env);
         await mergeDuplicateUniversities(env);
         const uniId = Number(putUniMatch[1]);
         const body = await request.json<{ name?: string; reading?: string; abbreviation?: string }>().catch(() => ({}));
@@ -925,7 +967,6 @@ export default {
 
       // ── GET /api/exams ─────────────────────────────────────────────
       if (path === "/api/exams" && request.method === "GET") {
-        await ensureUniversityReadingColumn(env);
         const uname = url.searchParams.get("universityName");
         const year = url.searchParams.get("year");
         const schedule = url.searchParams.get("schedule");
@@ -949,8 +990,6 @@ export default {
 
       // ── POST /api/exams ────────────────────────────────────────────
       if (path === "/api/exams" && request.method === "POST") {
-        await ensureCategoryColumn(env);
-        await ensureLabelColumn(env);
         type QBody = { questionNumber: number; label?: string; category?: string; problemText: string; answerText: string; commentaryText: string };
         type Body = { universityName: string; year: number; schedule: string; questions?: QBody[] };
         const body = await request.json<Body>();
@@ -1039,8 +1078,6 @@ export default {
       // ── PUT /api/exams/:id ────────────────────────────────────────
       const putExamMatch = examIdMatch;
       if (putExamMatch && request.method === "PUT") {
-        await ensureCategoryColumn(env);
-        await ensureLabelColumn(env);
         let examId = Number(putExamMatch[1]);
         type QBody = { questionNumber: number; label?: string; category?: string; problemText: string; answerText: string; commentaryText: string };
         type PutBody = { universityName?: string; year?: number; schedule?: string; questions?: QBody[] };
@@ -1128,8 +1165,6 @@ export default {
 
       // ── GET /api/exams/:id ─────────────────────────────────────────
       if (examIdMatch && request.method === "GET") {
-        await ensureCategoryColumn(env);
-        await ensureLabelColumn(env);
         const examId = Number(examIdMatch[1]);
 
         const examRow = await env.DB.prepare(`
@@ -1152,7 +1187,6 @@ export default {
       // ── GET /api/corpus ────────────────────────────────────────────
       // 全入試問題の英文テキストを一括返却（クライアント側コーパス分析用）
       if (path === "/api/corpus" && request.method === "GET") {
-        await ensureLabelColumn(env);
         const { results } = await env.DB.prepare(`
           SELECT q.id AS question_id, q.question_number, q.label, q.category,
                  q.problem_text, q.answer_text, q.commentary_text,
@@ -1168,7 +1202,6 @@ export default {
 
       // ── GET /api/search ────────────────────────────────────────────
       if (path === "/api/search" && request.method === "GET") {
-        await ensureLabelColumn(env);
         const word     = url.searchParams.get("word") || "";
         const uname    = url.searchParams.get("universityName") || "";
         const year     = url.searchParams.get("year") || "";
@@ -1304,9 +1337,6 @@ export default {
 
       // ── /api/favorites（Googleログインしたユーザーの大問お気に入り） ──
       if (path === "/api/favorites" || /^\/api\/favorites\/\d+\/\d+$/.test(path)) {
-        await ensureFavoritesTable(env);
-        await ensureFavoriteFoldersTable(env);
-        await ensureFavoriteFolderColumns(env);
         const uid = await getAuthUid(request);
         if (!uid) return json({ error: "ログインが必要です。" }, 401, origin);
 
@@ -1363,9 +1393,6 @@ export default {
         path === "/api/favorite-folders/reorder" ||
         /^\/api\/favorite-folders\/\d+$/.test(path)
       ) {
-        await ensureFavoritesTable(env);
-        await ensureFavoriteFoldersTable(env);
-        await ensureFavoriteFolderColumns(env);
         const uid = await getAuthUid(request);
         if (!uid) return json({ error: "ログインが必要です。" }, 401, origin);
 
