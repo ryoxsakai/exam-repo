@@ -39,6 +39,20 @@
   // 「. 」の後を広げない略語（+ 単独の大文字イニシャル: J. K. Rowling など）
   var ABBREV = /^(?:Mr|Mrs|Ms|Dr|Prof|St|Mt|Jr|Sr|vs|etc|No|Vol|Fig|cf|ca|pp|[A-Z])$/;
 
+  // out が「文末の . ? ! (+閉じ引用符等) + 半角スペース1つ」で終わっていて、続く文字が
+  // "(" や "[" （新しい区切りを示す開き括弧。(1) [1] など）なら、その末尾スペースを
+  // &nbsp;&nbsp; に広げる。"(" "[" は inline() 内で常にプレーンテキストの塊を区切る
+  // 文字のため、通常の1チャンク内正規表現では次のチャンクの先頭を先読みできない
+  // （例: "As follows. " と "(1) First point." が別チャンクに分かれる）。そのため
+  // チャンクをまたいで判定できるよう、次のチャンクへ進む直前にここで補う。
+  function maybeWidenTrailingSpace(out, nextCh) {
+    if (nextCh !== "(" && nextCh !== "[") return out;
+    var m = out.match(/([A-Za-z]*)([.?!])([”’"')\]）】」』]*) $/);
+    if (!m) return out;
+    if (m[2] === "." && !m[3] && ABBREV.test(m[1])) return out;
+    return out.slice(0, -1) + "&nbsp;&nbsp;";
+  }
+
   // ストレートクォート → スマートクォート変換
   function smartQuotes(s) {
     s = s.replace(/(^|[\s(\[{—])"/g, "$1“");  // opening "
@@ -54,6 +68,7 @@
     var rem = text;
     while (rem.length > 0) {
       var m;
+      out = maybeWidenTrailingSpace(out, rem[0]);
 
       // [[N]] 空所
       // 左右の間隔はどちらもスペース文字で確保（行頭・行末ではブラウザが
@@ -163,6 +178,8 @@
       // 文末の . ? ! の後（閉じ引用符・閉じ括弧 ”’"')]）】」』 が続く場合も含む）に
       // 大文字が来る場合、スペースを &nbsp;&nbsp; に広げる（例: ?” He / .) The）
       // （. のときのみ、かつ閉じ記号が無いときのみ Dr. / Mr. / Mt. などの略語・イニシャルを除外）
+      // "(" "[" で始まる場合（. (1) 等）はチャンクが分かれるためここでは扱えず、
+      // 次のチャンクへ進む直前の maybeWidenTrailingSpace で別途処理する。
       plain = plain.replace(/([A-Za-z]*)([.?!])([”’"')\]）】」』]*)\s+(?=[A-Z])/g, function (full, w, p, q) {
         if (p === "." && !q && ABBREV.test(w)) return full;
         return w + p + q + "&nbsp;&nbsp;";
