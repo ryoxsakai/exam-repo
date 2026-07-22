@@ -53,10 +53,27 @@
     return el(target) || document.querySelector(target);
   }
 
+  // position:sticky なヘッダー等は scrollIntoView({block:"nearest"}) からは
+  // 「占有領域」として認識されない（ブラウザはビューポート全体を対象と見なす）ため、
+  // 対象要素がスクロール後にヘッダーの真下に隠れてしまうことがある。
+  // 上部に一定のマージンを確保できていなければ追加でスクロールして補正する。
+  var STICKY_HEADER_MARGIN = 96;
+  function scrollClearOfStickyHeader(target) {
+    var rect = target.getBoundingClientRect();
+    if (rect.top < STICKY_HEADER_MARGIN) {
+      window.scrollBy({ top: rect.top - STICKY_HEADER_MARGIN, left: 0, behavior: "auto" });
+    }
+  }
+
   function render() {
     var step = state.steps[state.idx];
     var target = resolveTarget(step.target);
-    if (target && target.scrollIntoView) target.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (target && target.scrollIntoView) {
+      // 横スクロールするタブ帯などの祖先コンテナ内の位置合わせは scrollIntoView に任せ、
+      // sticky ヘッダーによる隠れを追加のウィンドウスクロールで補正する。
+      target.scrollIntoView({ block: "nearest", inline: "nearest" });
+      scrollClearOfStickyHeader(target);
+    }
     var rect = target
       ? target.getBoundingClientRect()
       : { top: window.innerHeight / 2 - 20, left: window.innerWidth / 2 - 20, width: 40, height: 40, bottom: window.innerHeight / 2 + 20 };
