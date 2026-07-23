@@ -159,7 +159,7 @@ PDFを読み取り、大問ごとにまとめ直してください。各大問�
 - OCRが不確実な箇所は推測しすぎず原文に忠実に。英文はそのまま、和文設問もそのまま書き起こす。
 - universityName / year / schedule は表紙や本文から判断する（不明なら universityName は空文字、year は 0）。schedule は「前期」「後期」「全学部」等の入試方式。
 - universityName は表記を統一するため、末尾の「大学」「大」と括弧注記（（医）（医学部）など）を取り除いた形で出力する（例: 「愛知医科大学」「愛知医科大」「愛知医科大学（医）」→ いずれも \`愛知医科\`、「東京医科歯科大学」→ \`東京医科歯科\`）。学部・方式・年度は universityName に含めない。
-- questionNumber は 1 始まりの整数。category は「長文読解」「文法」「英作文」等が分かれば記入、不明なら空文字。`;
+- questionNumber は 1 始まりの整数。category は「長文」「文法」「英作文」等が分かれば記入、不明なら空文字。`;
 
 // 出力JSONの仕様（Worker解析・外部LLM取り込みで共用）
 const INGEST_JSON_SPEC = `以下のJSON形式のみで出力してください。前後に説明文やコードブロック（\`\`\`）を含めないでください。
@@ -246,6 +246,16 @@ async function fixOrphanedRecords(env: Env) {
   ).run().catch(() => { /* favorite_folders テーブル未作成の初回は無視 */ });
 }
 
+// 問題種別「長文読解」を「長文」へ統一する。取り込みプロンプトが以前 category の例として
+// 「長文読解」を挙げていたため、AI取り込みの解析結果がこの表記で保存されることがあった。
+// 「長文」は一覧表示で全訳タイトルを付与する特別扱いの種別（extractZenyakuTitle 参照）のため、
+// 表記を統一しておく（完全一致のみを対象とする、曖昧な判断を伴わない安全な一括置換）。
+async function fixLongReadingCategory(env: Env) {
+  await env.DB.prepare(
+    "UPDATE questions SET category = '長文' WHERE category = '長文読解'"
+  ).run();
+}
+
 // お気に入り（Googleログインしたユーザーごとの大問ブックマーク）テーブルの後方互換マイグレーション。
 // uid は Firebase Auth の ID トークンの sub クレーム。exam_id + question_number で大問を特定する
 // （questions テーブルの id ではなく、他のAPIと同じ (examId, questionNumber) の識別方式に合わせる）。
@@ -310,6 +320,7 @@ async function ensureRepairs(env: Env) {
   if (repairsDone) return;
   await fixZeroQuestionNumbers(env);
   await fixOrphanedRecords(env);
+  await fixLongReadingCategory(env);
   repairsDone = true;
 }
 
