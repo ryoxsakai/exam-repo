@@ -55,6 +55,16 @@ async function ensureUniversityAbbreviationColumn(env: Env) {
   }
 }
 
+// universities テーブルに hidden（表記ゆれ統合で競合が残り一覧から隠す大学のフラグ）
+// 列が無い既存DBへの後方互換マイグレーション
+async function ensureUniversityHiddenColumn(env: Env) {
+  try {
+    await env.DB.exec("ALTER TABLE universities ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0");
+  } catch {
+    // 既に列が存在する場合は無視
+  }
+}
+
 // 過去に作成した questions(problem_text) への索引を撤去（既にデプロイ済みのDB向け）。
 // 検索は常に LIKE '%word%' の前後ワイルドカードで行うため索引は使われず、本文全文を
 // 複製して肥大化させ、登録・編集の更新コストを増やすだけだった（schema.sql も参照）。
@@ -256,6 +266,66 @@ async function fixLongReadingCategory(env: Env) {
   ).run();
 }
 
+// 特定の大学名ペアを正式名称へ統合する（normalizeUniversityName の一般ルール＝末尾の
+// 「大学」「大」・括弧注記の除去では拾えない「医科」「薬科」等の学部名違いを個別指定）。
+// 統合先に同じ (year, schedule) の exams が既にある試験だけは自動判断できないため移動せず
+// 残す。1件でも移動できなかった試験が残れば統合元の大学は削除できないが、一覧表示（
+// GET /api/universities・/api/exams・/api/search・/api/corpus）からは hidden=1 で除外し、
+// データは保持したまま手動での確認・解消に委ねる。全試験を移動できた場合は統合元を削除する。
+const UNIVERSITY_ALIAS_MERGES: { from: string; to: string }[] = [
+  { from: "昭和", to: "昭和医科" },
+  { from: "聖マリアンナ", to: "聖マリアンナ医科" },
+  { from: "大阪医科", to: "大阪医科薬科" },
+];
+
+async function mergeUniversityAliases(env: Env) {
+  for (const { from, to } of UNIVERSITY_ALIAS_MERGES) {
+    const src = await env.DB.prepare(
+      "SELECT id, reading, abbreviation FROM universities WHERE name = ?"
+    ).bind(from).first<{ id: number; reading: string; abbreviation: string }>();
+    if (!src) continue;
+
+    const dst = await env.DB.prepare(
+      "SELECT id, reading, abbreviation FROM universities WHERE name = ?"
+    ).bind(to).first<{ id: number; reading: string; abbreviation: string }>();
+
+    if (!dst) {
+      // 統合先がまだ無ければ、そのまま正式名称へリネームするだけで統合完了
+      await env.DB.prepare("UPDATE universities SET name = ? WHERE id = ?").bind(to, src.id).run();
+      continue;
+    }
+
+    const { results: dstExams } = await env.DB.prepare(
+      "SELECT year, schedule FROM exams WHERE university_id = ?"
+    ).bind(dst.id).all<{ year: number; schedule: string }>();
+    const dstKeys = new Set(dstExams.map((e) => `${e.year}::${e.schedule}`));
+
+    const { results: srcExams } = await env.DB.prepare(
+      "SELECT id, year, schedule FROM exams WHERE university_id = ?"
+    ).bind(src.id).all<{ id: number; year: number; schedule: string }>();
+
+    let allMoved = true;
+    for (const ex of srcExams) {
+      const key = `${ex.year}::${ex.schedule}`;
+      if (dstKeys.has(key)) { allMoved = false; continue; } // 年度・方式が競合するため移動しない
+      await env.DB.prepare("UPDATE exams SET university_id = ? WHERE id = ?").bind(dst.id, ex.id).run();
+      dstKeys.add(key);
+    }
+
+    if (allMoved) {
+      if (!dst.reading && src.reading) {
+        await env.DB.prepare("UPDATE universities SET reading = ? WHERE id = ?").bind(src.reading, dst.id).run();
+      }
+      if (!dst.abbreviation && src.abbreviation) {
+        await env.DB.prepare("UPDATE universities SET abbreviation = ? WHERE id = ?").bind(src.abbreviation, dst.id).run();
+      }
+      await env.DB.prepare("DELETE FROM universities WHERE id = ?").bind(src.id).run();
+    } else {
+      await env.DB.prepare("UPDATE universities SET hidden = 1 WHERE id = ?").bind(src.id).run();
+    }
+  }
+}
+
 // お気に入り（Googleログインしたユーザーごとの大問ブックマーク）テーブルの後方互換マイグレーション。
 // uid は Firebase Auth の ID トークンの sub クレーム。exam_id + question_number で大問を特定する
 // （questions テーブルの id ではなく、他のAPIと同じ (examId, questionNumber) の識別方式に合わせる）。
@@ -309,6 +379,7 @@ async function ensureMigrations(env: Env) {
   await ensureLabelColumn(env);
   await ensureUniversityReadingColumn(env);
   await ensureUniversityAbbreviationColumn(env);
+  await ensureUniversityHiddenColumn(env);
   await ensureFavoritesTable(env);
   await ensureFavoriteFoldersTable(env);
   await ensureFavoriteFolderColumns(env);
@@ -321,6 +392,7 @@ async function ensureRepairs(env: Env) {
   await fixZeroQuestionNumbers(env);
   await fixOrphanedRecords(env);
   await fixLongReadingCategory(env);
+  await mergeUniversityAliases(env);
   repairsDone = true;
 }
 
@@ -846,7 +918,7 @@ export default {
       if (path === "/api/universities" && request.method === "GET") {
         await mergeDuplicateUniversities(env);
         const { results } = await env.DB.prepare(
-          "SELECT * FROM universities ORDER BY name ASC"
+          "SELECT * FROM universities WHERE hidden = 0 ORDER BY name ASC"
         ).all();
         return json({ universities: results }, 200, origin);
       }
@@ -987,7 +1059,7 @@ export default {
                  u.name AS university_name, u.reading AS university_reading
           FROM exams e
           JOIN universities u ON e.university_id = u.id
-          WHERE 1=1`;
+          WHERE u.hidden = 0`;
         const params: (string | number)[] = [];
 
         if (uname) { sql += " AND u.name LIKE ?"; params.push(`%${uname}%`); }
@@ -1206,6 +1278,7 @@ export default {
           FROM questions q
           JOIN exams e ON q.exam_id = e.id
           JOIN universities u ON e.university_id = u.id
+          WHERE u.hidden = 0
           ORDER BY e.year DESC, u.name ASC, q.question_number ASC
         `).all();
         return json({ questions: results }, 200, origin);
@@ -1227,7 +1300,7 @@ export default {
           FROM questions q
           JOIN exams e ON q.exam_id = e.id
           JOIN universities u ON e.university_id = u.id
-          WHERE 1=1`;
+          WHERE u.hidden = 0`;
         const params: (string | number)[] = [];
 
         if (word) {

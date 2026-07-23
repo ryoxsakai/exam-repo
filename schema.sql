@@ -2,10 +2,14 @@
 -- Cloudflare D1 (SQLite compatible)
 
 -- Universities table
+-- hidden: 表記ゆれ等で重複した大学を統合できない場合（統合先と年度・方式が競合する試験が
+-- 残る場合）に、データは残したまま一覧表示から除外するためのフラグ（worker/index.ts の
+-- mergeUniversityAliases 参照）。
 CREATE TABLE IF NOT EXISTS universities (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
   reading TEXT NOT NULL DEFAULT '',
+  hidden INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
