@@ -96,6 +96,7 @@
 
 - `fixZeroQuestionNumbers`: `question_number <= 0` を大問内で採番し直す。
 - `fixOrphanedRecords`: 親が存在しない `questions`（無効な `exam_id`）・`exams`（無効な `university_id`）を削除。D1 は既定で外部キー制約を強制しないため、削除時に `ON DELETE CASCADE` が効かず子レコードが孤児化する場合がある。
+- `fixLongReadingCategory`: 問題種別が完全一致で「長文読解」になっている `questions.category` を「長文」へ統一する。「長文」は一覧表示で全訳タイトルを付与する特別扱いの種別（`extractZenyakuTitle`）のため表記を統一する必要がある。AI取り込みプロンプトが以前 category の例として「長文読解」を挙げていた名残で、取り込み結果がこの表記になることがあった（プロンプト自体も「長文」に修正済み）。
 - `mergeDuplicateUniversities`（`GET/PUT /api/universities`）: `normalizeUniversityName`（取り込み・登録時の表記統一と同じルール。末尾の「大学」「大」・括弧注記を除去）で同じ名前になる大学を統合し、`exams` を統合先へ付け替える。統合先に同じ `(year, schedule)` の `exams` が既にある組は自動判断できないためスキップする。
 
 **パフォーマンス**: `ensureXColumn`/`ensureXTable`（`ensureMigrations` に集約）と `fixZeroQuestionNumbers`/`fixOrphanedRecords`（`ensureRepairs` に集約）は、`fetch()` 冒頭で1回だけ呼び、モジュールスコープの `migrationsDone`/`repairsDone` フラグで同じ isolate 内では2回目以降スキップする（Cloudflare Workers は同じ isolate が複数リクエストにまたがって再利用されるため）。以前は各ルートが個別に `await ensureXColumn(env)` 等を毎回呼んでおり、`/api/exams/:id`・`/api/corpus`・`/api/search` など問題文の読み込み系エンドポイントも含め、全APIで無駄な D1 往復が発生していた。`mergeDuplicateUniversities` は都度発生しうる大学名の重複を拾う必要があるためキャッシュ対象外。また `questions.problem_text`（本文全文）に張っていた索引 `idx_questions_problem_text` は、検索が常に `LIKE '%word%'`（前後ワイルドカード）で行われ索引が使われないまま本文データを複製して肥大化させるだけだったため `dropUnusedIndexes` で撤去済み（`schema.sql` も追随済み）。
