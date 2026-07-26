@@ -86,6 +86,156 @@
     if (b) b.textContent = value;
   }
 
+  /* ---- 汎用の並べ替えリスト（PC:ドラッグ / スマホ:タップ長押し） ----
+     container 直下の itemSelector（既定 ".sort-item"）に一致する要素を、各要素内の
+     ".grip" ハンドルからのドラッグ／タップ長押しで並べ替える。並べ替えが確定すると
+     onReorder(idsInNewOrder)（idAttr、既定 "data-sort-id" の値の配列）を呼ぶので、
+     呼び出し側で状態の更新・再描画・保存を行う（このヘルパー自身はDOM操作のみ）。
+     お気に入りフォルダのドラッグ＆ドロップ（viewer.js）と同じ操作方式だが、階層移動が
+     無いぶんシンプルな1階層のリスト専用。addEventListener は container に1回だけ
+     登録すれば良い（子要素の再描画はイベント委任で自動的に効く）。 */
+  function makeSortableList(container, opts) {
+    opts = opts || {};
+    var itemSel = opts.itemSelector || ".sort-item";
+    var idAttr = opts.idAttr || "data-sort-id";
+    var onReorder = opts.onReorder || function () {};
+    var touchDragClass = opts.touchDragClass || "sortlist-dragging-touch";
+
+    function items() { return $all(itemSel, container); }
+    function idOf(n) { return n.getAttribute(idAttr); }
+
+    function dropTarget(clientY) {
+      var list = items();
+      for (var i = 0; i < list.length; i++) {
+        var r = list[i].getBoundingClientRect();
+        if (clientY >= r.top && clientY <= r.bottom) {
+          return { node: list[i], before: (clientY - r.top) < r.height / 2 };
+        }
+      }
+      return null;
+    }
+    function clearIndicators() {
+      items().forEach(function (n) { n.classList.remove("drag-over-top", "drag-over-bottom"); });
+    }
+    function updateIndicator(clientY) {
+      clearIndicators();
+      var t = dropTarget(clientY);
+      if (t) t.node.classList.add(t.before ? "drag-over-top" : "drag-over-bottom");
+      return t;
+    }
+    function commit(dragId, target) {
+      clearIndicators();
+      if (!target || idOf(target.node) === dragId) return;
+      var order = items().map(idOf).filter(function (id) { return id !== dragId; });
+      var refIdx = order.indexOf(idOf(target.node));
+      var insertAt = target.before ? refIdx : refIdx + 1;
+      order.splice(Math.max(0, insertAt), 0, dragId);
+      onReorder(order);
+    }
+
+    // PC: ネイティブ Drag and Drop API（.grip からのみ開始）
+    var dragId = null;
+    container.addEventListener("dragstart", function (e) {
+      var grip = e.target.closest && e.target.closest(".grip");
+      var item = grip && grip.closest(itemSel);
+      if (!item) { e.preventDefault(); return; }
+      dragId = idOf(item);
+      item.classList.add("dragging");
+      try { e.dataTransfer.setData("text/plain", dragId); } catch (err) {}
+      e.dataTransfer.effectAllowed = "move";
+    });
+    container.addEventListener("dragend", function () {
+      items().forEach(function (n) { n.classList.remove("dragging"); });
+      clearIndicators();
+      dragId = null;
+    });
+    container.addEventListener("dragover", function (e) {
+      if (!dragId) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      updateIndicator(e.clientY);
+    });
+    container.addEventListener("drop", function (e) {
+      if (!dragId) return;
+      e.preventDefault();
+      var target = dropTarget(e.clientY);
+      var id = dragId;
+      items().forEach(function (n) { n.classList.remove("dragging"); });
+      dragId = null;
+      commit(id, target);
+    });
+
+    // スマホ: グリップをタップ長押しでドラッグ開始（長押し判定中に指が動いたらスクロールとみなし中止）
+    var touch = null;
+    container.addEventListener("touchstart", function (e) {
+      var grip = e.target.closest && e.target.closest(".grip");
+      var item = grip && grip.closest(itemSel);
+      if (!item) return;
+      var t = e.touches[0];
+      if (touch && touch.timer) clearTimeout(touch.timer);
+      touch = {
+        item: item, id: idOf(item), startX: t.clientX, startY: t.clientY, dragging: false,
+        timer: setTimeout(function () { beginTouchDrag(t.clientX, t.clientY); }, 450)
+      };
+    }, { passive: true });
+    container.addEventListener("touchmove", function (e) {
+      if (!touch) return;
+      var t = e.touches[0];
+      if (!touch.dragging) {
+        var dx = t.clientX - touch.startX, dy = t.clientY - touch.startY;
+        if (Math.sqrt(dx * dx + dy * dy) > 10) { clearTimeout(touch.timer); touch = null; }
+        return;
+      }
+      e.preventDefault();
+      moveGhost(t.clientX, t.clientY);
+      updateIndicator(t.clientY);
+    }, { passive: false });
+    container.addEventListener("touchend", function (e) {
+      if (!touch) return;
+      clearTimeout(touch.timer);
+      if (touch.dragging) {
+        e.preventDefault();
+        var t = (e.changedTouches && e.changedTouches[0]) || touch;
+        var target = dropTarget(t.clientY);
+        var id = touch.id;
+        endTouchDrag(touch.item);
+        commit(id, target);
+      }
+      touch = null;
+    });
+    container.addEventListener("touchcancel", function () {
+      if (touch) {
+        clearTimeout(touch.timer);
+        if (touch.dragging) endTouchDrag(touch.item);
+        touch = null;
+      }
+    });
+    container.addEventListener("contextmenu", function (e) {
+      if (touch && touch.dragging) e.preventDefault();
+    });
+
+    function beginTouchDrag(clientX, clientY) {
+      if (!touch) return;
+      touch.dragging = true;
+      touch.item.classList.add("dragging");
+      document.body.classList.add(touchDragClass);
+      var ghost = create("div", { id: "sortlist-drag-ghost", class: "sortlist-drag-ghost" }, touch.item.innerHTML);
+      document.body.appendChild(ghost);
+      moveGhost(clientX, clientY);
+    }
+    function moveGhost(clientX, clientY) {
+      var ghost = el("sortlist-drag-ghost");
+      if (ghost) { ghost.style.left = clientX + "px"; ghost.style.top = clientY + "px"; }
+    }
+    function endTouchDrag(item) {
+      item.classList.remove("dragging");
+      document.body.classList.remove(touchDragClass);
+      clearIndicators();
+      var ghost = el("sortlist-drag-ghost");
+      if (ghost) ghost.remove();
+    }
+  }
+
   /* ---- ナビリンクを独自ドメイン基準の絶対URLに（未設定なら相対のまま） ---- */
   function applyDomainLinks() {
     var base = (global.Store && Store.getBaseUrl) ? Store.getBaseUrl() : "";
@@ -98,6 +248,7 @@
     el: el, $: $, $all: $all, create: create, escapeHtml: escapeHtml,
     toast: toast, openModal: openModal, closeModal: closeModal, wireModal: wireModal,
     buildTabs: buildTabs, setActiveTab: setActiveTab, setTabBadge: setTabBadge,
+    makeSortableList: makeSortableList,
     applyDomainLinks: applyDomainLinks
   };
 })(window);

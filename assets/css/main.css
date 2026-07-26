@@ -561,7 +561,24 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
   display: flex; align-items: center; gap: 10px; padding: 9px 12px;
   border: 1px solid var(--line); border-radius: 10px; background: var(--grad-soft);
 }
-.sort-item .grip { color: var(--muted); cursor: grab; }
+.sort-item .grip { color: var(--muted); cursor: grab; touch-action: none; }
+.sort-item .grip:active { cursor: grabbing; }
+.sort-item.dragging { opacity: .4; }
+.sort-item.drag-over-top { box-shadow: inset 0 2px 0 var(--emerald); }
+.sort-item.drag-over-bottom { box-shadow: inset 0 -2px 0 var(--emerald); }
+/* スマホの長押しドラッグ中だけ、リスト内のテキスト選択・長押しコールアウトをJSから禁止する */
+body.sortlist-dragging-touch .sort-item,
+body.sortlist-dragging-touch .sort-item * {
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+/* 長押しドラッグ中に指へ追従するゴースト（fav-drag-ghost と同じ表示専用パターン） */
+.sortlist-drag-ghost {
+  position: fixed; top: 0; left: 0; z-index: 4000; pointer-events: none;
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  background: #fff; border: 1px solid var(--emerald); border-radius: 10px;
+  box-shadow: var(--shadow-lg); font-size: 14px; color: var(--ink);
+  transform: translate(-14px, -50%); opacity: .92; max-width: 80vw; overflow: hidden;
+}
 .sort-item .label { flex: 1; font-size: 14px; }
 .sort-item .edit-item-input {
   flex: 1; width: auto; font-size: 14px; padding: 5px 9px;

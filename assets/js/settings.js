@@ -78,6 +78,51 @@
     el("cfg-anthropic").value = Store.getAnthropicKey();
     if (Store.getWorkerUrl()) loadServerConfig();
     onTab(active);
+
+    // Googleログイン（Firebase Auth）。タブ並び順をアカウントに紐づけて同期するために使う。
+    wireAuth();
+  }
+
+  /* ---------------- Googleログイン（タブ並び順のアカウント同期用） ---------------- */
+  function wireAuth() {
+    if (!window.Auth) return;
+    Auth.init();
+    if (el("btn-login")) el("btn-login").addEventListener("click", function () {
+      Auth.signIn().catch(function (e) { toast("ログインに失敗しました: " + (e && e.message || e), "err"); });
+    });
+    if (el("btn-logout")) el("btn-logout").addEventListener("click", function () { Auth.signOut(); });
+    Auth.onChange(function (user) {
+      updateAuthUI(user);
+      if (user) syncTabOrderFromAccount();
+    });
+  }
+  function updateAuthUI(user) {
+    var loginBtn = el("btn-login"), avatarBtn = el("btn-logout");
+    if (!loginBtn || !avatarBtn) return;
+    if (user) {
+      loginBtn.hidden = true;
+      avatarBtn.hidden = false;
+      avatarBtn.title = (user.displayName || user.email || "") + "（クリックでログアウト）";
+      el("user-avatar").src = user.photoURL || "";
+      el("user-avatar").alt = user.displayName || user.email || "";
+    } else {
+      loginBtn.hidden = false;
+      avatarBtn.hidden = true;
+    }
+  }
+  // ログイン中、Worker（user_settings）に保存済みのタブ並び順を取得してこの端末にも反映する
+  // （他端末での並べ替えをここにも同期する stale-while-revalidate 方式。未ログイン・未同期時は何もしない）。
+  function syncTabOrderFromAccount() {
+    Store.pullTabOrderFromAccount().then(function (data) {
+      if (!data) return;
+      renderOrderList("main", MAIN_TABS, MAIN_ORDER, el("order-main"));
+      renderOrderList("setting", SET_TABS, SET_ORDER, el("order-setting"));
+      var order = Store.getTabOrder("setting", SET_ORDER);
+      var active = Store.getLastTab("setting");
+      if (SET_ORDER.indexOf(active) < 0) active = order[0];
+      rebuildSetTabs(order, active);
+      UI.setActiveTab(el("set-tabs"), active);
+    });
   }
 
   // 設定ページのタブはアイコンのみ表示（名前はツールチップ）
@@ -124,7 +169,9 @@
       } else toast("ローカルに保存しました", "ok");
     });
     renderOrderList("main", MAIN_TABS, MAIN_ORDER, el("order-main"));
+    wireOrderDrag("main", MAIN_TABS, MAIN_ORDER, el("order-main"));
     renderOrderList("setting", SET_TABS, SET_ORDER, el("order-setting"));
+    wireOrderDrag("setting", SET_TABS, SET_ORDER, el("order-setting"));
 
     // 独自ドメイン
     var dom = Store.getCustomDomain();
@@ -152,24 +199,15 @@
   function renderOrderList(page, defs, defOrder, container) {
     var order = Store.getTabOrder(page, defOrder);
     container.innerHTML = "";
-    order.forEach(function (id, i) {
+    order.forEach(function (id) {
       var def = defs[id]; if (!def) return;
       var label = Store.getTabLabel(page, id, def.label);
-      var li = create("li", { class: "sort-item" },
+      var li = create("li", { class: "sort-item", "data-sort-id": id, draggable: "true" },
+        '<span class="grip" title="ドラッグ／長押しで並べ替え"><i class="fa-solid fa-grip-vertical"></i></span>' +
         '<i class="fa-solid ' + def.icon + '" style="color:var(--blue)"></i>' +
         '<input type="text" class="label" data-rename="' + esc(id) + '" value="' + esc(label) +
-          '" placeholder="' + esc(def.label) + '" style="border:0;background:transparent;padding:4px 6px;font-size:14px" />' +
-        '<span class="move">' +
-        '<button class="icon-btn sm" data-up="' + i + '" title="上へ"' + (i === 0 ? " disabled" : "") + '><i class="fa-solid fa-arrow-up"></i></button>' +
-        '<button class="icon-btn sm" data-down="' + i + '" title="下へ"' + (i === order.length - 1 ? " disabled" : "") + '><i class="fa-solid fa-arrow-down"></i></button>' +
-        "</span>");
+          '" placeholder="' + esc(def.label) + '" style="border:0;background:transparent;padding:4px 6px;font-size:14px" />');
       container.appendChild(li);
-    });
-    $all("[data-up]", container).forEach(function (b) {
-      b.addEventListener("click", function () { moveOrder(page, defOrder, Number(b.getAttribute("data-up")), -1, defs, container); });
-    });
-    $all("[data-down]", container).forEach(function (b) {
-      b.addEventListener("click", function () { moveOrder(page, defOrder, Number(b.getAttribute("data-down")), 1, defs, container); });
     });
     // タブ名の変更（input/change 両対応でクロスブラウザに）
     $all("[data-rename]", container).forEach(function (inp) {
@@ -183,16 +221,22 @@
       inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } });
     });
   }
-  function moveOrder(page, defOrder, idx, delta, defs, container) {
-    var order = Store.getTabOrder(page, defOrder);
-    var j = idx + delta;
-    if (j < 0 || j >= order.length) return;
-    var tmp = order[idx]; order[idx] = order[j]; order[j] = tmp;
-    Store.setTabOrder(page, order);
-    renderOrderList(page, defs, defOrder, container);
-    // 設定ページ自身のタブは即時反映
-    if (page === "setting") rebuildSetTabs(order, Store.getLastTab("setting") || order[0]);
-    toast("並び順を更新しました", "ok");
+  // タブの並べ替え（PCはドラッグ、スマホはグリップの長押し）を container に1回だけ配線する。
+  // renderOrderList は再描画のたびに子要素を作り直すが、UI.makeSortableList は container への
+  // イベント委任なので毎回配線し直す必要はない。
+  function wireOrderDrag(page, defs, defOrder, container) {
+    UI.makeSortableList(container, {
+      onReorder: function (order) {
+        Store.setTabOrder(page, order);
+        var normalized = Store.getTabOrder(page, defOrder);
+        renderOrderList(page, defs, defOrder, container);
+        // 設定ページ自身のタブは即時反映
+        if (page === "setting") rebuildSetTabs(normalized, Store.getLastTab("setting") || normalized[0]);
+        toast("並び順を更新しました", "ok");
+        // ログイン中はアカウントに紐づけて保存し、他端末にも反映されるようにする
+        Store.pushTabOrderToAccount(page, normalized);
+      }
+    });
   }
 
   /* ================= タブ2: 接続設定 ================= */

@@ -77,6 +77,25 @@
     return ra.localeCompare(rb, "ja") || a.localeCompare(b, "ja");
   }
 
+  // メインタブ（ツリー検索/通常検索/お気に入り/コーパス検索/問題印刷）を Store のタブ順から
+  // 構築する。ログイン時のアカウント同期（syncTabOrderFromAccount）でも呼び直せるよう独立させている。
+  function buildMainTabs(active) {
+    var order = Store.getTabOrder("main", DEFAULT_ORDER);
+    if (DEFAULT_ORDER.indexOf(active) < 0) active = order[0];
+    UI.buildTabs({
+      tabsEl: el("main-tabs"), order: order, defs: TAB_DEFS, active: active, page: "main", iconOnly: true,
+      onChange: function (id) {
+        Store.setLastTab("main", id);
+        if (id === "corpus") refreshCorpusLists();
+        if (id === "print") openPrintTab();
+        if (id === "tree") loadTree();
+        if (id === "favorites") loadFavorites();
+      }
+    });
+    UI.setActiveTab(el("main-tabs"), active);
+    return active;
+  }
+
   /* ---------------- 初期化 ---------------- */
   function init() {
     // サイトタイトル
@@ -91,20 +110,7 @@
     if (Markup.setImageBase) Markup.setImageBase(Store.getWorkerUrl() || "");
 
     // タブ構築
-    var order = Store.getTabOrder("main", DEFAULT_ORDER);
-    var active = Store.getLastTab("main");
-    if (DEFAULT_ORDER.indexOf(active) < 0) active = order[0];
-    UI.buildTabs({
-      tabsEl: el("main-tabs"), order: order, defs: TAB_DEFS, active: active, page: "main", iconOnly: true,
-      onChange: function (id) {
-        Store.setLastTab("main", id);
-        if (id === "corpus") refreshCorpusLists();
-        if (id === "print") openPrintTab();
-        if (id === "tree") loadTree();
-        if (id === "favorites") loadFavorites();
-      }
-    });
-    UI.setActiveTab(el("main-tabs"), active);
+    var active = buildMainTabs(Store.getLastTab("main"));
     if (active === "corpus") refreshCorpusLists(); else ensureCorpusControls();
     if (active === "print") openPrintTab();
     if (active === "tree") loadTree();
@@ -549,6 +555,16 @@
       if (el("exam-favorite") && state.nav.examId != null) updateExamFavoriteButton(state.nav.examId, state.nav.qnum);
       var favTabBtn = $('.tab[data-tab="favorites"].active', el("main-tabs"));
       if (favTabBtn) loadFavorites(true);
+      if (user) syncTabOrderFromAccount();
+    });
+  }
+  // ログイン中、Worker（user_settings）に保存済みのタブ並び順を取得してこの端末にも反映する
+  // （設定ページでの並べ替えをここにも同期する stale-while-revalidate 方式。未同期時は何もしない）。
+  function syncTabOrderFromAccount() {
+    Store.pullTabOrderFromAccount().then(function (data) {
+      if (!data) return;
+      var activeBtn = $(".tab.active", el("main-tabs"));
+      buildMainTabs(activeBtn ? activeBtn.getAttribute("data-tab") : Store.getLastTab("main"));
     });
   }
   function updateAuthUI(user) {
