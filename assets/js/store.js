@@ -26,7 +26,8 @@
     printSections: "exam_print_sections",    // 印刷対象セクション {種別: bool}（全問題で共有）
     replaceRules:  "exam_replace_rules",     // 登録データ一括置換のルール [{from,to,regex}]
     difficultyVocabWeight: "exam_difficulty_vocab_weight", // 長文難易度の語彙:文長の重み(0〜1、この端末のみ)
-    examFavCache:  "exam_fav_cache"          // お気に入り大問を含む試験のキャッシュ {examId: Api.getExamの結果}
+    examFavCache:  "exam_fav_cache",         // お気に入り大問を含む試験のキャッシュ {examId: Api.getExamの結果}
+    favCollapsed:  "exam_fav_collapsed"      // お気に入りフォルダの折りたたみ状態 {folderId: true}（この端末のみ）
   };
 
   function read(key, fallback) {
@@ -284,6 +285,24 @@
         if (!keep[id]) { delete all[id]; changed = true; }
       });
       if (changed) write(KEYS.examFavCache, all);
+    },
+
+    /* お気に入りフォルダの折りたたみ状態（この端末のみ。デフォルトは展開表示）。
+       フォルダ削除時は pruneFavCollapsed で参照切れのキーを削除し、際限なく増えないようにする。 */
+    getFavCollapsed: function () {
+      var m = read(KEYS.favCollapsed, {});
+      return (m && typeof m === "object") ? m : {};
+    },
+    setFavCollapsed: function (map) { write(KEYS.favCollapsed, map || {}); },
+    pruneFavCollapsed: function (keepFolderIds) {
+      var m = this.getFavCollapsed();
+      var keep = {};
+      (keepFolderIds || []).forEach(function (id) { keep[id] = true; });
+      var changed = false;
+      Object.keys(m).forEach(function (id) {
+        if (!keep[id]) { delete m[id]; changed = true; }
+      });
+      if (changed) write(KEYS.favCollapsed, m);
     }
   };
 

@@ -67,7 +67,7 @@
     favSet: null,        // ログイン中ユーザーのお気に入り Set("examId:qnum")。null=未取得
     favRows: [],         // お気に入りタブ表示用（Api.getFavorites の favorites）
     favFolders: [],        // お気に入りフォルダ（Api.getFavorites の folders）
-    favCollapsed: {},      // 折りたたみ中のフォルダ id → true（デフォルトは展開表示）
+    favCollapsed: Store.getFavCollapsed(),  // 折りたたみ中のフォルダ id → true（デフォルトは展開表示。この端末に保存）
     favDrag: null          // ドラッグ中のノード情報。null=非ドラッグ中
   };
 
@@ -578,6 +578,8 @@
       state.favSet = new Set(state.favRows.map(function (f) { return f.exam_id + ":" + f.question_number; }));
       // お気に入りから外れた試験のキャッシュは削除し、際限なく増えないようにする
       Store.pruneCachedExams(state.favRows.map(function (f) { return f.exam_id; }));
+      // 削除済みフォルダの折りたたみ状態も削除し、際限なく増えないようにする
+      Store.pruneFavCollapsed(state.favFolders.map(function (f) { return f.id; }));
       return state.favSet;
     }).catch(function () {
       state.favSet = new Set();
@@ -761,6 +763,7 @@
       if (toggleBtn) {
         var fid = Number(toggleBtn.getAttribute("data-toggle"));
         state.favCollapsed[fid] = !state.favCollapsed[fid];
+        Store.setFavCollapsed(state.favCollapsed);
         renderFavorites();
         return;
       }
