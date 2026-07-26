@@ -79,6 +79,17 @@ CREATE TABLE IF NOT EXISTS favorites (
   UNIQUE(uid, exam_id, question_number)
 );
 
+-- User settings table (Googleログイン(Firebase Auth)したユーザーごとに端末をまたいで同期する設定。
+-- 現状はタブ並び順のみ)
+--   uid: Firebase Auth の ID トークンの sub クレーム
+--   tab_order_main / tab_order_setting: 並び順（タブid配列）のJSON文字列。未設定は空文字列
+CREATE TABLE IF NOT EXISTS user_settings (
+  uid TEXT PRIMARY KEY,
+  tab_order_main TEXT NOT NULL DEFAULT '',
+  tab_order_setting TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Indexes for performance
 -- 注: questions.problem_text（本文全文が入る最大のカラム）には索引を張らない。
 -- 検索（GET /api/search）は常に LIKE '%word%'（前後ワイルドカード）で問い合わせるため

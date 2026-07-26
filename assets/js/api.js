@@ -205,6 +205,21 @@
         headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
         body: JSON.stringify({ parentId: parentId == null ? null : parentId, items: items })
       });
+    },
+    // ユーザー設定（Googleログイン必須。現状はタブ並び順のみ。端末をまたいで同期する）
+    getUserSettings:  async function () {
+      var token = await Auth.getIdToken();
+      if (!token) throw new Error("ログインが必要です。");
+      return call("/api/user-settings", { headers: { "Authorization": "Bearer " + token } });
+    },
+    updateUserSettings: async function (data) {
+      var token = await Auth.getIdToken();
+      if (!token) throw new Error("ログインが必要です。");
+      return call("/api/user-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+        body: JSON.stringify(data)
+      });
     }
   };
 

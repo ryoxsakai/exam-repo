@@ -11,7 +11,7 @@
   - `assets/js/` … `store`(localStorage) / `auth`(Firebase Auth) / `api`(Worker) / `ui` / `markup` / `corpus` / `onboarding`(使い方ガイド) / `viewer` / `settings`
 - **バックエンド**: `worker/index.ts`（Cloudflare Worker） + `schema.sql`（D1 / SQLite）。`wrangler.toml` で設定。
   - `.github/workflows/worker-deploy.yml` が `worker/**` 変更時に自動デプロイ。
-- **認証**: Firebase Authentication（Googleログイン）。Firestore 等のデータストアは使わず、ログイン識別のみに使用（`assets/js/auth.js`。config はコード内に直書き。値は公開情報のため秘匿不要）。
+- **認証**: Firebase Authentication（Googleログイン）。Firestore 等のデータストアは使わず、ログイン識別のみに使用（`assets/js/auth.js`。config はコード内に直書き。値は公開情報のため秘匿不要）。閲覧ページ・設定ページの両方に組み込み済み（お気に入り、およびタブ並び順のアカウント同期に使用）。
 
 > フロントは各 HTML の `<head>` にキャッシュ無効化メタ + アセットURLの `?v=` クエリでキャッシュをクリアする。
 
@@ -66,14 +66,15 @@
 | `POST /api/upload` / `GET /api/image/:key` | 問題画像を R2 へ保存 / 配信（`wrangler.toml` の `[[r2_buckets]] binding=IMAGES`） |
 | `GET/POST /api/favorites` `DELETE /api/favorites/:examId/:questionNumber` | ログインユーザーの大問お気に入り（要 `Authorization: Bearer <Firebase IDトークン>`）。GET は `favorites` に加え `folders`（フォルダ一覧）も返す |
 | `POST /api/favorite-folders` `PUT/DELETE /api/favorite-folders/:id` `POST /api/favorite-folders/reorder` | お気に入りフォルダの作成・改名・削除・並べ替え（要ログイン） |
+| `GET/PUT /api/user-settings` | ログインユーザーごとの端末をまたぐ設定（要ログイン。現状は `tab_order_main`/`tab_order_setting`=タブ並び順のみ）。PUT は渡されたキーだけを部分更新する |
 
-データモデル: `universities`(name, reading=よみがな, abbreviation=略称表示用) 1—N `exams`(year, schedule) 1—N `questions`(question_number, label, problem_text, answer_text, commentary_text)。`label` は大問の表示ラベル（任意。例「1A」。空なら「大問」+`question_number` を表示する表示専用の上書き。並び順・識別は常に整数 `question_number` を使用）。`favorites`(uid, exam_id, question_number) は `questions.id` ではなく他APIと同じ `(exam_id, question_number)` で大問を識別する。`favorite_folders`(uid, name, parent_id, sort_order) は自己参照の `parent_id`（NULL=ルート直下）で階層化し、`favorites` にも同じ意味の `folder_id`/`sort_order` を持たせて、フォルダとお気に入りをまとめて1つの表示順（コンテナ=uid+parent_id/folder_id 内の `sort_order`）で並べる。
+データモデル: `universities`(name, reading=よみがな, abbreviation=略称表示用) 1—N `exams`(year, schedule) 1—N `questions`(question_number, label, problem_text, answer_text, commentary_text)。`label` は大問の表示ラベル（任意。例「1A」。空なら「大問」+`question_number` を表示する表示専用の上書き。並び順・識別は常に整数 `question_number` を使用）。`favorites`(uid, exam_id, question_number) は `questions.id` ではなく他APIと同じ `(exam_id, question_number)` で大問を識別する。`favorite_folders`(uid, name, parent_id, sort_order) は自己参照の `parent_id`（NULL=ルート直下）で階層化し、`favorites` にも同じ意味の `folder_id`/`sort_order` を持たせて、フォルダとお気に入りをまとめて1つの表示順（コンテナ=uid+parent_id/folder_id 内の `sort_order`）で並べる。`user_settings`(uid PRIMARY KEY, tab_order_main, tab_order_setting) はログインユーザー1人につき1行で、各列はタブid配列のJSON文字列（未設定は空文字列）。
 
 ### 認証（Firebase Auth / Googleログイン）
 
 - クライアント: `assets/js/auth.js`（`window.Auth`）が Firebase の compat SDK（CDN）を初期化し、`signIn`/`signOut`/`getIdToken`/`onChange` を提供。Firestore は使わず、ログイン識別のみ。
 - サーバー: `worker/index.ts` が Firebase ID トークン（JWT/RS256）を **npm依存なし・Web Crypto API のみ**で検証する（`verifyFirebaseIdToken`）。署名鍵は Google の JWKS（`securetoken@system.gserviceaccount.com`）を Workers の Cache API でエッジキャッシュして取得。`getAuthUid(request)` が `Authorization: Bearer <idToken>` から検証済み `uid`（Firebaseの`sub`クレーム）を返す。
-- 認可が必要なのは `/api/favorites` `/api/favorite-folders` 系のみ。閲覧・検索など既存APIは引き続き無認証。
+- 認可が必要なのは `/api/favorites` `/api/favorite-folders` `/api/user-settings` 系のみ。閲覧・検索など既存APIは引き続き無認証。
 
 ### お気に入りのフォルダ分け・並べ替え（`assets/js/viewer.js`）
 
@@ -83,6 +84,12 @@
 - フォルダ削除時、配下のフォルダ・お気に入りは削除せず削除フォルダの親へ繰り上げる（`fixOrphanedRecords` でも念のため参照切れの `folder_id`/`parent_id` をルートへ戻す）。
 - お気に入り登録済みの大問を含む試験は `Store.getCachedExam`/`setCachedExam`（localStorage `exam_fav_cache`。examId単位）にキャッシュし、`openExam` で表示時に stale-while-revalidate（キャッシュがあれば即座に表示しつつ裏で `Api.getExam` を取得し直して差し替え）で体感速度を上げる。お気に入りから外れた試験は `ensureFavoritesLoaded` が `Store.pruneCachedExams` でその都度キャッシュから削除し、際限なく増えないようにする。
 - フォルダの折りたたみ状態（`state.favCollapsed`。フォルダid→真偽）は `Store.getFavCollapsed`/`setFavCollapsed`（localStorage `exam_fav_collapsed`。この端末のみ）に保存し、再読み込みやログインし直しても復元される。トグル時（`data-toggle` クリック）に即保存し、削除済みフォルダのキーは `ensureFavoritesLoaded` が `Store.pruneFavCollapsed` でその都度削除する。
+
+### タブの並べ替え（設定ページ「メイン設定」。`assets/js/settings.js`）
+
+- 閲覧ページのタブ（`order-main`）・設定ページのタブ（`order-setting`）の並び順は、設定ページの「メイン設定」タブにある2つのリストで編集する。各項目は `.grip` ハンドルからの PC ドラッグ（ネイティブ Drag and Drop API）／スマホのタップ長押し（`UI.makeSortableList`。`assets/js/ui.js` の汎用ヘルパー。お気に入りフォルダのドラッグ＆ドロップと同じ操作方式だが、階層移動が無い1階層のリスト専用）で並べ替える。並べ替えるとその場で `Store.setTabOrder` に保存し、`page === "setting"` なら設定ページ自身のタブバーへ即時反映する。
+- 並べ替えのたびに `Store.pushTabOrderToAccount(page, order)` でログイン中なら Worker（`PUT /api/user-settings`）へも保存し、他端末でも同じ並び順になるようにする（未ログイン時は今までどおり localStorage のみ）。設定ページにも `assets/js/auth.js` を組み込み済み（Firebase Auth はブラウザに永続化されるため、閲覧ページで一度ログインしていれば設定ページでも自動的にログイン状態として扱われる。設定ページのトップバーにもログイン/ログアウトボタンを追加済み）。
+- ページ初期化時（`init()`）は常にまず localStorage の並び順で即座にタブを構築し、その後ログイン中であれば `Store.pullTabOrderFromAccount()` で Worker から取得した値を stale-while-revalidate 方式で上書き・再描画する（`viewer.js` の `syncTabOrderFromAccount`／`settings.js` の同名関数。閲覧ページの `main` タブ順・設定ページの `main`/`setting` 両方のタブ順を対象）。
 
 ### 使い方ガイド（オンボーディング。`assets/js/onboarding.js` / `viewer.js`）
 
@@ -118,4 +125,5 @@
 ## 設定の保存先
 
 - **Worker(D1) config**: サイトタイトル / 方式(schedules) / 年度(year_presets) … 全端末で共有
-- **localStorage**: Worker URL / タブ順 / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`)
+- **Worker(D1) user_settings**: タブ順（Googleログイン時のみ。`GET/PUT /api/user-settings`）… ログインアカウントに紐づけて端末をまたいで共有
+- **localStorage**: Worker URL / タブ順（未ログイン時、またはログイン時もこの端末用のフォールバックとして常に保存） / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`)

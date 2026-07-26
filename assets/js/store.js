@@ -124,6 +124,28 @@
       write(page === "setting" ? KEYS.tabOrderSet : KEYS.tabOrderMain, order);
     },
 
+    /* タブ順のアカウント同期（Googleログイン時のみ。Worker の user_settings に uid 単位で保存）。
+       localStorage は常にこの端末の最新状態として即座に反映し、ログイン中はさらに Worker とも
+       同期することで他端末にも同じ並び順が反映されるようにする。未ログイン・Worker未接続・
+       通信エラー時は何もせず、常にlocalStorageのみへフォールバックする（今までの挙動のまま）。 */
+    pullTabOrderFromAccount: function () {
+      if (typeof Auth === "undefined" || !Auth.getCurrentUser() || typeof Api === "undefined") {
+        return Promise.resolve(null);
+      }
+      return Api.getUserSettings().then(function (data) {
+        if (!data) return null;
+        if (Array.isArray(data.tab_order_main)) Store.setTabOrder("main", data.tab_order_main);
+        if (Array.isArray(data.tab_order_setting)) Store.setTabOrder("setting", data.tab_order_setting);
+        return data;
+      }).catch(function () { return null; });
+    },
+    pushTabOrderToAccount: function (page, order) {
+      if (typeof Auth === "undefined" || !Auth.getCurrentUser() || typeof Api === "undefined") return;
+      var body = {};
+      body[page === "setting" ? "tab_order_setting" : "tab_order_main"] = order;
+      Api.updateUserSettings(body).catch(function () {});
+    },
+
     /* 最後に開いたタブ */
     getLastTab: function (page) { return readRaw(page === "setting" ? KEYS.lastTabSet : KEYS.lastTabMain, null); },
     setLastTab: function (page, id) { localStorage.setItem(page === "setting" ? KEYS.lastTabSet : KEYS.lastTabMain, id); },

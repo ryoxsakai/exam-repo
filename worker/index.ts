@@ -360,6 +360,16 @@ async function ensureFavoriteFolderColumns(env: Env) {
   }
 }
 
+// ユーザー設定（Googleログインしたユーザーごとに端末をまたいで同期する設定。現状はタブ並び順のみ）
+// テーブルの後方互換マイグレーション。uid は Firebase Auth の ID トークンの sub クレーム。
+// tab_order_main / tab_order_setting は並び順（タブid配列）をJSON文字列として保持し、
+// 未設定（そのユーザーがまだ並べ替えたことがない）は空文字列のままにする。
+async function ensureUserSettingsTable(env: Env) {
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS user_settings (uid TEXT PRIMARY KEY, tab_order_main TEXT NOT NULL DEFAULT '', tab_order_setting TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT (datetime('now')))"
+  );
+}
+
 // ───────────────────────────────────────────────────────────────────
 // 上の ensure*/fix* 系マイグレーション・自動修復はすべて冪等だが、これまで
 // ほぼ毎リクエスト実行しており、問題文の読み込み（/api/exams/:id, /api/corpus,
@@ -383,6 +393,7 @@ async function ensureMigrations(env: Env) {
   await ensureFavoritesTable(env);
   await ensureFavoriteFoldersTable(env);
   await ensureFavoriteFolderColumns(env);
+  await ensureUserSettingsTable(env);
   await dropUnusedIndexes(env);
   migrationsDone = true;
 }
@@ -1417,6 +1428,41 @@ export default {
           await env.DB.prepare("DELETE FROM word_lists WHERE id = ?").bind(Number(wlMatch[1])).run();
           return json({ success: true }, 200, origin);
         }
+      }
+
+      // ── /api/user-settings（Googleログインしたユーザーごとの端末をまたぐ設定。現状はタブ並び順のみ） ──
+      if (path === "/api/user-settings" && (request.method === "GET" || request.method === "PUT")) {
+        const uid = await getAuthUid(request);
+        if (!uid) return json({ error: "ログインが必要です。" }, 401, origin);
+
+        if (request.method === "GET") {
+          const row = await env.DB.prepare(
+            "SELECT tab_order_main, tab_order_setting FROM user_settings WHERE uid = ?"
+          ).bind(uid).first<{ tab_order_main: string; tab_order_setting: string }>();
+          const parseOrder = (s?: string) => {
+            if (!s) return null;
+            try { const v = JSON.parse(s); return Array.isArray(v) ? v : null; } catch { return null; }
+          };
+          return json({
+            tab_order_main: row ? parseOrder(row.tab_order_main) : null,
+            tab_order_setting: row ? parseOrder(row.tab_order_setting) : null,
+          }, 200, origin);
+        }
+
+        // PUT /api/user-settings  body: { tab_order_main?: string[], tab_order_setting?: string[] }
+        // 渡されたキーだけを部分更新する（もう一方のページから保存済みの値を消さないため）。
+        type Body = { tab_order_main?: string[]; tab_order_setting?: string[] };
+        const body = await request.json<Body>().catch(() => ({}) as Body);
+        await env.DB.prepare("INSERT INTO user_settings (uid) VALUES (?) ON CONFLICT(uid) DO NOTHING").bind(uid).run();
+        if (Array.isArray(body.tab_order_main)) {
+          await env.DB.prepare("UPDATE user_settings SET tab_order_main = ?, updated_at = datetime('now') WHERE uid = ?")
+            .bind(JSON.stringify(body.tab_order_main), uid).run();
+        }
+        if (Array.isArray(body.tab_order_setting)) {
+          await env.DB.prepare("UPDATE user_settings SET tab_order_setting = ?, updated_at = datetime('now') WHERE uid = ?")
+            .bind(JSON.stringify(body.tab_order_setting), uid).run();
+        }
+        return json({ success: true }, 200, origin);
       }
 
       // ── /api/favorites（Googleログインしたユーザーの大問お気に入り） ──
