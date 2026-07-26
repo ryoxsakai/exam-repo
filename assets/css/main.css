@@ -284,6 +284,17 @@ body.fav-dragging-touch .fav-row * {
 }
 .tab.icon-only { padding: 13px 17px; font-size: 16px; }
 .tab.icon-only.active::after { left: 14px; right: 14px; }
+/* タブバー上での直接ドラッグ並べ替え（UI.makeSortableList の horizontal モード） */
+.tab.dragging { opacity: .35; }
+.tab.drag-over-before { box-shadow: inset 2px 0 0 var(--emerald); }
+.tab.drag-over-after { box-shadow: inset -2px 0 0 var(--emerald); }
+/* スマホの長押しドラッグ中だけ、タブバーのテキスト選択・長押しコールアウト・
+   横スクロールをJSから禁止する（通常時は今までどおりスワイプでスクロールできる） */
+body.tabs-dragging-touch .tabs { touch-action: none; }
+body.tabs-dragging-touch .tab,
+body.tabs-dragging-touch .tab * {
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
 .tab-badge {
   font-size: 11px; font-weight: 700; color: var(--emerald-dark);
   background: var(--emerald-soft); border-radius: 20px; padding: 1px 8px;
@@ -564,8 +575,8 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
 .sort-item .grip { color: var(--muted); cursor: grab; touch-action: none; }
 .sort-item .grip:active { cursor: grabbing; }
 .sort-item.dragging { opacity: .4; }
-.sort-item.drag-over-top { box-shadow: inset 0 2px 0 var(--emerald); }
-.sort-item.drag-over-bottom { box-shadow: inset 0 -2px 0 var(--emerald); }
+.sort-item.drag-over-before { box-shadow: inset 0 2px 0 var(--emerald); }
+.sort-item.drag-over-after { box-shadow: inset 0 -2px 0 var(--emerald); }
 /* スマホの長押しドラッグ中だけ、リスト内のテキスト選択・長押しコールアウトをJSから禁止する */
 body.sortlist-dragging-touch .sort-item,
 body.sortlist-dragging-touch .sort-item * {

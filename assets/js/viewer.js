@@ -84,6 +84,7 @@
     if (DEFAULT_ORDER.indexOf(active) < 0) active = order[0];
     UI.buildTabs({
       tabsEl: el("main-tabs"), order: order, defs: TAB_DEFS, active: active, page: "main", iconOnly: true,
+      draggable: true,
       onChange: function (id) {
         Store.setLastTab("main", id);
         if (id === "corpus") refreshCorpusLists();
@@ -94,6 +95,34 @@
     });
     UI.setActiveTab(el("main-tabs"), active);
     return active;
+  }
+
+  // タブバー上でタブ自体をドラッグ（スマホはタップ長押し）して左右に並べ替える。
+  // 掴み手（.grip）を置く余地が無いのでタブ全体を掴み手にし、長押し確定までは
+  // タブバーの横スクロール・タップでのタブ切り替えを従来どおり行えるようにしている。
+  // イベント委任なので init で1回だけ配線すればよい（buildMainTabs での再描画に追従する）。
+  function wireMainTabsDrag() {
+    var tabsEl = el("main-tabs");
+    if (!tabsEl) return;
+    UI.makeSortableList(tabsEl, {
+      itemSelector: ".tab",
+      idAttr: "data-tab",
+      handleSelector: null,   // タブ全体を掴み手にする
+      horizontal: true,       // 左右に並べ替え
+      touchDragClass: "tabs-dragging-touch",
+      ghostHtml: function (tab) {
+        return tab.innerHTML + '<span>' + esc(tab.getAttribute("title") || "") + "</span>";
+      },
+      onReorder: function (order) {
+        Store.setTabOrder("main", order);
+        var normalized = Store.getTabOrder("main", DEFAULT_ORDER);
+        var activeBtn = $(".tab.active", tabsEl);
+        buildMainTabs(activeBtn ? activeBtn.getAttribute("data-tab") : Store.getLastTab("main"));
+        UI.toast("タブの並び順を更新しました", "ok");
+        // ログイン中はアカウントに紐づけて保存し、他端末・設定ページにも反映されるようにする
+        Store.pushTabOrderToAccount("main", normalized);
+      }
+    });
   }
 
   /* ---------------- 初期化 ---------------- */
@@ -111,6 +140,7 @@
 
     // タブ構築
     var active = buildMainTabs(Store.getLastTab("main"));
+    wireMainTabsDrag();
     if (active === "corpus") refreshCorpusLists(); else ensureCorpusControls();
     if (active === "print") openPrintTab();
     if (active === "tree") loadTree();
