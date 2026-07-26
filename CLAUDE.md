@@ -85,9 +85,19 @@
 - お気に入り登録済みの大問を含む試験は `Store.getCachedExam`/`setCachedExam`（localStorage `exam_fav_cache`。examId単位）にキャッシュし、`openExam` で表示時に stale-while-revalidate（キャッシュがあれば即座に表示しつつ裏で `Api.getExam` を取得し直して差し替え）で体感速度を上げる。お気に入りから外れた試験は `ensureFavoritesLoaded` が `Store.pruneCachedExams` でその都度キャッシュから削除し、際限なく増えないようにする。
 - フォルダの折りたたみ状態（`state.favCollapsed`。フォルダid→真偽）は `Store.getFavCollapsed`/`setFavCollapsed`（localStorage `exam_fav_collapsed`。この端末のみ）に保存し、再読み込みやログインし直しても復元される。トグル時（`data-toggle` クリック）に即保存し、削除済みフォルダのキーは `ensureFavoritesLoaded` が `Store.pruneFavCollapsed` でその都度削除する。
 
-### タブの並べ替え（設定ページ「メイン設定」。`assets/js/settings.js`）
+### タブの並べ替え（`UI.makeSortableList`。`assets/js/ui.js`）
 
-- 閲覧ページのタブ（`order-main`）・設定ページのタブ（`order-setting`）の並び順は、設定ページの「メイン設定」タブにある2つのリストで編集する。各項目は `.grip` ハンドルからの PC ドラッグ（ネイティブ Drag and Drop API）／スマホのタップ長押し（`UI.makeSortableList`。`assets/js/ui.js` の汎用ヘルパー。お気に入りフォルダのドラッグ＆ドロップと同じ操作方式だが、階層移動が無い1階層のリスト専用）で並べ替える。並べ替えるとその場で `Store.setTabOrder` に保存し、`page === "setting"` なら設定ページ自身のタブバーへ即時反映する。
+並べ替えの実体は `UI.makeSortableList(container, opts)` に一本化されている（PC はネイティブ Drag and Drop API、スマホはタップ長押し。お気に入りフォルダのドラッグ＆ドロップと同じ操作方式だが、階層移動が無い1階層のリスト専用）。`opts` で `handleSelector`（掴み手。`null` で要素全体）・`horizontal`（true で左右方向）・`ghostHtml` を切り替え、縦リストと横タブバーの両方に使い回している。並べ替え確定時は `onReorder(ids)` を呼ぶだけで、保存・再描画は呼び出し側が行う。ドラッグ直後 350ms のクリックは抑止する（タブのように要素自体がクリック可能な場合に、並べ替えただけでタブが切り替わるのを防ぐ）。この記録はドロップ時点で行う必要がある — `onReorder` で呼び出し側が要素を作り直すと、ドラッグ元がDOMから外れて直後の `dragend` が container まで伝播しなくなるため。
+
+**閲覧ページ: タブバー上で直接並べ替え**（`wireMainTabsDrag`。`assets/js/viewer.js`）
+
+- 閲覧ページのタブは、タブバー（`#main-tabs`）上でタブ自体をドラッグ（スマホはタップ長押し）して左右に並べ替えられる。掴み手を置く余地が無いため `handleSelector: null` でタブ全体を掴み手にし、`UI.buildTabs` の `draggable: true` で各タブに `draggable` 属性を付ける（タブは再描画のたびに作り直されるので属性付与は buildTabs 側で行う）。
+- 長押し確定（450ms）までは通常どおりタブバーの横スクロール・タップでのタブ切り替えができる（指が10px以上動いたらスクロールとみなしドラッグを中止する）。ドラッグ確定後は `touchmove` の `preventDefault` と `body.tabs-dragging-touch` の `touch-action: none` でスクロールへ奪われないようにする。
+- 並べ替え後は `Store.setTabOrder("main", …)` に保存し、アクティブタブを保ったまま `buildMainTabs` で再描画、さらに `Store.pushTabOrderToAccount` でログイン中ならアカウントにも保存する。
+
+**設定ページ「メイン設定」のリスト**（`assets/js/settings.js`）
+
+- 閲覧ページのタブ（`order-main`）・設定ページのタブ（`order-setting`）は、設定ページの「メイン設定」タブにある2つの縦リストでも並べ替えできる（タブ名の変更も同じ場所で行うため残している）。各項目は `.grip` ハンドルから同じ `UI.makeSortableList` で並べ替える。並べ替えるとその場で `Store.setTabOrder` に保存し、`page === "setting"` なら設定ページ自身のタブバーへ即時反映する。
 - 並べ替えのたびに `Store.pushTabOrderToAccount(page, order)` でログイン中なら Worker（`PUT /api/user-settings`）へも保存し、他端末でも同じ並び順になるようにする（未ログイン時は今までどおり localStorage のみ）。設定ページにも `assets/js/auth.js` を組み込み済み（Firebase Auth はブラウザに永続化されるため、閲覧ページで一度ログインしていれば設定ページでも自動的にログイン状態として扱われる。設定ページのトップバーにもログイン/ログアウトボタンを追加済み）。
 - ページ初期化時（`init()`）は常にまず localStorage の並び順で即座にタブを構築し、その後ログイン中であれば `Store.pullTabOrderFromAccount()` で Worker から取得した値を stale-while-revalidate 方式で上書き・再描画する（`viewer.js` の `syncTabOrderFromAccount`／`settings.js` の同名関数。閲覧ページの `main` タブ順・設定ページの `main`/`setting` 両方のタブ順を対象）。
 
