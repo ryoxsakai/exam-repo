@@ -24,6 +24,8 @@
     printLineHeight: "exam_print_lineheight", // 問題印刷の行間（表紙以外。1〜5）
     regDraft:      "exam_reg_draft",         // 問題登録フォームの下書き（リロードしても保持）
     printSections: "exam_print_sections",    // 印刷対象セクション {種別: bool}（全問題で共有）
+    printHideLabels: "exam_print_hide_labels", // 印刷時に「問題」「本文」「設問」のセクション名を出さない
+    printQPageBreak: "exam_print_qbreak",    // 印刷時に大問ごとに改ページする
     replaceRules:  "exam_replace_rules",     // 登録データ一括置換のルール [{from,to,regex}]
     difficultyVocabWeight: "exam_difficulty_vocab_weight", // 長文難易度の語彙:文長の重み(0〜1、この端末のみ)
     examFavCache:  "exam_fav_cache",         // お気に入り大問を含む試験のキャッシュ {examId: Api.getExamの結果}
@@ -284,6 +286,14 @@
       m[type] = !!on;
       write(KEYS.printSections, m);
     },
+
+    /* 問題印刷タブ: 「問題」「本文」「設問」のセクション名ラベルを出さない（既定は出す） */
+    getPrintHideLabels: function () { return read(KEYS.printHideLabels, false) === true; },
+    setPrintHideLabels: function (on) { write(KEYS.printHideLabels, !!on); },
+
+    /* 問題印刷タブ: 大問ごとに改ページする（既定は改ページしない＝続けて印刷） */
+    getPrintQPageBreak: function () { return read(KEYS.printQPageBreak, false) === true; },
+    setPrintQPageBreak: function (on) { write(KEYS.printQPageBreak, !!on); },
 
     /* お気に入り大問を含む試験のキャッシュ（この端末のみ）。
        Api.getExam の結果を examId 単位で保持し、次回以降その場で即座に表示できるようにする

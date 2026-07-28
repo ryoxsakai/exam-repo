@@ -220,6 +220,21 @@
       Store.setPrintLineHeight(el("pr-lineheight").value);
       renderPrintPreview();
     });
+    // 「問題」「本文」「設問」のラベルを外す / 大問ごとに改ページ（この端末に保存）
+    if (el("pr-hide-labels")) {
+      el("pr-hide-labels").checked = Store.getPrintHideLabels();
+      el("pr-hide-labels").addEventListener("change", function () {
+        Store.setPrintHideLabels(el("pr-hide-labels").checked);
+        renderPrintPreview();
+      });
+    }
+    if (el("pr-qbreak")) {
+      el("pr-qbreak").checked = Store.getPrintQPageBreak();
+      el("pr-qbreak").addEventListener("change", function () {
+        Store.setPrintQPageBreak(el("pr-qbreak").checked);
+        renderPrintPreview();
+      });
+    }
     el("btn-print-run").addEventListener("click", runPrint);
     el("btn-print-run-2").addEventListener("click", runPrint);
 
@@ -1506,9 +1521,15 @@
     return sections;
   }
 
-  function printField(label, text) {
+  // 「ラベルを外す」対象のセクション種別。問題面の主要3種のみで、解答・解説・全訳などは
+  // どのセクションか分からなくなると困るため常にラベルを出す。
+  var LABEL_HIDABLE = ["問題", "本文", "設問"];
+
+  function printField(label, text, opts) {
     var body = isBodySection(label);
-    return '<div class="print-field"><div class="print-field-label">' + esc(label) + "</div>" +
+    var hideLabel = opts && opts.hideLabels && LABEL_HIDABLE.indexOf(label) >= 0;
+    return '<div class="print-field">' +
+      (hideLabel ? "" : '<div class="print-field-label">' + esc(label) + "</div>") +
       '<div class="exam-doc' + (body ? "" : " no-indent") + '">' + Markup.render(text, markupOpts(label)).html + "</div></div>";
   }
 
@@ -1537,7 +1558,7 @@
         });
         if (!secs.length) return;
         inner += '<div class="print-q"><div class="print-q-head">大問' + esc(qLabel(q)) + "</div>";
-        secs.forEach(function (s) { inner += printField(s.type, s.text); });
+        secs.forEach(function (s) { inner += printField(s.type, s.text, opts); });
         inner += "</div>";
       });
       if (!inner) return "";
@@ -1549,7 +1570,18 @@
   }
 
   function printOptions() {
-    return { cover: el("pr-cover").checked };
+    return {
+      cover: el("pr-cover").checked,
+      hideLabels: el("pr-hide-labels") ? el("pr-hide-labels").checked : false,
+      qBreak: el("pr-qbreak") ? el("pr-qbreak").checked : false
+    };
+  }
+
+  // 印刷ドキュメントのルートに付けるクラス（文字サイズ・行間・大問ごとの改ページ）。
+  // プレビュー(.print-doc)と実際の印刷(#print-area.print-out)で同じ指定を使う。
+  function printDocClasses(opts) {
+    return "fs-" + Store.getPrintFontSize() + " lh-" + Store.getPrintLineHeight() +
+      (opts && opts.qBreak ? " qbreak" : "");
   }
 
   // 選択中の試験から登場するセクション種別を問題面／解答面に分けてチェックUI化。
@@ -1710,18 +1742,20 @@
 
   function renderPrintPreview() {
     if (!state.printExam) return;
-    var html = buildPrintHtml(state.printExam, printOptions());
+    var opts = printOptions();
+    var html = buildPrintHtml(state.printExam, opts);
     if (!html) { el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>印刷対象がありません。チェックや登録内容を確認してください。</div></div>'; return; }
-    el("print-preview").innerHTML = '<div class="print-doc fs-' + Store.getPrintFontSize() + " lh-" + Store.getPrintLineHeight() + '">' + html + "</div>";
+    el("print-preview").innerHTML = '<div class="print-doc ' + printDocClasses(opts) + '">' + html + "</div>";
   }
 
   function runPrint() {
     if (!state.printExam) { UI.toast("印刷対象がありません", "err"); return; }
-    var html = buildPrintHtml(state.printExam, printOptions());
+    var opts = printOptions();
+    var html = buildPrintHtml(state.printExam, opts);
     if (!html) { UI.toast("印刷対象がありません", "err"); return; }
     var area = el("print-area");
     if (!area) { area = create("div", { id: "print-area" }); document.body.appendChild(area); }
-    area.className = "print-out fs-" + Store.getPrintFontSize() + " lh-" + Store.getPrintLineHeight();
+    area.className = "print-out " + printDocClasses(opts);
     area.innerHTML = html;
     window.print();
   }
