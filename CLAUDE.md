@@ -101,6 +101,16 @@
 - 並べ替えのたびに `Store.pushTabOrderToAccount(page, order)` でログイン中なら Worker（`PUT /api/user-settings`）へも保存し、他端末でも同じ並び順になるようにする（未ログイン時は今までどおり localStorage のみ）。設定ページにも `assets/js/auth.js` を組み込み済み（Firebase Auth はブラウザに永続化されるため、閲覧ページで一度ログインしていれば設定ページでも自動的にログイン状態として扱われる。設定ページのトップバーにもログイン/ログアウトボタンを追加済み）。
 - ページ初期化時（`init()`）は常にまず localStorage の並び順で即座にタブを構築し、その後ログイン中であれば `Store.pullTabOrderFromAccount()` で Worker から取得した値を stale-while-revalidate 方式で上書き・再描画する（`viewer.js` の `syncTabOrderFromAccount`／`settings.js` の同名関数。閲覧ページの `main` タブ順・設定ページの `main`/`setting` 両方のタブ順を対象）。
 
+### 問題印刷タブ（`assets/js/viewer.js`）
+
+ツリーで大学→年度→方式を選ぶと、その方式の全大問を「表紙 → 問題面 → 解答・解説面」の順に印刷する。セクションは `isAnswerSide`（`/解答|解説|和訳|訳|答|講評/`）で問題面／解答面に振り分ける。プレビュー（`.print-doc`）と実際の印刷（`#print-area.print-out`）は同じ HTML・同じルートクラス（`printDocClasses`）を使うため見た目が一致する。印刷オプションはいずれもこの端末（localStorage）に保存され、次回以降も復元される。
+
+- **表紙をつける**（`pr-cover`）
+- **「問題」「本文」「設問」のラベルを外す**（`pr-hide-labels` / `Store.getPrintHideLabels`）: `printField` がこの3種（`LABEL_HIDABLE`）のセクション名見出しを出力しなくなり、中身だけが印刷される。解答・解説・全訳などはどのセクションか分からなくなると困るため対象外で、常にラベルを出す。
+- **大問ごとに改ページ**（`pr-qbreak` / `Store.getPrintQPageBreak`）: ルート要素に `qbreak` クラスを付け、`@media print` の `#print-area.print-out.qbreak .print-q + .print-q { page-break-before: always }` で2つ目以降の大問を新しいページから始める（各パート先頭の大問は `.print-part + .print-part` の改ページで既に新ページ）。画面のプレビューでは破線で改ページ位置を示す。
+- **文字サイズ / 行間**（`pr-fontsize` / `pr-lineheight`。表紙以外に適用）
+- **印刷する大問 / セクションの選択**（`renderPrintSectionControls`。セクションの取捨は閲覧モーダルと共通の `Store.isPrintSection`）
+
 ### 使い方ガイド（オンボーディング。`assets/js/onboarding.js` / `viewer.js`）
 
 - 閲覧ページのトップバー右側は右から「Googleログイン」「検索」「？（使い方ガイド）」の順。「？」は `.icon-btn.subtle` で他のアイコンより控えめな配色にしている。
@@ -136,4 +146,4 @@
 
 - **Worker(D1) config**: サイトタイトル / 方式(schedules) / 年度(year_presets) … 全端末で共有
 - **Worker(D1) user_settings**: タブ順（Googleログイン時のみ。`GET/PUT /api/user-settings`）… ログインアカウントに紐づけて端末をまたいで共有
-- **localStorage**: Worker URL / タブ順（未ログイン時、またはログイン時もこの端末用のフォールバックとして常に保存） / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`)
+- **localStorage**: Worker URL / タブ順（未ログイン時、またはログイン時もこの端末用のフォールバックとして常に保存） / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`) / 印刷オプション（文字サイズ・行間・対象セクション、ラベルを外す(`exam_print_hide_labels`)・大問ごとに改ページ(`exam_print_qbreak`)）
