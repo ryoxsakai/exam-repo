@@ -370,6 +370,16 @@ async function ensureUserSettingsTable(env: Env) {
   );
 }
 
+// user_settings に print_titles（お気に入りフォルダ印刷の表紙タイトル。
+// {"<favorite_folders.id>": "タイトル"} のJSON文字列）列が無い既存DBへの後方互換マイグレーション
+async function ensureUserSettingsPrintTitlesColumn(env: Env) {
+  try {
+    await env.DB.exec("ALTER TABLE user_settings ADD COLUMN print_titles TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // 既に列が存在する場合は無視
+  }
+}
+
 // ───────────────────────────────────────────────────────────────────
 // 上の ensure*/fix* 系マイグレーション・自動修復はすべて冪等だが、これまで
 // ほぼ毎リクエスト実行しており、問題文の読み込み（/api/exams/:id, /api/corpus,
@@ -394,6 +404,7 @@ async function ensureMigrations(env: Env) {
   await ensureFavoriteFoldersTable(env);
   await ensureFavoriteFolderColumns(env);
   await ensureUserSettingsTable(env);
+  await ensureUserSettingsPrintTitlesColumn(env);
   await dropUnusedIndexes(env);
   migrationsDone = true;
 }
@@ -1437,21 +1448,34 @@ export default {
 
         if (request.method === "GET") {
           const row = await env.DB.prepare(
-            "SELECT tab_order_main, tab_order_setting FROM user_settings WHERE uid = ?"
-          ).bind(uid).first<{ tab_order_main: string; tab_order_setting: string }>();
+            "SELECT tab_order_main, tab_order_setting, print_titles FROM user_settings WHERE uid = ?"
+          ).bind(uid).first<{ tab_order_main: string; tab_order_setting: string; print_titles: string }>();
           const parseOrder = (s?: string) => {
             if (!s) return null;
             try { const v = JSON.parse(s); return Array.isArray(v) ? v : null; } catch { return null; }
           };
+          const parseMap = (s?: string) => {
+            if (!s) return null;
+            try {
+              const v = JSON.parse(s);
+              return (v && typeof v === "object" && !Array.isArray(v)) ? v : null;
+            } catch { return null; }
+          };
           return json({
             tab_order_main: row ? parseOrder(row.tab_order_main) : null,
             tab_order_setting: row ? parseOrder(row.tab_order_setting) : null,
+            print_titles: row ? parseMap(row.print_titles) : null,
           }, 200, origin);
         }
 
-        // PUT /api/user-settings  body: { tab_order_main?: string[], tab_order_setting?: string[] }
-        // 渡されたキーだけを部分更新する（もう一方のページから保存済みの値を消さないため）。
-        type Body = { tab_order_main?: string[]; tab_order_setting?: string[] };
+        // PUT /api/user-settings
+        //   body: { tab_order_main?: string[], tab_order_setting?: string[], print_titles?: {folderId: title} }
+        // 渡されたキーだけを部分更新する（他のページ・他の設定から保存済みの値を消さないため）。
+        type Body = {
+          tab_order_main?: string[];
+          tab_order_setting?: string[];
+          print_titles?: Record<string, string>;
+        };
         const body = await request.json<Body>().catch(() => ({}) as Body);
         await env.DB.prepare("INSERT INTO user_settings (uid) VALUES (?) ON CONFLICT(uid) DO NOTHING").bind(uid).run();
         if (Array.isArray(body.tab_order_main)) {
@@ -1461,6 +1485,10 @@ export default {
         if (Array.isArray(body.tab_order_setting)) {
           await env.DB.prepare("UPDATE user_settings SET tab_order_setting = ?, updated_at = datetime('now') WHERE uid = ?")
             .bind(JSON.stringify(body.tab_order_setting), uid).run();
+        }
+        if (body.print_titles && typeof body.print_titles === "object" && !Array.isArray(body.print_titles)) {
+          await env.DB.prepare("UPDATE user_settings SET print_titles = ?, updated_at = datetime('now') WHERE uid = ?")
+            .bind(JSON.stringify(body.print_titles), uid).run();
         }
         return json({ success: true }, 200, origin);
       }

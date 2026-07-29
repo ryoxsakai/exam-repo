@@ -56,7 +56,8 @@
     covOffList: null,
     covListName: "",
     printExam: null,     // 印刷タブで構築した {year,university_name,schedule,questions[]}
-    printSel: { uni: "", year: "", sched: "" },  // 印刷タブで選んだ大学/年度/方式
+    // 印刷タブで選んだ対象。kind="exam" は大学/年度/方式、kind="favFolder" はお気に入りフォルダ
+    printSel: { kind: "exam", uni: "", year: "", sched: "", folderId: null },
     printQSel: {},       // 印刷タブで選んだ大問（key=question_number文字列, value=真偽。未設定は印刷対象）
     longLevel: null,     // 長文レベルのキャッシュ {src, byKey, cutoffs}（四分位の相対難易度帯用）
     printTreeLoaded: false,
@@ -232,6 +233,14 @@
       el("pr-qbreak").checked = Store.getPrintQPageBreak();
       el("pr-qbreak").addEventListener("change", function () {
         Store.setPrintQPageBreak(el("pr-qbreak").checked);
+        renderPrintPreview();
+      });
+    }
+    if (el("pr-qsubtitle")) {
+      el("pr-qsubtitle").checked = Store.getPrintQSubtitle();
+      el("pr-qsubtitle").addEventListener("change", function () {
+        Store.setPrintQSubtitle(el("pr-qsubtitle").checked);
+        renderPrintSectionControls();
         renderPrintPreview();
       });
     }
@@ -597,16 +606,22 @@
       updateAuthUI(user);
       state.favSet = null;  // ログイン状態が変わったらキャッシュ破棄
       state.favRows = [];
+      state.favFolders = [];
       if (el("exam-favorite") && state.nav.examId != null) updateExamFavoriteButton(state.nav.examId, state.nav.qnum);
       var favTabBtn = $('.tab[data-tab="favorites"].active', el("main-tabs"));
       if (favTabBtn) loadFavorites(true);
       if (user) syncTabOrderFromAccount();
+      // 印刷タブを開いていれば、ツリー冒頭の「お気に入り」ノードを作り直す
+      var printTabBtn = $('.tab[data-tab="print"].active', el("main-tabs"));
+      if (printTabBtn) {
+        ensureFavoritesLoaded().catch(function () {}).then(function () { loadPrintTree(true); });
+      }
     });
   }
   // ログイン中、Worker（user_settings）に保存済みのタブ並び順を取得してこの端末にも反映する
   // （設定ページでの並べ替えをここにも同期する stale-while-revalidate 方式。未同期時は何もしない）。
   function syncTabOrderFromAccount() {
-    Store.pullTabOrderFromAccount().then(function (data) {
+    Store.pullUserSettingsFromAccount().then(function (data) {
       if (!data) return;
       var activeBtn = $(".tab.active", el("main-tabs"));
       buildMainTabs(activeBtn ? activeBtn.getAttribute("data-tab") : Store.getLastTab("main"));
@@ -1534,30 +1549,70 @@
   }
 
   // 印刷ドキュメントの HTML を構築（表紙 → 問題面 → 解答面）
+  // 大問を一意に識別するキー。お気に入りフォルダの印刷では複数の試験の大問が混ざり
+  // question_number が衝突するため、常に (exam_id, question_number) で識別する。
+  function printQKey(q) {
+    return (q.exam_id != null ? q.exam_id : 0) + ":" + q.question_number;
+  }
   // 大問が印刷対象か（未設定＝デフォルトで対象。明示的に false のときのみ除外）
-  function isPrintQ(qnum) {
-    return state.printQSel[String(qnum)] !== false;
+  function isPrintQ(q) {
+    return state.printQSel[printQKey(q)] !== false;
+  }
+
+  // 大問見出しの文字列。subtitle 指定時は「1. 2018 関西医科 前期 大問3」のように
+  // 通し番号と試験情報を添える（お気に入りフォルダの印刷では大問が複数の試験にまたがるため）。
+  function printQHeading(q, seq, opts) {
+    var base = "大問" + qLabel(q);
+    if (!opts || !opts.qSubtitle) return base;
+    var c = q._ctx || {};
+    var parts = [seq + "."];
+    if (c.year) parts.push(String(c.year));
+    if (c.university_name) parts.push(c.university_name);
+    if (c.schedule) parts.push(c.schedule);
+    parts.push(base);
+    return parts.join(" ");
+  }
+
+  // 印刷対象の大問を、印刷順（お気に入りフォルダはユーザーが並べた順、
+  // 試験単位は大問番号順）で返す。
+  function printQuestions(ex) {
+    var qs = (ex.questions || []).slice();
+    if (ex.kind !== "favFolder") {
+      qs.sort(function (a, b) {
+        return (Number(a.question_number) || 0) - (Number(b.question_number) || 0);
+      });
+    }
+    return qs.filter(isPrintQ);
   }
 
   function buildPrintHtml(ex, opts) {
     var html = "";
     if (opts.cover) {
-      html += '<div class="print-cover">' +
-        '<div class="pc-year">' + esc(ex.year) + "年度</div>" +
-        '<div class="pc-uni">' + esc(ex.university_name) + "</div>" +
-        '<div class="pc-sched">' + esc(ex.schedule) + "</div></div>";
+      if (ex.kind === "favFolder") {
+        // お気に入りフォルダ: 試験単位と同じ3行構成のまま、中央にフォルダのタイトルだけを出す
+        // （上下の行は空。タイトルはダブルタップで編集可能）。
+        html += '<div class="print-cover">' +
+          '<div class="pc-year"></div>' +
+          '<div class="pc-uni pc-title-edit" data-print-title="' + esc(String(ex.folderId)) +
+            '" title="ダブルタップ（ダブルクリック）でタイトルを編集">' + esc(ex.title) + "</div>" +
+          '<div class="pc-sched"></div></div>';
+      } else {
+        html += '<div class="print-cover">' +
+          '<div class="pc-year">' + esc(ex.year) + "年度</div>" +
+          '<div class="pc-uni">' + esc(ex.university_name) + "</div>" +
+          '<div class="pc-sched">' + esc(ex.schedule) + "</div></div>";
+      }
     }
-    var qs = (ex.questions || []).slice().sort(function (a, b) {
-      return (Number(a.question_number) || 0) - (Number(b.question_number) || 0);
-    }).filter(function (q) { return isPrintQ(q.question_number); });
+    var qs = printQuestions(ex);
     function part(title, answerSide) {
       var inner = "";
-      qs.forEach(function (q) {
+      qs.forEach(function (q, i) {
         var secs = questionSections(q).filter(function (s) {
           return s.text && s.text.trim() && (isAnswerSide(s.type) === answerSide) && Store.isPrintSection(s.type);
         });
         if (!secs.length) return;
-        inner += '<div class="print-q"><div class="print-q-head">大問' + esc(qLabel(q)) + "</div>";
+        // 通し番号は qs 内の位置に固定し、問題面と解答面で同じ大問が同じ番号になるようにする
+        inner += '<div class="print-q"><div class="print-q-head">' + esc(printQHeading(q, i + 1, opts)) + "</div>";
         secs.forEach(function (s) { inner += printField(s.type, s.text, opts); });
         inner += "</div>";
       });
@@ -1573,7 +1628,8 @@
     return {
       cover: el("pr-cover").checked,
       hideLabels: el("pr-hide-labels") ? el("pr-hide-labels").checked : false,
-      qBreak: el("pr-qbreak") ? el("pr-qbreak").checked : false
+      qBreak: el("pr-qbreak") ? el("pr-qbreak").checked : false,
+      qSubtitle: el("pr-qsubtitle") ? el("pr-qsubtitle").checked : false
     };
   }
 
@@ -1609,16 +1665,25 @@
     }
     // 印刷する大問の選択（セクション選択の上に置く）
     function qgroup() {
-      var qs = (state.printExam.questions || []).slice().sort(function (a, b) {
-        return (Number(a.question_number) || 0) - (Number(b.question_number) || 0);
-      });
+      var ex = state.printExam;
+      var qs = (ex.questions || []).slice();
+      if (ex.kind !== "favFolder") {
+        qs.sort(function (a, b) {
+          return (Number(a.question_number) || 0) - (Number(b.question_number) || 0);
+        });
+      }
       if (!qs.length) return "";
       var h = '<div class="pr-secgroup"><div class="pr-secgroup-head">印刷する大問</div>' +
         '<div class="pr-secgroup-opts">';
       qs.forEach(function (q) {
-        var ck = isPrintQ(q.question_number) ? " checked" : "";
-        h += '<label class="check-inline"><input type="checkbox" data-prq="' + esc(String(q.question_number)) + '"' + ck +
-          "> <span>大問" + esc(qLabel(q)) + "</span></label>";
+        var ck = isPrintQ(q) ? " checked" : "";
+        // お気に入りフォルダの印刷ではどの試験の大問か分かるよう試験情報も添える
+        var c = q._ctx || {};
+        var label = (ex.kind === "favFolder" && c.university_name)
+          ? [c.year, c.university_name, c.schedule].filter(Boolean).join(" ") + " 大問" + qLabel(q)
+          : "大問" + qLabel(q);
+        h += '<label class="check-inline"><input type="checkbox" data-prq="' + esc(printQKey(q)) + '"' + ck +
+          "> <span>" + esc(label) + "</span></label>";
       });
       return h + "</div></div>";
     }
@@ -1640,8 +1705,116 @@
 
   // 印刷タブを開いたとき：ツリー（大学→年度→方式）とプレビューを用意
   function openPrintTab() {
-    loadPrintTree();
-    loadPrintPreview();
+    // ツリー冒頭の「お気に入り」ノードを描くためお気に入りを先に読み込む
+    // （未ログイン・取得失敗時も案内文を出して残りのツリーは通常どおり表示する）。
+    ensureFavoritesLoaded().catch(function () {}).then(function () {
+      loadPrintTree();
+      loadPrintPreview();
+    });
+  }
+
+  /* --- 印刷タブ: お気に入りフォルダを一括印刷する --- */
+
+  // フォルダ配下のお気に入りを、ユーザーが並べた表示順で再帰的に集める
+  // （サブフォルダの中身もそのフォルダの位置に展開して含める）。
+  function favoritesInFolder(folderId) {
+    var out = [];
+    (function walk(pid) {
+      favChildrenOf(pid).forEach(function (it) {
+        if (it.kind === "favorite") out.push(it.favorite);
+        else walk(Number(it.folder.id));
+      });
+    })(folderId);
+    return out;
+  }
+
+  // フォルダの表紙タイトル（ユーザーが編集していればそれ、無ければフォルダ名）
+  function favFolderTitle(folderId) {
+    var f = (state.favFolders || []).filter(function (x) { return Number(x.id) === Number(folderId); })[0];
+    return Store.getPrintFolderTitle(folderId, f ? f.name : "お気に入り");
+  }
+
+  // 印刷ツリー冒頭の「お気に入り」ノード。フォルダは階層をインデントで示しつつ
+  // すべて選択可能にする（選択と開閉が競合しないよう、フォルダ側は常に展開表示）。
+  function printFavTreeHtml() {
+    var loggedIn = !!(window.Auth && Auth.getCurrentUser());
+    var inner;
+    if (!loggedIn) {
+      inner = '<div class="tree-msg">Googleログインするとお気に入りフォルダを一括印刷できます。</div>';
+    } else if (!(state.favFolders || []).length) {
+      inner = '<div class="tree-msg">お気に入りフォルダがありません。お気に入りタブで作成してください。</div>';
+    } else {
+      inner = (function build(parentId, depth) {
+        var h = "";
+        favChildrenOf(parentId).forEach(function (it) {
+          if (it.kind !== "folder") return;
+          var f = it.folder;
+          var count = favoritesInFolder(Number(f.id)).length;
+          var picked = state.printSel.kind === "favFolder" && Number(state.printSel.folderId) === Number(f.id);
+          h += '<button type="button" class="tree-row tree-row-favfolder tree-row-pick' + (picked ? " selected" : "") + '"' +
+            ' data-favfolder="' + esc(String(f.id)) + '" style="padding-left:' + (14 + depth * 16) + 'px">' +
+            '<i class="fa-solid fa-folder tree-ic"></i><span class="tree-label">' + esc(f.name) + "</span>" +
+            '<span class="tree-count">' + count + "問</span></button>";
+          h += build(Number(f.id), depth + 1);
+        });
+        return h;
+      })(null, 0);
+    }
+    return '<div class="tree-node">' + treeRow("fav", "fa-star", "お気に入り") +
+      '<div class="tree-children" hidden>' + inner + "</div></div>";
+  }
+
+  // 選択したお気に入りフォルダの大問を集めてプレビュー用データを作る
+  function loadPrintFavFolder(folderId) {
+    var box = el("print-preview");
+    box.innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
+    ensureFavoritesLoaded().then(function () {
+      var favs = favoritesInFolder(folderId);
+      if (!favs.length) {
+        state.printExam = null;
+        renderPrintSectionControls();
+        box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-star ic"></i>このフォルダにお気に入りの大問がありません。</div></div>';
+        return;
+      }
+      var examIds = [];
+      favs.forEach(function (f) { if (examIds.indexOf(f.exam_id) < 0) examIds.push(f.exam_id); });
+      return Promise.all(examIds.map(function (id) {
+        return Api.getExam(id).catch(function () { return null; });
+      })).then(function (results) {
+        var byExam = {};
+        results.forEach(function (r) { if (r && r.exam) byExam[r.exam.id] = r.exam; });
+        // お気に入りの並び順のまま、対応する大問データを引き当てる（試験情報を _ctx に添える）
+        var questions = [];
+        favs.forEach(function (f) {
+          var exam = byExam[f.exam_id];
+          if (!exam) return;
+          var q = (exam.questions || []).filter(function (x) {
+            return Number(x.question_number) === Number(f.question_number);
+          })[0];
+          if (!q) return;
+          var copy = {};
+          Object.keys(q).forEach(function (k) { copy[k] = q[k]; });
+          copy.exam_id = exam.id;
+          copy._ctx = { year: exam.year, university_name: exam.university_name, schedule: exam.schedule };
+          questions.push(copy);
+        });
+        if (!questions.length) {
+          state.printExam = null;
+          renderPrintSectionControls();
+          box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>お気に入りの大問データが取得できませんでした。</div></div>';
+          return;
+        }
+        state.printExam = {
+          kind: "favFolder", folderId: folderId, title: favFolderTitle(folderId), questions: questions
+        };
+        state.printQSel = {};
+        questions.forEach(function (q) { state.printQSel[printQKey(q)] = true; });
+        renderPrintSectionControls();
+        renderPrintPreview();
+      });
+    }).catch(function (e) {
+      box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message || e) + "</div></div>";
+    });
   }
 
   // 印刷タブのツリー（大学→年度→方式まで。方式クリックで全大問プレビュー）
@@ -1662,7 +1835,7 @@
         if (!unis[u][y]) unis[u][y] = {};
         unis[u][y][s] = true;
       });
-      var html = '<div class="tree">';
+      var html = '<div class="tree">' + printFavTreeHtml();
       Object.keys(unis).sort(uniCmp).forEach(function (u) {
         html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
         Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
@@ -1693,7 +1866,15 @@
         if (row.classList.contains("tree-row-pick")) {
           $all(".tree-row-pick", box).forEach(function (x) { x.classList.remove("selected"); });
           row.classList.add("selected");
-          state.printSel = { uni: row.getAttribute("data-uni"), year: row.getAttribute("data-year"), sched: row.getAttribute("data-sched") };
+          var favId = row.getAttribute("data-favfolder");
+          if (favId != null) {
+            state.printSel = { kind: "favFolder", folderId: Number(favId), uni: "", year: "", sched: "" };
+          } else {
+            state.printSel = {
+              kind: "exam", folderId: null,
+              uni: row.getAttribute("data-uni"), year: row.getAttribute("data-year"), sched: row.getAttribute("data-sched")
+            };
+          }
           loadPrintPreview();
           return;
         }
@@ -1709,11 +1890,15 @@
   function loadPrintPreview() {
     if (!Store.getWorkerUrl()) { el("print-preview").innerHTML = noWorkerHtml(); return; }
     var sel = state.printSel || {};
+    if (sel.kind === "favFolder" && sel.folderId != null) {
+      loadPrintFavFolder(Number(sel.folderId));
+      return;
+    }
     var year = sel.year, uni = sel.uni, sched = sel.sched;
     if (!year || !uni || !sched) {
       state.printExam = null;
       renderPrintSectionControls();
-      el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-print ic"></i>上のツリーから 大学 → 年度 → 方式 を選んでください。</div></div>';
+      el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-print ic"></i>上のツリーから 大学 → 年度 → 方式、または「お気に入り」からフォルダを選んでください。</div></div>';
       return;
     }
     el("print-preview").innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
@@ -1727,11 +1912,19 @@
       }
       return Promise.all(exams.map(function (e) { return Api.getExam(e.id); })).then(function (results) {
         var questions = [];
-        results.forEach(function (r) { (r.exam.questions || []).forEach(function (q) { questions.push(q); }); });
-        state.printExam = { year: year, university_name: uni, schedule: sched, questions: questions };
+        results.forEach(function (r) {
+          var ex = r.exam;
+          (ex.questions || []).forEach(function (q) {
+            // 「大問見出しに通し番号・試験情報を入れる」で使う試験情報を添える
+            // （お気に入りフォルダの印刷と同じ形式で扱えるようにする）
+            q._ctx = { year: ex.year, university_name: ex.university_name, schedule: ex.schedule };
+            questions.push(q);
+          });
+        });
+        state.printExam = { kind: "exam", year: year, university_name: uni, schedule: sched, questions: questions };
         // 大問選択を初期化（既定で全大問を印刷対象に）
         state.printQSel = {};
-        questions.forEach(function (q) { state.printQSel[String(q.question_number)] = true; });
+        questions.forEach(function (q) { state.printQSel[printQKey(q)] = true; });
         renderPrintSectionControls();
         renderPrintPreview();
       });
@@ -1746,6 +1939,59 @@
     var html = buildPrintHtml(state.printExam, opts);
     if (!html) { el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>印刷対象がありません。チェックや登録内容を確認してください。</div></div>'; return; }
     el("print-preview").innerHTML = '<div class="print-doc ' + printDocClasses(opts) + '">' + html + "</div>";
+    wirePrintTitleEdit();
+  }
+
+  // 表紙のフォルダタイトルをダブルタップ（ダブルクリック）で編集できるようにする。
+  // 確定時は Store 経由でこの端末に保存し、ログイン中はアカウントにも保存する。
+  function wirePrintTitleEdit() {
+    var node = $("[data-print-title]", el("print-preview"));
+    if (!node) return;
+    var folderId = node.getAttribute("data-print-title");
+
+    function beginEdit() {
+      if (node.getAttribute("contenteditable") === "true") return;
+      node.setAttribute("contenteditable", "true");
+      node.classList.add("editing");
+      node.focus();
+      // 全選択して置き換えやすくする
+      var r = document.createRange();
+      r.selectNodeContents(node);
+      var s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    }
+    function commit() {
+      if (node.getAttribute("contenteditable") !== "true") return;
+      node.setAttribute("contenteditable", "false");
+      node.classList.remove("editing");
+      var t = (node.textContent || "").trim();
+      Store.setPrintFolderTitle(folderId, t);
+      // 空にしたらフォルダ名へ戻す
+      var title = favFolderTitle(folderId);
+      if (state.printExam) state.printExam.title = title;
+      node.textContent = title;
+      UI.toast(t ? "表紙のタイトルを保存しました" : "表紙のタイトルをフォルダ名に戻しました", "ok");
+    }
+
+    node.addEventListener("dblclick", beginEdit);
+    // スマホ: 一部ブラウザで dblclick が出ないことがあるため、タップ2回を自前でも判定する
+    var lastTap = 0;
+    node.addEventListener("touchend", function () {
+      var now = Date.now();
+      if (now - lastTap < 350) { beginEdit(); lastTap = 0; return; }
+      lastTap = now;
+    });
+    node.addEventListener("blur", commit);
+    node.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); node.blur(); }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        node.textContent = favFolderTitle(folderId);
+        node.setAttribute("contenteditable", "false");
+        node.classList.remove("editing");
+      }
+    });
   }
 
   function runPrint() {

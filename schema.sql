@@ -83,10 +83,12 @@ CREATE TABLE IF NOT EXISTS favorites (
 -- 現状はタブ並び順のみ)
 --   uid: Firebase Auth の ID トークンの sub クレーム
 --   tab_order_main / tab_order_setting: 並び順（タブid配列）のJSON文字列。未設定は空文字列
+--   print_titles: お気に入りフォルダ印刷の表紙タイトル {"<favorite_folders.id>": "タイトル"} のJSON文字列
 CREATE TABLE IF NOT EXISTS user_settings (
   uid TEXT PRIMARY KEY,
   tab_order_main TEXT NOT NULL DEFAULT '',
   tab_order_setting TEXT NOT NULL DEFAULT '',
+  print_titles TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

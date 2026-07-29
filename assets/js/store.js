@@ -26,6 +26,8 @@
     printSections: "exam_print_sections",    // 印刷対象セクション {種別: bool}（全問題で共有）
     printHideLabels: "exam_print_hide_labels", // 印刷時に「問題」「本文」「設問」のセクション名を出さない
     printQPageBreak: "exam_print_qbreak",    // 印刷時に大問ごとに改ページする
+    printQSubtitle: "exam_print_qsubtitle",  // 大問見出しを「1. 2018 ○○ 前期 大問3」形式にする
+    printFolderTitles: "exam_print_folder_titles", // お気に入りフォルダ印刷の表紙タイトル {folderId: title}
     replaceRules:  "exam_replace_rules",     // 登録データ一括置換のルール [{from,to,regex}]
     difficultyVocabWeight: "exam_difficulty_vocab_weight", // 長文難易度の語彙:文長の重み(0〜1、この端末のみ)
     examFavCache:  "exam_fav_cache",         // お気に入り大問を含む試験のキャッシュ {examId: Api.getExamの結果}
@@ -126,11 +128,12 @@
       write(page === "setting" ? KEYS.tabOrderSet : KEYS.tabOrderMain, order);
     },
 
-    /* タブ順のアカウント同期（Googleログイン時のみ。Worker の user_settings に uid 単位で保存）。
-       localStorage は常にこの端末の最新状態として即座に反映し、ログイン中はさらに Worker とも
-       同期することで他端末にも同じ並び順が反映されるようにする。未ログイン・Worker未接続・
-       通信エラー時は何もせず、常にlocalStorageのみへフォールバックする（今までの挙動のまま）。 */
-    pullTabOrderFromAccount: function () {
+    /* ユーザー設定のアカウント同期（Googleログイン時のみ。Worker の user_settings に uid 単位で保存）。
+       対象はタブ順とお気に入りフォルダ印刷の表紙タイトル。localStorage は常にこの端末の最新状態
+       として即座に反映し、ログイン中はさらに Worker とも同期することで他端末にも反映されるように
+       する。未ログイン・Worker未接続・通信エラー時は何もせず、常にlocalStorageのみへ
+       フォールバックする（今までの挙動のまま）。 */
+    pullUserSettingsFromAccount: function () {
       if (typeof Auth === "undefined" || !Auth.getCurrentUser() || typeof Api === "undefined") {
         return Promise.resolve(null);
       }
@@ -138,6 +141,9 @@
         if (!data) return null;
         if (Array.isArray(data.tab_order_main)) Store.setTabOrder("main", data.tab_order_main);
         if (Array.isArray(data.tab_order_setting)) Store.setTabOrder("setting", data.tab_order_setting);
+        if (data.print_titles && typeof data.print_titles === "object" && !Array.isArray(data.print_titles)) {
+          Store.setPrintFolderTitles(data.print_titles);
+        }
         return data;
       }).catch(function () { return null; });
     },
@@ -294,6 +300,39 @@
     /* 問題印刷タブ: 大問ごとに改ページする（既定は改ページしない＝続けて印刷） */
     getPrintQPageBreak: function () { return read(KEYS.printQPageBreak, false) === true; },
     setPrintQPageBreak: function (on) { write(KEYS.printQPageBreak, !!on); },
+
+    /* 問題印刷タブ: 大問見出しを「1. 2018 ○○ 前期 大問3」形式にする（既定は「大問3」だけ）。
+       お気に入りフォルダの印刷では大問が複数の試験にまたがるため、この形式が既定で有効になる
+       （viewer.js 側で判断。ここはユーザーが明示的に選んだ値の保存のみ）。 */
+    getPrintQSubtitle: function () { return read(KEYS.printQSubtitle, false) === true; },
+    setPrintQSubtitle: function (on) { write(KEYS.printQSubtitle, !!on); },
+
+    /* お気に入りフォルダ印刷の表紙タイトル（フォルダid → タイトル）。
+       localStorage をこの端末のキャッシュ／未ログイン時のフォールバックとして常に保持し、
+       ログイン中は Worker(user_settings.print_titles) にも保存してアカウントに紐づける。 */
+    getPrintFolderTitles: function () {
+      var m = read(KEYS.printFolderTitles, {});
+      return (m && typeof m === "object" && !Array.isArray(m)) ? m : {};
+    },
+    setPrintFolderTitles: function (map) { write(KEYS.printFolderTitles, map || {}); },
+    getPrintFolderTitle: function (folderId, fallback) {
+      var v = this.getPrintFolderTitles()[String(folderId)];
+      return (typeof v === "string" && v.trim()) ? v : (fallback || "");
+    },
+    // タイトルを保存（空文字を渡すと既定のフォルダ名に戻すためキーを削除する）。
+    // ログイン中はアカウントにも保存する。
+    setPrintFolderTitle: function (folderId, title) {
+      var m = this.getPrintFolderTitles();
+      var t = (title || "").trim();
+      if (t) m[String(folderId)] = t;
+      else delete m[String(folderId)];
+      this.setPrintFolderTitles(m);
+      this.pushPrintTitlesToAccount(m);
+    },
+    pushPrintTitlesToAccount: function (map) {
+      if (typeof Auth === "undefined" || !Auth.getCurrentUser() || typeof Api === "undefined") return;
+      Api.updateUserSettings({ print_titles: map || this.getPrintFolderTitles() }).catch(function () {});
+    },
 
     /* お気に入り大問を含む試験のキャッシュ（この端末のみ）。
        Api.getExam の結果を examId 単位で保持し、次回以降その場で即座に表示できるようにする

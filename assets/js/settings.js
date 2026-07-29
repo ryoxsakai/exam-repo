@@ -113,7 +113,7 @@
   // ログイン中、Worker（user_settings）に保存済みのタブ並び順を取得してこの端末にも反映する
   // （他端末での並べ替えをここにも同期する stale-while-revalidate 方式。未ログイン・未同期時は何もしない）。
   function syncTabOrderFromAccount() {
-    Store.pullTabOrderFromAccount().then(function (data) {
+    Store.pullUserSettingsFromAccount().then(function (data) {
       if (!data) return;
       renderOrderList("main", MAIN_TABS, MAIN_ORDER, el("order-main"));
       renderOrderList("setting", SET_TABS, SET_ORDER, el("order-setting"));

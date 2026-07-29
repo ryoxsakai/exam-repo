@@ -463,6 +463,11 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
 .pr-tree-box { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 4px; max-height: 320px; overflow: auto; }
 .tree-row-pick.selected { background: var(--frost); font-weight: 700; }
 .tree-row-pick.selected .tree-ic { color: var(--blue-dark); }
+/* 印刷タブ: お気に入りフォルダ（階層はインデントで示し、常に展開表示） */
+.tree-row-fav { font-weight: 700; }
+.tree-row-fav .tree-ic { color: #f0a71b; }
+.tree-row-favfolder .tree-ic { color: var(--blue); }
+.tree-count { flex: 0 0 auto; font-size: 11px; color: var(--muted); font-weight: 400; }
 
 .pill {
   display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
@@ -873,6 +878,16 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   border-bottom: 2px dashed var(--line);
 }
 .print-cover .pc-year { font-family: var(--sans); font-size: 26px; font-weight: 700; color: var(--ink-soft); margin-bottom: 22px; letter-spacing: .04em; }
+/* お気に入りフォルダ印刷の表紙タイトル（3行構成のまま中央だけを使う）。
+   上下の行は空でも高さを保ち、試験単位の表紙と同じ位置にタイトルが来るようにする。 */
+.print-cover .pc-year:empty { min-height: 26px; }
+.print-cover .pc-sched:empty { min-height: 24px; }
+/* ダブルタップで編集できるタイトル（プレビューのみ。印刷時は下の @media print で装飾を消す） */
+.pc-title-edit { cursor: text; border-radius: 8px; padding: 2px 10px; transition: background .15s, box-shadow .15s; }
+.pc-title-edit:hover { background: var(--grad-chip); }
+.pc-title-edit.editing {
+  background: #fff; box-shadow: 0 0 0 2px var(--emerald); outline: none;
+}
 .print-cover .pc-uni { font-family: var(--sans); font-size: 42px; font-weight: 800; color: var(--ink); margin-bottom: 18px; }
 .print-cover .pc-sched { font-family: var(--sans); font-size: 24px; font-weight: 600; color: var(--muted); }
 .print-part { margin-top: 8px; }
@@ -964,6 +979,11 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
     height: 92vh; display: flex; flex-direction: column; justify-content: center;
     page-break-after: always; border: 0;
   }
+  /* 編集用の装飾は印刷しない（枠線・背景・パディングを消す） */
+  #print-area.print-out .pc-title-edit { padding: 0 !important; box-shadow: none !important; }
+  /* 空の行は印刷では詰める（お気に入りフォルダの表紙はタイトル1行だけを中央に出す） */
+  #print-area.print-out .print-cover .pc-year:empty,
+  #print-area.print-out .print-cover .pc-sched:empty { margin: 0 !important; min-height: 0 !important; }
   #print-area.print-out .print-cover .pc-year { font-size: 24pt; margin-bottom: 28pt; }
   #print-area.print-out .print-cover .pc-uni { font-size: 36pt; margin-bottom: 22pt; }
   #print-area.print-out .print-cover .pc-sched { font-size: 22pt; }
