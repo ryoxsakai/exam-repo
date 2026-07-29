@@ -11,7 +11,7 @@
   - `assets/js/` … `store`(localStorage) / `auth`(Firebase Auth) / `api`(Worker) / `ui` / `markup` / `corpus` / `onboarding`(使い方ガイド) / `viewer` / `settings`
 - **バックエンド**: `worker/index.ts`（Cloudflare Worker） + `schema.sql`（D1 / SQLite）。`wrangler.toml` で設定。
   - `.github/workflows/worker-deploy.yml` が `worker/**` 変更時に自動デプロイ。
-- **認証**: Firebase Authentication（Googleログイン）。Firestore 等のデータストアは使わず、ログイン識別のみに使用（`assets/js/auth.js`。config はコード内に直書き。値は公開情報のため秘匿不要）。閲覧ページ・設定ページの両方に組み込み済み（お気に入り、およびタブ並び順のアカウント同期に使用）。
+- **認証**: Firebase Authentication（Googleログイン）。Firestore 等のデータストアは使わず、ログイン識別のみに使用（`assets/js/auth.js`。config はコード内に直書き。値は公開情報のため秘匿不要）。閲覧ページ・設定ページの両方に組み込み済み（お気に入り、タブ並び順・お気に入りフォルダ印刷の表紙タイトルのアカウント同期に使用）。
 
 > フロントは各 HTML の `<head>` にキャッシュ無効化メタ + アセットURLの `?v=` クエリでキャッシュをクリアする。
 
@@ -66,9 +66,9 @@
 | `POST /api/upload` / `GET /api/image/:key` | 問題画像を R2 へ保存 / 配信（`wrangler.toml` の `[[r2_buckets]] binding=IMAGES`） |
 | `GET/POST /api/favorites` `DELETE /api/favorites/:examId/:questionNumber` | ログインユーザーの大問お気に入り（要 `Authorization: Bearer <Firebase IDトークン>`）。GET は `favorites` に加え `folders`（フォルダ一覧）も返す |
 | `POST /api/favorite-folders` `PUT/DELETE /api/favorite-folders/:id` `POST /api/favorite-folders/reorder` | お気に入りフォルダの作成・改名・削除・並べ替え（要ログイン） |
-| `GET/PUT /api/user-settings` | ログインユーザーごとの端末をまたぐ設定（要ログイン。現状は `tab_order_main`/`tab_order_setting`=タブ並び順のみ）。PUT は渡されたキーだけを部分更新する |
+| `GET/PUT /api/user-settings` | ログインユーザーごとの端末をまたぐ設定（要ログイン。`tab_order_main`/`tab_order_setting`=タブ並び順、`print_titles`=お気に入りフォルダ印刷の表紙タイトル `{フォルダid:タイトル}`）。PUT は渡されたキーだけを部分更新する |
 
-データモデル: `universities`(name, reading=よみがな, abbreviation=略称表示用) 1—N `exams`(year, schedule) 1—N `questions`(question_number, label, problem_text, answer_text, commentary_text)。`label` は大問の表示ラベル（任意。例「1A」。空なら「大問」+`question_number` を表示する表示専用の上書き。並び順・識別は常に整数 `question_number` を使用）。`favorites`(uid, exam_id, question_number) は `questions.id` ではなく他APIと同じ `(exam_id, question_number)` で大問を識別する。`favorite_folders`(uid, name, parent_id, sort_order) は自己参照の `parent_id`（NULL=ルート直下）で階層化し、`favorites` にも同じ意味の `folder_id`/`sort_order` を持たせて、フォルダとお気に入りをまとめて1つの表示順（コンテナ=uid+parent_id/folder_id 内の `sort_order`）で並べる。`user_settings`(uid PRIMARY KEY, tab_order_main, tab_order_setting) はログインユーザー1人につき1行で、各列はタブid配列のJSON文字列（未設定は空文字列）。
+データモデル: `universities`(name, reading=よみがな, abbreviation=略称表示用) 1—N `exams`(year, schedule) 1—N `questions`(question_number, label, problem_text, answer_text, commentary_text)。`label` は大問の表示ラベル（任意。例「1A」。空なら「大問」+`question_number` を表示する表示専用の上書き。並び順・識別は常に整数 `question_number` を使用）。`favorites`(uid, exam_id, question_number) は `questions.id` ではなく他APIと同じ `(exam_id, question_number)` で大問を識別する。`favorite_folders`(uid, name, parent_id, sort_order) は自己参照の `parent_id`（NULL=ルート直下）で階層化し、`favorites` にも同じ意味の `folder_id`/`sort_order` を持たせて、フォルダとお気に入りをまとめて1つの表示順（コンテナ=uid+parent_id/folder_id 内の `sort_order`）で並べる。`user_settings`(uid PRIMARY KEY, tab_order_main, tab_order_setting, print_titles) はログインユーザー1人につき1行で、`tab_order_*` はタブid配列、`print_titles` は `{フォルダid:タイトル}` のJSON文字列（いずれも未設定は空文字列）。
 
 ### 認証（Firebase Auth / Googleログイン）
 
@@ -99,17 +99,29 @@
 
 - 閲覧ページのタブ（`order-main`）・設定ページのタブ（`order-setting`）は、設定ページの「メイン設定」タブにある2つの縦リストでも並べ替えできる（タブ名の変更も同じ場所で行うため残している）。各項目は `.grip` ハンドルから同じ `UI.makeSortableList` で並べ替える。並べ替えるとその場で `Store.setTabOrder` に保存し、`page === "setting"` なら設定ページ自身のタブバーへ即時反映する。
 - 並べ替えのたびに `Store.pushTabOrderToAccount(page, order)` でログイン中なら Worker（`PUT /api/user-settings`）へも保存し、他端末でも同じ並び順になるようにする（未ログイン時は今までどおり localStorage のみ）。設定ページにも `assets/js/auth.js` を組み込み済み（Firebase Auth はブラウザに永続化されるため、閲覧ページで一度ログインしていれば設定ページでも自動的にログイン状態として扱われる。設定ページのトップバーにもログイン/ログアウトボタンを追加済み）。
-- ページ初期化時（`init()`）は常にまず localStorage の並び順で即座にタブを構築し、その後ログイン中であれば `Store.pullTabOrderFromAccount()` で Worker から取得した値を stale-while-revalidate 方式で上書き・再描画する（`viewer.js` の `syncTabOrderFromAccount`／`settings.js` の同名関数。閲覧ページの `main` タブ順・設定ページの `main`/`setting` 両方のタブ順を対象）。
+- ページ初期化時（`init()`）は常にまず localStorage の並び順で即座にタブを構築し、その後ログイン中であれば `Store.pullUserSettingsFromAccount()` で Worker から取得した値を stale-while-revalidate 方式で上書き・再描画する（`viewer.js` の `syncTabOrderFromAccount`／`settings.js` の同名関数。閲覧ページの `main` タブ順・設定ページの `main`/`setting` 両方のタブ順を対象）。
 
 ### 問題印刷タブ（`assets/js/viewer.js`）
 
 ツリーで大学→年度→方式を選ぶと、その方式の全大問を「表紙 → 問題面 → 解答・解説面」の順に印刷する。セクションは `isAnswerSide`（`/解答|解説|和訳|訳|答|講評/`）で問題面／解答面に振り分ける。プレビュー（`.print-doc`）と実際の印刷（`#print-area.print-out`）は同じ HTML・同じルートクラス（`printDocClasses`）を使うため見た目が一致する。印刷オプションはいずれもこの端末（localStorage）に保存され、次回以降も復元される。
 
+印刷対象は `state.printSel.kind` で切り替える（`"exam"`=大学/年度/方式、`"favFolder"`=お気に入りフォルダ）。大問の識別は `printQKey(q)`（`exam_id:question_number`）に統一されており、お気に入りフォルダのように複数の試験の大問が混ざって `question_number` が衝突しても正しく扱える。
+
 - **表紙をつける**（`pr-cover`）
 - **「問題」「本文」「設問」のラベルを外す**（`pr-hide-labels` / `Store.getPrintHideLabels`）: `printField` がこの3種（`LABEL_HIDABLE`）のセクション名見出しを出力しなくなり、中身だけが印刷される。解答・解説・全訳などはどのセクションか分からなくなると困るため対象外で、常にラベルを出す。
 - **大問ごとに改ページ**（`pr-qbreak` / `Store.getPrintQPageBreak`）: ルート要素に `qbreak` クラスを付け、`@media print` の `#print-area.print-out.qbreak .print-q + .print-q { page-break-before: always }` で2つ目以降の大問を新しいページから始める（各パート先頭の大問は `.print-part + .print-part` の改ページで既に新ページ）。画面のプレビューでは破線で改ページ位置を示す。
 - **文字サイズ / 行間**（`pr-fontsize` / `pr-lineheight`。表紙以外に適用）
+- **大問見出しに通し番号・試験情報を入れる**（`pr-qsubtitle` / `Store.getPrintQSubtitle`）: `printQHeading` が「大問3」の代わりに「1. 2018 関西医科 前期 大問3」形式で出力する。通し番号は印刷順（`printQuestions` の並び）での位置に固定するため、問題面と解答面で同じ大問が同じ番号になる。試験情報は各大問に添えた `q._ctx`（`{year, university_name, schedule}`）から作る。
 - **印刷する大問 / セクションの選択**（`renderPrintSectionControls`。セクションの取捨は閲覧モーダルと共通の `Store.isPrintSection`）
+
+#### お気に入りフォルダの一括印刷
+
+- 印刷ツリーの冒頭に「お気に入り」ノード（`printFavTreeHtml`）を出し、フォルダを選ぶとそのフォルダのお気に入り大問をまとめて印刷できる（要ログイン。未ログイン時・フォルダが無い場合は案内文を出し、大学ツリーは通常どおり使える）。
+- 対象は `favoritesInFolder(folderId)` が**サブフォルダも再帰的に**辿って集めた大問で、順序はユーザーがお気に入りタブで並べた表示順（`sort_order`）をそのまま使う（`printQuestions` は `kind === "favFolder"` のとき大問番号でのソートをしない）。
+- フォルダ行は階層をインデントで示しつつ**すべて選択可能**にしている（選択と開閉が競合しないよう、フォルダ側は常に展開表示）。各行に配下の問数を表示する。
+- 表紙は試験単位と同じ3行構成のまま、**中央（`.pc-uni`）にだけフォルダのタイトル**を出し上下の行は空にする（`:empty` に `min-height` を与えてプレビューの位置を揃え、印刷時は詰める）。
+- 表紙タイトルは既定でフォルダ名。プレビュー上で**ダブルタップ（ダブルクリック）すると `contenteditable` で編集**でき（`wirePrintTitleEdit`。スマホで `dblclick` が出ない場合に備えタップ2回も自前で判定）、Enter/フォーカス外れで確定、Escで取り消し。空にすると既定のフォルダ名へ戻る。
+- タイトルは `Store.getPrintFolderTitle`/`setPrintFolderTitle`（localStorage `exam_print_folder_titles`）に保存し、ログイン中は `PUT /api/user-settings` の `print_titles`（`{フォルダid: タイトル}`）で**Googleアカウントにも保存**して他端末でも復元される（`Store.pullUserSettingsFromAccount`）。
 
 ### 使い方ガイド（オンボーディング。`assets/js/onboarding.js` / `viewer.js`）
 
@@ -145,5 +157,5 @@
 ## 設定の保存先
 
 - **Worker(D1) config**: サイトタイトル / 方式(schedules) / 年度(year_presets) … 全端末で共有
-- **Worker(D1) user_settings**: タブ順（Googleログイン時のみ。`GET/PUT /api/user-settings`）… ログインアカウントに紐づけて端末をまたいで共有
-- **localStorage**: Worker URL / タブ順（未ログイン時、またはログイン時もこの端末用のフォールバックとして常に保存） / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`) / 印刷オプション（文字サイズ・行間・対象セクション、ラベルを外す(`exam_print_hide_labels`)・大問ごとに改ページ(`exam_print_qbreak`)）
+- **Worker(D1) user_settings**: タブ順 / お気に入りフォルダ印刷の表紙タイトル（Googleログイン時のみ。`GET/PUT /api/user-settings`）… ログインアカウントに紐づけて端末をまたいで共有
+- **localStorage**: Worker URL / タブ順（未ログイン時、またはログイン時もこの端末用のフォールバックとして常に保存） / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`) / 印刷オプション（文字サイズ・行間・対象セクション、ラベルを外す(`exam_print_hide_labels`)・大問ごとに改ページ(`exam_print_qbreak`)・通し番号つき見出し(`exam_print_qsubtitle`)） / お気に入りフォルダ印刷の表紙タイトル(`exam_print_folder_titles`。ログイン時はアカウントにも保存)
