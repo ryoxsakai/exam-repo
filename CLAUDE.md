@@ -66,9 +66,9 @@
 | `POST /api/upload` / `GET /api/image/:key` | 問題画像を R2 へ保存 / 配信（`wrangler.toml` の `[[r2_buckets]] binding=IMAGES`） |
 | `GET/POST /api/favorites` `DELETE /api/favorites/:examId/:questionNumber` | ログインユーザーの大問お気に入り（要 `Authorization: Bearer <Firebase IDトークン>`）。GET は `favorites` に加え `folders`（フォルダ一覧）も返す |
 | `POST /api/favorite-folders` `PUT/DELETE /api/favorite-folders/:id` `POST /api/favorite-folders/reorder` | お気に入りフォルダの作成・改名・削除・並べ替え（要ログイン） |
-| `GET/PUT /api/user-settings` | ログインユーザーごとの端末をまたぐ設定（要ログイン。`tab_order_main`/`tab_order_setting`=タブ並び順、`print_titles`=お気に入りフォルダ印刷の表紙タイトル `{フォルダid:タイトル}`）。PUT は渡されたキーだけを部分更新する |
+| `GET/PUT /api/user-settings` | ログインユーザーごとの端末をまたぐ設定（要ログイン。`tab_order_main`/`tab_order_setting`=タブ並び順、`print_titles`=お気に入りフォルダ印刷の表紙タイトル `{フォルダid:{top,mid,bottom}}`）。PUT は渡されたキーだけを部分更新する |
 
-データモデル: `universities`(name, reading=よみがな, abbreviation=略称表示用) 1—N `exams`(year, schedule) 1—N `questions`(question_number, label, problem_text, answer_text, commentary_text)。`label` は大問の表示ラベル（任意。例「1A」。空なら「大問」+`question_number` を表示する表示専用の上書き。並び順・識別は常に整数 `question_number` を使用）。`favorites`(uid, exam_id, question_number) は `questions.id` ではなく他APIと同じ `(exam_id, question_number)` で大問を識別する。`favorite_folders`(uid, name, parent_id, sort_order) は自己参照の `parent_id`（NULL=ルート直下）で階層化し、`favorites` にも同じ意味の `folder_id`/`sort_order` を持たせて、フォルダとお気に入りをまとめて1つの表示順（コンテナ=uid+parent_id/folder_id 内の `sort_order`）で並べる。`user_settings`(uid PRIMARY KEY, tab_order_main, tab_order_setting, print_titles) はログインユーザー1人につき1行で、`tab_order_*` はタブid配列、`print_titles` は `{フォルダid:タイトル}` のJSON文字列（いずれも未設定は空文字列）。
+データモデル: `universities`(name, reading=よみがな, abbreviation=略称表示用) 1—N `exams`(year, schedule) 1—N `questions`(question_number, label, problem_text, answer_text, commentary_text)。`label` は大問の表示ラベル（任意。例「1A」。空なら「大問」+`question_number` を表示する表示専用の上書き。並び順・識別は常に整数 `question_number` を使用）。`favorites`(uid, exam_id, question_number) は `questions.id` ではなく他APIと同じ `(exam_id, question_number)` で大問を識別する。`favorite_folders`(uid, name, parent_id, sort_order) は自己参照の `parent_id`（NULL=ルート直下）で階層化し、`favorites` にも同じ意味の `folder_id`/`sort_order` を持たせて、フォルダとお気に入りをまとめて1つの表示順（コンテナ=uid+parent_id/folder_id 内の `sort_order`）で並べる。`user_settings`(uid PRIMARY KEY, tab_order_main, tab_order_setting, print_titles) はログインユーザー1人につき1行で、`tab_order_*` はタブid配列、`print_titles` は `{フォルダid:{top,mid,bottom}}` のJSON文字列（値が文字列なら中央行のみの旧形式）（いずれも未設定は空文字列）。
 
 ### 認証（Firebase Auth / Googleログイン）
 
@@ -119,9 +119,9 @@
 - 印刷ツリーの冒頭に「お気に入り」ノード（`printFavTreeHtml`）を出し、フォルダを選ぶとそのフォルダのお気に入り大問をまとめて印刷できる（要ログイン。未ログイン時・フォルダが無い場合は案内文を出し、大学ツリーは通常どおり使える）。
 - 対象は `favoritesInFolder(folderId)` が**サブフォルダも再帰的に**辿って集めた大問で、順序はユーザーがお気に入りタブで並べた表示順（`sort_order`）をそのまま使う（`printQuestions` は `kind === "favFolder"` のとき大問番号でのソートをしない）。
 - フォルダ行は階層をインデントで示しつつ**すべて選択可能**にしている（選択と開閉が競合しないよう、フォルダ側は常に展開表示）。各行に配下の問数を表示する。
-- 表紙は試験単位と同じ3行構成のまま、**中央（`.pc-uni`）にだけフォルダのタイトル**を出し上下の行は空にする（`:empty` に `min-height` を与えてプレビューの位置を揃え、印刷時は詰める）。
-- 表紙タイトルは既定でフォルダ名。プレビュー上で**ダブルタップ（ダブルクリック）すると `contenteditable` で編集**でき（`wirePrintTitleEdit`。スマホで `dblclick` が出ない場合に備えタップ2回も自前で判定）、Enter/フォーカス外れで確定、Escで取り消し。空にすると既定のフォルダ名へ戻る。
-- タイトルは `Store.getPrintFolderTitle`/`setPrintFolderTitle`（localStorage `exam_print_folder_titles`）に保存し、ログイン中は `PUT /api/user-settings` の `print_titles`（`{フォルダid: タイトル}`）で**Googleアカウントにも保存**して他端末でも復元される（`Store.pullUserSettingsFromAccount`）。
+- 表紙は試験単位と同じ3行構成（上=`.pc-year` / 中央=`.pc-uni` / 下=`.pc-sched`）。**中央は既定でフォルダ名、上下は空**で、3行いずれも**ダブルタップ（ダブルクリック）で `contenteditable` 編集**できる（`wirePrintTitleEdit`。スマホで `dblclick` が出ない場合に備えタップ2回も自前で判定）。Enter/フォーカス外れで確定、Escで取り消し。中央を空にすると既定のフォルダ名へ戻り、上下は空のまま。
+- 空の行は中身が無いとクリック領域が潰れてダブルタップできないため、`.pc-title-edit` に `min-height`/`min-width` と**薄いグレーの背景（`--line-soft`）＋破線枠**を与えてタップ範囲を可視化する。この装飾は `@media print` 側で `background: transparent` / `border: 0` / `min-height: 0` / `padding: 0` に打ち消すため、**紙の上では白紙のまま**入力した行の文字だけが出る。
+- タイトルは `Store.getPrintFolderTitleParts`/`setPrintFolderTitlePart`（localStorage `exam_print_folder_titles`）に保存し、ログイン中は `PUT /api/user-settings` の `print_titles`（`{フォルダid: {top, mid, bottom}}`）で**Googleアカウントにも保存**して他端末でも復元される（`Store.pullUserSettingsFromAccount`）。値が**文字列の場合は中央行だけを保存した旧形式**として読む（後方互換）。空になった行はキーから外し、3行すべて空ならフォルダのキー自体を削除する。
 
 ### 使い方ガイド（オンボーディング。`assets/js/onboarding.js` / `viewer.js`）
 

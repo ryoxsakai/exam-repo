@@ -1589,13 +1589,19 @@
     var html = "";
     if (opts.cover) {
       if (ex.kind === "favFolder") {
-        // お気に入りフォルダ: 試験単位と同じ3行構成のまま、中央にフォルダのタイトルだけを出す
-        // （上下の行は空。タイトルはダブルタップで編集可能）。
+        // お気に入りフォルダ: 試験単位と同じ3行構成。中央は既定でフォルダ名、上下は空。
+        // 3行いずれもダブルタップで編集でき、空の行も確実にタップできるよう
+        // プレビューでは薄いグレーの領域を出す（印刷では消える。CSS の .pc-title-edit 参照）。
+        var p = ex.titleParts || { top: "", mid: ex.title || "", bottom: "" };
+        var line = function (cls, part, text) {
+          return '<div class="' + cls + ' pc-title-edit" data-print-title="' + esc(String(ex.folderId)) +
+            '" data-part="' + part + '" title="ダブルタップ（ダブルクリック）で編集">' + esc(text) + "</div>";
+        };
         html += '<div class="print-cover">' +
-          '<div class="pc-year"></div>' +
-          '<div class="pc-uni pc-title-edit" data-print-title="' + esc(String(ex.folderId)) +
-            '" title="ダブルタップ（ダブルクリック）でタイトルを編集">' + esc(ex.title) + "</div>" +
-          '<div class="pc-sched"></div></div>';
+          line("pc-year", "top", p.top) +
+          line("pc-uni", "mid", p.mid) +
+          line("pc-sched", "bottom", p.bottom) +
+          "</div>";
       } else {
         html += '<div class="print-cover">' +
           '<div class="pc-year">' + esc(ex.year) + "年度</div>" +
@@ -1728,10 +1734,20 @@
     return out;
   }
 
-  // フォルダの表紙タイトル（ユーザーが編集していればそれ、無ければフォルダ名）
-  function favFolderTitle(folderId) {
+  // フォルダの表紙3行（上・中央・下）。中央は未設定ならフォルダ名を既定にし、
+  // 上下は既定では空（ユーザーがダブルタップで入力したときだけ出る）。
+  function favFolderTitleParts(folderId) {
     var f = (state.favFolders || []).filter(function (x) { return Number(x.id) === Number(folderId); })[0];
-    return Store.getPrintFolderTitle(folderId, f ? f.name : "お気に入り");
+    var saved = Store.getPrintFolderTitleParts(folderId);
+    return {
+      top: saved.top || "",
+      mid: saved.mid || (f ? f.name : "お気に入り"),
+      bottom: saved.bottom || ""
+    };
+  }
+  // 表紙中央の行（一覧・プレビューのタイトル表示用）
+  function favFolderTitle(folderId) {
+    return favFolderTitleParts(folderId).mid;
   }
 
   // 印刷ツリー冒頭の「お気に入り」ノード。フォルダは階層をインデントで示しつつ
@@ -1805,7 +1821,9 @@
           return;
         }
         state.printExam = {
-          kind: "favFolder", folderId: folderId, title: favFolderTitle(folderId), questions: questions
+          kind: "favFolder", folderId: folderId,
+          title: favFolderTitle(folderId), titleParts: favFolderTitleParts(folderId),
+          questions: questions
         };
         state.printQSel = {};
         questions.forEach(function (q) { state.printQSel[printQKey(q)] = true; });
@@ -1942,55 +1960,64 @@
     wirePrintTitleEdit();
   }
 
-  // 表紙のフォルダタイトルをダブルタップ（ダブルクリック）で編集できるようにする。
+  // 表紙の3行（上・中央・下）をそれぞれダブルタップ（ダブルクリック）で編集できるようにする。
   // 確定時は Store 経由でこの端末に保存し、ログイン中はアカウントにも保存する。
+  // 空の行もタップできるよう、CSS の .pc-title-edit で最小の高さと薄いグレーの領域を与えている。
   function wirePrintTitleEdit() {
-    var node = $("[data-print-title]", el("print-preview"));
-    if (!node) return;
-    var folderId = node.getAttribute("data-print-title");
+    $all("[data-print-title]", el("print-preview")).forEach(function (node) {
+      var folderId = node.getAttribute("data-print-title");
+      var part = node.getAttribute("data-part");
 
-    function beginEdit() {
-      if (node.getAttribute("contenteditable") === "true") return;
-      node.setAttribute("contenteditable", "true");
-      node.classList.add("editing");
-      node.focus();
-      // 全選択して置き換えやすくする
-      var r = document.createRange();
-      r.selectNodeContents(node);
-      var s = window.getSelection();
-      s.removeAllRanges();
-      s.addRange(r);
-    }
-    function commit() {
-      if (node.getAttribute("contenteditable") !== "true") return;
-      node.setAttribute("contenteditable", "false");
-      node.classList.remove("editing");
-      var t = (node.textContent || "").trim();
-      Store.setPrintFolderTitle(folderId, t);
-      // 空にしたらフォルダ名へ戻す
-      var title = favFolderTitle(folderId);
-      if (state.printExam) state.printExam.title = title;
-      node.textContent = title;
-      UI.toast(t ? "表紙のタイトルを保存しました" : "表紙のタイトルをフォルダ名に戻しました", "ok");
-    }
-
-    node.addEventListener("dblclick", beginEdit);
-    // スマホ: 一部ブラウザで dblclick が出ないことがあるため、タップ2回を自前でも判定する
-    var lastTap = 0;
-    node.addEventListener("touchend", function () {
-      var now = Date.now();
-      if (now - lastTap < 350) { beginEdit(); lastTap = 0; return; }
-      lastTap = now;
-    });
-    node.addEventListener("blur", commit);
-    node.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") { e.preventDefault(); node.blur(); }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        node.textContent = favFolderTitle(folderId);
+      function beginEdit() {
+        if (node.getAttribute("contenteditable") === "true") return;
+        node.setAttribute("contenteditable", "true");
+        node.classList.add("editing");
+        node.focus();
+        // 中身があるときは全選択して置き換えやすくする（空のときはそのままカーソルを置く）
+        if ((node.textContent || "").length) {
+          var r = document.createRange();
+          r.selectNodeContents(node);
+          var s = window.getSelection();
+          s.removeAllRanges();
+          s.addRange(r);
+        }
+      }
+      function commit() {
+        if (node.getAttribute("contenteditable") !== "true") return;
         node.setAttribute("contenteditable", "false");
         node.classList.remove("editing");
+        var t = (node.textContent || "").trim();
+        Store.setPrintFolderTitlePart(folderId, part, t);
+        // 中央行を空にしたらフォルダ名へ戻す（上下は空のまま）
+        var parts = favFolderTitleParts(folderId);
+        if (state.printExam) {
+          state.printExam.titleParts = parts;
+          state.printExam.title = parts.mid;
+        }
+        node.textContent = part === "top" ? parts.top : part === "bottom" ? parts.bottom : parts.mid;
+        UI.toast(t ? "表紙の文字を保存しました"
+                   : (part === "mid" ? "表紙のタイトルをフォルダ名に戻しました" : "表紙の行を空にしました"), "ok");
       }
+
+      node.addEventListener("dblclick", beginEdit);
+      // スマホ: 一部ブラウザで dblclick が出ないことがあるため、タップ2回を自前でも判定する
+      var lastTap = 0;
+      node.addEventListener("touchend", function () {
+        var now = Date.now();
+        if (now - lastTap < 350) { beginEdit(); lastTap = 0; return; }
+        lastTap = now;
+      });
+      node.addEventListener("blur", commit);
+      node.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); node.blur(); }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          var cur = favFolderTitleParts(folderId);
+          node.textContent = part === "top" ? cur.top : part === "bottom" ? cur.bottom : cur.mid;
+          node.setAttribute("contenteditable", "false");
+          node.classList.remove("editing");
+        }
+      });
     });
   }
 
