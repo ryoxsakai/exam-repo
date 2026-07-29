@@ -307,25 +307,44 @@
     getPrintQSubtitle: function () { return read(KEYS.printQSubtitle, false) === true; },
     setPrintQSubtitle: function (on) { write(KEYS.printQSubtitle, !!on); },
 
-    /* お気に入りフォルダ印刷の表紙タイトル（フォルダid → タイトル）。
+    /* お気に入りフォルダ印刷の表紙タイトル（フォルダid → {top, mid, bottom} の3行）。
        localStorage をこの端末のキャッシュ／未ログイン時のフォールバックとして常に保持し、
-       ログイン中は Worker(user_settings.print_titles) にも保存してアカウントに紐づける。 */
+       ログイン中は Worker(user_settings.print_titles) にも保存してアカウントに紐づける。
+       値が文字列の場合は中央行だけを保存した旧形式として読む（後方互換）。 */
     getPrintFolderTitles: function () {
       var m = read(KEYS.printFolderTitles, {});
       return (m && typeof m === "object" && !Array.isArray(m)) ? m : {};
     },
     setPrintFolderTitles: function (map) { write(KEYS.printFolderTitles, map || {}); },
-    getPrintFolderTitle: function (folderId, fallback) {
+    // 保存済みの3行を返す（未設定の行は空文字）。旧形式の文字列は中央行として扱う。
+    getPrintFolderTitleParts: function (folderId) {
       var v = this.getPrintFolderTitles()[String(folderId)];
-      return (typeof v === "string" && v.trim()) ? v : (fallback || "");
+      if (typeof v === "string") return { top: "", mid: v, bottom: "" };
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        return {
+          top: typeof v.top === "string" ? v.top : "",
+          mid: typeof v.mid === "string" ? v.mid : "",
+          bottom: typeof v.bottom === "string" ? v.bottom : ""
+        };
+      }
+      return { top: "", mid: "", bottom: "" };
     },
-    // タイトルを保存（空文字を渡すと既定のフォルダ名に戻すためキーを削除する）。
-    // ログイン中はアカウントにも保存する。
-    setPrintFolderTitle: function (folderId, title) {
+    // 1行だけ保存する（part は "top"|"mid"|"bottom"）。空文字にするとその行を未設定に戻し、
+    // 3行すべて未設定になればフォルダのキー自体を削除する。ログイン中はアカウントにも保存。
+    setPrintFolderTitlePart: function (folderId, part, value) {
       var m = this.getPrintFolderTitles();
-      var t = (title || "").trim();
-      if (t) m[String(folderId)] = t;
-      else delete m[String(folderId)];
+      var parts = this.getPrintFolderTitleParts(folderId);
+      parts[part] = (value || "").trim();
+      var key = String(folderId);
+      if (parts.top || parts.mid || parts.bottom) {
+        var out = {};
+        if (parts.top) out.top = parts.top;
+        if (parts.mid) out.mid = parts.mid;
+        if (parts.bottom) out.bottom = parts.bottom;
+        m[key] = out;
+      } else {
+        delete m[key];
+      }
       this.setPrintFolderTitles(m);
       this.pushPrintTitlesToAccount(m);
     },
