@@ -883,11 +883,16 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
    （印刷時は下の @media print で背景も最小高さも消すため、白紙のまま出力される）。 */
 .pc-title-edit {
   cursor: text; border-radius: 8px; padding: 2px 10px; outline: none;
+  box-sizing: border-box;
   background: var(--line-soft); transition: background .15s, box-shadow .15s;
-  /* 空でもタップ領域を確保する（各行の文字サイズに合わせた最小高さ） */
+  /* 空でもタップ領域を確保する（各行の文字サイズに合わせた最小高さ）。
+     横幅はブロック要素として親いっぱいに広がるので下限を指定しない
+     — min-width を付けると .pc-uni の大きな文字サイズで em 換算され
+     （42px × 8em = 336px）、モバイルでカード幅を超えてはみ出す。
+     min-width は max-width より優先されるため max-width:100% では防げない。 */
   min-height: 1.4em;
-  /* 中身が無いときに横幅が潰れないよう、行の中央に一定幅の帯を出す */
-  min-width: 8em; margin-left: auto; margin-right: auto; max-width: 100%;
+  /* 長いタイトルは折り返してはみ出させない */
+  overflow-wrap: anywhere; word-break: break-word;
 }
 .pc-title-edit:hover { background: var(--grad-chip); }
 .pc-title-edit.editing { background: #fff; box-shadow: 0 0 0 2px var(--emerald); }
@@ -909,6 +914,19 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 .print-doc.qbreak .print-q + .print-q,
 .print-doc.qbreak .print-part + .print-part .print-q:first-child {
   border-top: 2px dashed var(--line); padding-top: 22px; margin-top: 22px;
+}
+
+/* 印刷プレビューのモバイル表示。実際の印刷は @media print 側（pt指定・ID選択子）が
+   受け持つので、ここは screen に限定して画面プレビューだけを狭い幅に合わせる。 */
+@media screen and (max-width: 640px) {
+  .print-doc { padding: 22px 16px; }
+  .print-cover { padding: 44px 2px; }
+  .print-cover .pc-year { font-size: 18px; margin-bottom: 14px; }
+  .print-cover .pc-uni { font-size: 27px; margin-bottom: 12px; }
+  .print-cover .pc-sched { font-size: 17px; }
+  .pc-title-edit { padding: 2px 8px; }
+  .print-part-head { font-size: 17px; }
+  .print-q-head { font-size: 15px; }
 }
 
 /* ---------- Print: 本文のみ印刷（#print-area 経由） ---------- */
