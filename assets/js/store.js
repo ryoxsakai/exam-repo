@@ -25,7 +25,11 @@
     regDraft:      "exam_reg_draft",         // 問題登録フォームの下書き（リロードしても保持）
     printSections: "exam_print_sections",    // 印刷対象セクション {種別: bool}（全問題で共有）
     printHideLabels: "exam_print_hide_labels", // 印刷時に「問題」「本文」「設問」のセクション名を出さない
-    printQPageBreak: "exam_print_qbreak",    // 印刷時に大問ごとに改ページする
+    printQPageBreak: "exam_print_qbreak",    // （旧）印刷時に大問ごとに改ページする。下の面別キーへ移行済み
+    printQBreakQ:  "exam_print_qbreak_q",    // 問題面で大問ごとに改ページする
+    printQBreakA:  "exam_print_qbreak_a",    // 解答・解説面で大問ごとに改ページする
+    printHideHeadQ: "exam_print_hide_head_q", // 「問題」パート見出しを出さない
+    printHideHeadA: "exam_print_hide_head_a", // 「解答・解説」パート見出しを出さない
     printQSubtitle: "exam_print_qsubtitle",  // 大問見出しを「1. 2018 ○○ 前期 大問3」形式にする
     printLineNumbers: "exam_print_linenum",  // 印刷時、本文セクションに5行ごとの行番号を付ける
     printFolderTitles: "exam_print_folder_titles", // お気に入りフォルダ印刷の表紙タイトル {folderId: title}
@@ -298,9 +302,26 @@
     getPrintHideLabels: function () { return read(KEYS.printHideLabels, false) === true; },
     setPrintHideLabels: function (on) { write(KEYS.printHideLabels, !!on); },
 
-    /* 問題印刷タブ: 大問ごとに改ページする（既定は改ページしない＝続けて印刷） */
-    getPrintQPageBreak: function () { return read(KEYS.printQPageBreak, false) === true; },
-    setPrintQPageBreak: function (on) { write(KEYS.printQPageBreak, !!on); },
+    /* 問題印刷タブ: 大問ごとに改ページする（既定は改ページしない＝続けて印刷）。
+       問題面（side="q"）と解答・解説面（side="a"）で別々に設定できる。
+       面別に分ける前の設定（exam_print_qbreak）が残っている場合はその値を引き継ぐ。 */
+    getPrintQPageBreak: function (side) {
+      var key = side === "a" ? KEYS.printQBreakA : KEYS.printQBreakQ;
+      var v = read(key, null);
+      if (v === null) return read(KEYS.printQPageBreak, false) === true;  // 旧設定から引き継ぎ
+      return v === true;
+    },
+    setPrintQPageBreak: function (side, on) {
+      write(side === "a" ? KEYS.printQBreakA : KEYS.printQBreakQ, !!on);
+    },
+
+    /* 問題印刷タブ: パート見出し（「問題」「解答・解説」）を出さない（既定は出す） */
+    getPrintHidePartHead: function (side) {
+      return read(side === "a" ? KEYS.printHideHeadA : KEYS.printHideHeadQ, false) === true;
+    },
+    setPrintHidePartHead: function (side, on) {
+      write(side === "a" ? KEYS.printHideHeadA : KEYS.printHideHeadQ, !!on);
+    },
 
     /* 問題印刷タブ: 大問見出しを「1. 2018 ○○ 前期 大問3」形式にする（既定は「大問3」だけ）。
        お気に入りフォルダの印刷では大問が複数の試験にまたがるため、この形式が既定で有効になる

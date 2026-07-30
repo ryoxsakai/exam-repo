@@ -229,13 +229,19 @@
         renderPrintPreview();
       });
     }
-    if (el("pr-qbreak")) {
-      el("pr-qbreak").checked = Store.getPrintQPageBreak();
-      el("pr-qbreak").addEventListener("change", function () {
-        Store.setPrintQPageBreak(el("pr-qbreak").checked);
+    // 大問ごとの改ページ・パート見出しの有無は、問題面と解答・解説面で別々に設定する
+    [["pr-qbreak-q", "q", "break"], ["pr-qbreak-a", "a", "break"],
+     ["pr-hide-head-q", "q", "head"], ["pr-hide-head-a", "a", "head"]].forEach(function (t) {
+      var box = el(t[0]);
+      if (!box) return;
+      var side = t[1], kind = t[2];
+      box.checked = kind === "break" ? Store.getPrintQPageBreak(side) : Store.getPrintHidePartHead(side);
+      box.addEventListener("change", function () {
+        if (kind === "break") Store.setPrintQPageBreak(side, box.checked);
+        else Store.setPrintHidePartHead(side, box.checked);
         renderPrintPreview();
       });
-    }
+    });
     if (el("pr-qsubtitle")) {
       el("pr-qsubtitle").checked = Store.getPrintQSubtitle();
       el("pr-qsubtitle").addEventListener("change", function () {
@@ -1622,6 +1628,9 @@
       }
     }
     var qs = printQuestions(ex);
+    // answerSide=false が問題面（print-part-q）、true が解答・解説面（print-part-a）。
+    // 面ごとに「大問ごとの改ページ」「パート見出しを出すか」を切り替えられるよう、
+    // 面を表すクラスを付けておく（改ページの指定は CSS 側で面別に効かせる）。
     function part(title, answerSide) {
       var inner = "";
       qs.forEach(function (q, i) {
@@ -1635,7 +1644,10 @@
         inner += "</div>";
       });
       if (!inner) return "";
-      return '<div class="print-part"><div class="print-part-head">' + esc(title) + "</div>" + inner + "</div>";
+      var hideHead = answerSide ? opts.hideHeadA : opts.hideHeadQ;
+      return '<div class="print-part ' + (answerSide ? "print-part-a" : "print-part-q") + '">' +
+        (hideHead ? "" : '<div class="print-part-head">' + esc(title) + "</div>") +
+        inner + "</div>";
     }
     html += part("問題", false);
     html += part("解答・解説", true);
@@ -1646,7 +1658,10 @@
     return {
       cover: el("pr-cover").checked,
       hideLabels: el("pr-hide-labels") ? el("pr-hide-labels").checked : false,
-      qBreak: el("pr-qbreak") ? el("pr-qbreak").checked : false,
+      qBreakQ: el("pr-qbreak-q") ? el("pr-qbreak-q").checked : false,
+      qBreakA: el("pr-qbreak-a") ? el("pr-qbreak-a").checked : false,
+      hideHeadQ: el("pr-hide-head-q") ? el("pr-hide-head-q").checked : false,
+      hideHeadA: el("pr-hide-head-a") ? el("pr-hide-head-a").checked : false,
       qSubtitle: el("pr-qsubtitle") ? el("pr-qsubtitle").checked : false,
       lineNumbers: el("pr-linenum") ? el("pr-linenum").checked : false
     };
@@ -1867,7 +1882,8 @@
   // プレビュー(.print-doc)と実際の印刷(#print-area.print-out)で同じ指定を使う。
   function printDocClasses(opts) {
     return "fs-" + Store.getPrintFontSize() + " lh-" + Store.getPrintLineHeight() +
-      (opts && opts.qBreak ? " qbreak" : "");
+      (opts && opts.qBreakQ ? " qbreak-q" : "") +
+      (opts && opts.qBreakA ? " qbreak-a" : "");
   }
 
   // 選択中の試験から登場するセクション種別を問題面／解答面に分けてチェックUI化。

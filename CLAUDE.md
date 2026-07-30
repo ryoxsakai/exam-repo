@@ -109,7 +109,8 @@
 
 - **表紙をつける**（`pr-cover`）
 - **「問題」「本文」「設問」のラベルを外す**（`pr-hide-labels` / `Store.getPrintHideLabels`）: `printField` がこの3種（`LABEL_HIDABLE`）のセクション名見出しを出力しなくなり、中身だけが印刷される。解答・解説・全訳などはどのセクションか分からなくなると困るため対象外で、常にラベルを出す。
-- **大問ごとに改ページ**（`pr-qbreak` / `Store.getPrintQPageBreak`）: ルート要素に `qbreak` クラスを付け、`@media print` の `#print-area.print-out.qbreak .print-q + .print-q { page-break-before: always }` で2つ目以降の大問を新しいページから始める（各パート先頭の大問は `.print-part + .print-part` の改ページで既に新ページ）。画面のプレビューでは破線で改ページ位置を示す。
+- **大問ごとに改ページ（問題面／解答・解説面で別々）**（`pr-qbreak-q` / `pr-qbreak-a` / `Store.getPrintQPageBreak(side)`）: ルート要素に `qbreak-q` / `qbreak-a` クラスを付け、`@media print` の `#print-area.print-out.qbreak-q .print-part-q .print-q + .print-q { page-break-before: always }`（解答面は `qbreak-a` / `.print-part-a`）で2つ目以降の大問を新しいページから始める（各パート先頭の大問は `.print-part + .print-part` の改ページで既に新ページ）。面の区別のため `part()` が `.print-part-q` / `.print-part-a` を付けている。画面のプレビューでは破線で改ページ位置を示す。面別に分ける前の設定（`exam_print_qbreak`）が残っている場合はその値を両面に引き継ぐ。
+- **パート見出しを外す（問題面／解答・解説面で別々）**（`pr-hide-head-q` / `pr-hide-head-a` / `Store.getPrintHidePartHead(side)`）: `part()` が `.print-part-head`（「問題」「解答・解説」）を出力しなくなる。
 - **文字サイズ / 行間**（`pr-fontsize` / `pr-lineheight`。表紙以外に適用）
 - **大問見出しに通し番号・試験情報を入れる**（`pr-qsubtitle` / `Store.getPrintQSubtitle`）: `printQHeading` が「大問3」の代わりに「1. 2018 関西医科 前期 大問3」形式で出力する。通し番号は印刷順（`printQuestions` の並び）での位置に固定するため、問題面と解答面で同じ大問が同じ番号になる。試験情報は各大問に添えた `q._ctx`（`{year, university_name, schedule}`）から作る。
 - **印刷する大問 / セクションの選択**（`renderPrintSectionControls`。セクションの取捨は閲覧モーダルと共通の `Store.isPrintSection`）
@@ -167,4 +168,4 @@
 
 - **Worker(D1) config**: サイトタイトル / 方式(schedules) / 年度(year_presets) … 全端末で共有
 - **Worker(D1) user_settings**: タブ順 / お気に入りフォルダ印刷の表紙タイトル（Googleログイン時のみ。`GET/PUT /api/user-settings`）… ログインアカウントに紐づけて端末をまたいで共有
-- **localStorage**: Worker URL / タブ順（未ログイン時、またはログイン時もこの端末用のフォールバックとして常に保存） / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`) / 印刷オプション（文字サイズ・行間・対象セクション、ラベルを外す(`exam_print_hide_labels`)・大問ごとに改ページ(`exam_print_qbreak`)・通し番号つき見出し(`exam_print_qsubtitle`)・5行ごとの行番号(`exam_print_linenum`)） / お気に入りフォルダ印刷の表紙タイトル(`exam_print_folder_titles`。ログイン時はアカウントにも保存)
+- **localStorage**: Worker URL / タブ順（未ログイン時、またはログイン時もこの端末用のフォールバックとして常に保存） / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`) / 印刷オプション（文字サイズ・行間・対象セクション、ラベルを外す(`exam_print_hide_labels`)・大問ごとに改ページ(`exam_print_qbreak_q`/`exam_print_qbreak_a`)・パート見出しを外す(`exam_print_hide_head_q`/`exam_print_hide_head_a`)・通し番号つき見出し(`exam_print_qsubtitle`)・5行ごとの行番号(`exam_print_linenum`)） / お気に入りフォルダ印刷の表紙タイトル(`exam_print_folder_titles`。ログイン時はアカウントにも保存)

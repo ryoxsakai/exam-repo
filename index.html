@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+JP:wght@400;500;600;700;800&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="assets/css/main.css?v=20260731a" />
+  <link rel="stylesheet" href="assets/css/main.css?v=20260731b" />
 </head>
 <body>
   <!-- ===== Topbar ===== -->
@@ -127,8 +127,14 @@
           <label class="check-inline"><input type="checkbox" id="pr-cover" checked> <span>表紙をつける</span></label>
           <label class="check-inline" title="「問題」「本文」「設問」の見出しを出さずに中身だけを印刷します（解答・解説・全訳などの見出しは残ります）">
             <input type="checkbox" id="pr-hide-labels"> <span>「問題」「本文」「設問」のラベルを外す</span></label>
-          <label class="check-inline" title="大問1つごとに新しいページから印刷します">
-            <input type="checkbox" id="pr-qbreak"> <span>大問ごとに改ページ</span></label>
+          <label class="check-inline" title="問題面で、大問1つごとに新しいページから印刷します">
+            <input type="checkbox" id="pr-qbreak-q"> <span>問題面：大問ごとに改ページ</span></label>
+          <label class="check-inline" title="解答・解説面で、大問1つごとに新しいページから印刷します">
+            <input type="checkbox" id="pr-qbreak-a"> <span>解答面：大問ごとに改ページ</span></label>
+          <label class="check-inline" title="問題面の先頭にある「問題」の見出しを出しません">
+            <input type="checkbox" id="pr-hide-head-q"> <span>「問題」ヘッダーを外す</span></label>
+          <label class="check-inline" title="解答・解説面の先頭にある「解答・解説」の見出しを出しません">
+            <input type="checkbox" id="pr-hide-head-a"> <span>「解答・解説」ヘッダーを外す</span></label>
           <label class="check-inline" title="大問の見出しを「1. 2018 関西医科 前期 大問3」のように通し番号＋試験情報つきにします">
             <input type="checkbox" id="pr-qsubtitle"> <span>大問見出しに通し番号・試験情報を入れる</span></label>
           <label class="check-inline" title="本文セクションの左側に5行ごとの行番号を付けます（大問ごとに1から数え直します）">
@@ -335,7 +341,7 @@
   <!-- Firebase Authentication（Googleログイン用。Firestore等は未使用） -->
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="assets/js/store.js?v=20260729b"></script>
+  <script src="assets/js/store.js?v=20260731b"></script>
   <script src="assets/js/auth.js?v=20260706a"></script>
   <script src="assets/js/api.js?v=20260723a"></script>
   <script src="assets/js/ui.js?v=20260726a"></script>
@@ -343,6 +349,6 @@
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260701h"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/viewer.js?v=20260731a"></script>
+  <script src="assets/js/viewer.js?v=20260731b"></script>
 </body>
 </html>
