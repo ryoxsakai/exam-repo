@@ -1,7 +1,7 @@
 /* =====================================================================
    入試問題データベース — 共通スタイル
-   - UI: Noto Sans JP (サンセリフ / ゴシック)
-   - 入試問題の英語: Source Serif 4 (Century Schoolbook 系セリフ)
+   - UI・ゴシック: Noto Sans JP
+   - 入試問題（明朝系）: 英字 Lora + 和文 Noto Serif JP（混植。--serif）
    - 配色: ブルー系パレット (#03045E / #0077B6 / #00B4D8 / #90E0EF / #CAF0F8)
    - デザイン: フラット・ミニマル（UI8風）
    ===================================================================== */
@@ -43,7 +43,10 @@
   --shadow:    0 1px 2px rgba(3,4,94,.05), 0 4px 12px -6px rgba(3,4,94,.06);
   --shadow-lg: 0 16px 48px -16px rgba(3,4,94,.22);
 
-  --serif: "Century Schoolbook", "Century Schoolbook L", "Source Serif 4", Georgia, "Times New Roman", serif;
+  /* 問題文（明朝系）: 英字は Lora、和文は Noto Serif JP。Lora は欧文専用の書体なので
+     日本語のグリフはスタックの次にある Noto Serif JP で描かれる（混植）。
+     ゴシック系（UI・見出し・バッジ等）は Noto Sans JP。いずれも Google Fonts で読み込む。 */
+  --serif: "Lora", "Noto Serif JP", Georgia, "Times New Roman", serif;
   --sans:  "Noto Sans JP", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
