@@ -1674,12 +1674,33 @@
   // 本文として数えないもの（語注一覧・語数表示・行番号ラベル自身）
   var LINENUM_SKIP = ".footnote-section, .word-count, .print-linenum";
 
+  // リード文（「以下の英文を読み、問いに答えよ。」等の指示文）は英文本体の行では
+  // ないため、行番号の対象から外す。Markup.mergeLeadSections がセクション種別
+  // 「リード文」を `@@**文**` の形で直後のセクション先頭へ統合するため、
+  // 描画後は「先頭から連続する、中身が全て太字の段落」として現れる。
+  // 途中に出てくる太字は本文の一部なので、通常の本文が1つ現れた時点で打ち切る。
+  function leadBlocks(examDoc) {
+    var leads = [];
+    var blks = $all(".blk", examDoc);
+    for (var i = 0; i < blks.length; i++) {
+      var b = blks[i];
+      var txt = (b.textContent || "").trim();
+      if (!txt) continue;
+      var strongText = "";
+      $all("strong", b).forEach(function (s) { strongText += s.textContent; });
+      if (strongText.trim() !== txt) break;  // 通常の本文が来たら終了
+      leads.push(b);
+    }
+    return leads;
+  }
+
   function lineMarksDirect(examDoc) {
     var top0 = examDoc.getBoundingClientRect().top;
     // 行の高さ。同じ視覚行の矩形をまとめる際の許容差に使う
     var lh = parseFloat(getComputedStyle(examDoc).lineHeight);
     if (!lh) lh = parseFloat(getComputedStyle(examDoc).fontSize) * 1.9 || 24;
     var tol = lh * 0.5;
+    var leads = leadBlocks(examDoc);
 
     // テキストノードだけを文書順に集めて矩形を取る。
     // Range.getClientRects() は「インライン要素そのものの矩形」と「その中の
@@ -1692,7 +1713,10 @@
       acceptNode: function (n) {
         if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
         var p = n.parentElement;
-        if (p && p.closest && p.closest(LINENUM_SKIP)) return NodeFilter.FILTER_REJECT;
+        if (!p || !p.closest) return NodeFilter.FILTER_ACCEPT;
+        if (p.closest(LINENUM_SKIP)) return NodeFilter.FILTER_REJECT;
+        var blk = p.closest(".blk");
+        if (blk && leads.indexOf(blk) >= 0) return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
       }
     });
@@ -1707,15 +1731,24 @@
     }
     rects.sort(function (a, b) { return a.top - b.top; });
 
-    // top が近い矩形は同じ視覚行とみなす（上付き文字・空所バッジなどは本文と
-    // top が数px ずれるため、行の高さの半分を許容差にして吸収する）。
-    var marks = [], lineNo = 0, lineTop = null;
+    // top が近い矩形は同じ視覚行とみなしてまとめる（上付き文字・空所バッジなどは
+    // 本文と top が数px ずれるため、行の高さの半分を許容差にして吸収する）。
+    var lines = [];
     rects.forEach(function (rc) {
-      if (lineTop === null || rc.top - lineTop > tol) {
-        lineTop = rc.top;
-        lineNo++;
-        if (lineNo % 5 === 0) marks.push({ lineNo: lineNo, top: rc.top - top0 });
-      }
+      var last = lines[lines.length - 1];
+      if (!last || rc.top - last.anchor > tol) lines.push({ anchor: rc.top, rects: [rc] });
+      else last.rects.push(rc);
+    });
+
+    // ラベルの縦位置は、その行で最も背の高い矩形＝本文テキストの行に合わせる
+    // （上付き文字は本文より上にはみ出すため、単に一番上の矩形に合わせると
+    //   語注のある行だけラベルがわずかに浮いてしまう）。
+    var marks = [];
+    lines.forEach(function (ln, i) {
+      var lineNo = i + 1;
+      if (lineNo % 5 !== 0) return;
+      var main = ln.rects.reduce(function (a, b) { return b.height > a.height ? b : a; });
+      marks.push({ lineNo: lineNo, top: main.top - top0 });
     });
     return marks;
   }
