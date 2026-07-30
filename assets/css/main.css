@@ -929,6 +929,10 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 /* 「本文に5行ごとの行番号をつける」ON のとき、本文セクションの左に数字を出す余白を
    確保する（実際の数字は viewer.js が計測して .print-linenum を絶対配置で挿入する）。 */
 .exam-doc.linenum-target { position: relative; padding-left: 2.6em; }
+/* 行番号ラベル。JS が5行ごとの行頭（本文テキストの中）に差し込む。
+   top を指定しないのが要点で、縦方向は「その場に流し込まれていたら来るはずの位置」
+   ＝その行のベースラインになる。これにより本文とフォント・サイズが違ってもベースラインが
+   自動的に揃い、改ページで本文がずれてもラベルは同じ行にくっついたまま移動する。 */
 .print-linenum {
   position: absolute; left: 0; width: 2.1em; text-align: right;
   font-family: Arial, Helvetica, sans-serif; font-size: .72em; color: var(--muted);
@@ -1046,6 +1050,11 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area.print-out.qbreak .print-q + .print-q { page-break-before: always; break-before: page; }
   #print-area.print-out .print-q-head { font-size: 13pt; font-weight: 700; margin-bottom: 6pt; }
   #print-area.print-out .print-field-label { font-size: 10pt; font-weight: 600; margin-bottom: 3pt; }
+  /* 行番号ONのときは本文幅を絶対単位で固定する（@page の本文幅と同じ 174mm）。
+     幅を固定しないと、印刷ダイアログで余白設定を変えられたときに折り返し位置が変わり、
+     JS が計測した位置と実際の印刷が食い違って番号が別の行に付いてしまう。
+     viewer.js の PRINT_BODY_WIDTH と必ず同じ値にすること。 */
+  #print-area.print-out .exam-doc.linenum-target { width: 174mm; }
   /* 見出しの直後で改ページしない（「問題」と「大問1」、「大問N」と本文、
      セクション名と中身が分断されるのを防ぐ） */
   #print-area.print-out .print-part-head,

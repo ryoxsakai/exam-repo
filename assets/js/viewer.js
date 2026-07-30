@@ -1667,7 +1667,11 @@
   //     結果（.exam-doc 先頭からの相対位置）をそのまま #print-area 側のラベルに使う。
   //     同じ内容・同じ幅・同じフォントサイズであれば折り返し位置は一致するため、
   //     実際に印刷されたときに正しい位置に重なる。
-  var A4_CONTENT_PX = (210 - 18 * 2) / 25.4 * 96; // @page { margin: 15mm 18mm; size: A4; } の本文幅
+  // 行番号ONのときの本文幅。@page { margin: 15mm 18mm; size: A4 } の本文幅と同じ値を、
+  // CSS 側（#print-area.print-out .exam-doc.linenum-target）でも絶対単位で固定している。
+  // 幅を固定しないと、印刷ダイアログで余白設定を変えられたときに折り返し位置が変わり、
+  // 計測時と実際の印刷で行が食い違って番号が別の行に付いてしまう（Wordの固定行幅と同じ考え方）。
+  var PRINT_BODY_WIDTH = (210 - 18 * 2) + "mm";
   var PRINT_FS_PT = { xs: 9, sm: 10.5, md: 12, lg: 14, xl: 16 };   // #print-area.fs-* .exam-doc と同じ値
   var PRINT_LH = { "1": 1.3, "2": 1.6, "3": 1.9, "4": 2.3, "5": 2.8 }; // #print-area.lh-* .exam-doc と同じ値
 
@@ -1694,21 +1698,11 @@
     return leads;
   }
 
-  function lineMarksDirect(examDoc) {
-    var top0 = examDoc.getBoundingClientRect().top;
-    // 行の高さ。同じ視覚行の矩形をまとめる際の許容差に使う
-    var lh = parseFloat(getComputedStyle(examDoc).lineHeight);
-    if (!lh) lh = parseFloat(getComputedStyle(examDoc).fontSize) * 1.9 || 24;
-    var tol = lh * 0.5;
+  // 数える対象のテキストノードを文書順に集める（語注一覧・語数表示・リード文は除く）。
+  // 計測用のクローンと実際のDOMは同じ innerHTML から作るので、この並びは 1:1 で対応する。
+  function countableTextNodes(examDoc) {
     var leads = leadBlocks(examDoc);
-
-    // テキストノードだけを文書順に集めて矩形を取る。
-    // Range.getClientRects() は「インライン要素そのものの矩形」と「その中の
-    // テキストノードの矩形」を別々に返すため、範囲を要素ごと（.blk 全体など）で
-    // 取ると <strong> や <u>、空所バッジのある行が1行なのに複数カウントされて
-    // 行番号がずれる（実機で確認した不具合）。テキストノード単位で取り、
-    // 同じ行に載っている矩形は下の top クラスタリングでまとめる。
-    var rects = [];
+    var out = [];
     var walker = document.createTreeWalker(examDoc, NodeFilter.SHOW_TEXT, {
       acceptNode: function (n) {
         if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
@@ -1721,45 +1715,94 @@
       }
     });
     var node;
-    while ((node = walker.nextNode())) {
-      var range = document.createRange();
-      range.selectNodeContents(node);
-      var list = range.getClientRects();
-      for (var i = 0; i < list.length; i++) {
-        if (list[i].width > 0 && list[i].height > 0) rects.push(list[i]);
-      }
-    }
-    rects.sort(function (a, b) { return a.top - b.top; });
-
-    // top が近い矩形は同じ視覚行とみなしてまとめる（上付き文字・空所バッジなどは
-    // 本文と top が数px ずれるため、行の高さの半分を許容差にして吸収する）。
-    var lines = [];
-    rects.forEach(function (rc) {
-      var last = lines[lines.length - 1];
-      if (!last || rc.top - last.anchor > tol) lines.push({ anchor: rc.top, rects: [rc] });
-      else last.rects.push(rc);
-    });
-
-    // ラベルの縦位置は、その行で最も背の高い矩形＝本文テキストの行に合わせる
-    // （上付き文字は本文より上にはみ出すため、単に一番上の矩形に合わせると
-    //   語注のある行だけラベルがわずかに浮いてしまう）。
-    var marks = [];
-    lines.forEach(function (ln, i) {
-      var lineNo = i + 1;
-      if (lineNo % 5 !== 0) return;
-      var main = ln.rects.reduce(function (a, b) { return b.height > a.height ? b : a; });
-      marks.push({ lineNo: lineNo, top: main.top - top0 });
-    });
-    return marks;
+    while ((node = walker.nextNode())) out.push(node);
+    return out;
   }
 
-  // 外側コンテナに A4 本文幅ぶんの幅だけを与え、内側の .exam-doc.linenum-target は
-  // 幅を指定せず自動（親の幅いっぱい）にすることで、実際の #print-area 内での
-  // 入れ子（幅指定なしの auto 幅の子孫）と同じ挙動にする。.linenum-target の
-  // padding-left（行番号ぶんの余白）も実際と同じCSSルールから自動的に反映される
-  // ため、折り返し幅の計算がここだけ食い違うことがない。
+  // テキストノード内で、指定の top の行が始まる最小の文字位置を二分探索する
+  function offsetAtTop(node, top, tol) {
+    var len = node.nodeValue.length;
+    var r = document.createRange();
+    function topOf(i) {
+      r.setStart(node, i);
+      r.setEnd(node, Math.min(i + 1, len));
+      var rc = r.getBoundingClientRect();
+      return (rc.width || rc.height) ? rc.top : null;
+    }
+    var lo = 0, hi = len;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      var t = topOf(mid);
+      if (t === null || t < top - tol) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+
+  // 各視覚行の行頭を {nodeIndex, offset} で文書順に返す。
+  // Range.getClientRects() は「インライン要素そのものの矩形」と「その中のテキスト
+  // ノードの矩形」を別々に返すため、範囲を .blk などの要素単位で取ると <strong> や
+  // <u>、空所バッジのある行が1行なのに複数カウントされて行番号がずれる（実機で確認
+  // した不具合）。必ずテキストノード単位で取り、top が近いものは同じ視覚行とみなす。
+  function lineStartPositions(examDoc) {
+    var lh = parseFloat(getComputedStyle(examDoc).lineHeight);
+    if (!lh) lh = parseFloat(getComputedStyle(examDoc).fontSize) * 1.9 || 24;
+    var tol = lh * 0.5;
+    var nodes = countableTextNodes(examDoc);
+    var starts = [], curTop = null;
+    nodes.forEach(function (node, ni) {
+      var r = document.createRange();
+      r.selectNodeContents(node);
+      var list = r.getClientRects();
+      var tops = [];
+      for (var i = 0; i < list.length; i++) {
+        var rc = list[i];
+        if (!rc.width && !rc.height) continue;
+        if (!tops.length || rc.top - tops[tops.length - 1] > tol) tops.push(rc.top);
+      }
+      tops.forEach(function (t, fi) {
+        if (curTop !== null && t - curTop <= tol) return;  // 前のノードから続く同じ行
+        starts.push({ nodeIndex: ni, offset: fi === 0 ? 0 : offsetAtTop(node, t, tol) });
+        curTop = t;
+      });
+    });
+    return { starts: starts, shift: staticLabelShift(nodes[0]) };
+  }
+
+  // ラベルを静的位置（top 指定なし）に置くと、縦方向は「行ボックスの上端」に合わせられる
+  // ため、本文のベースラインとはフォント分だけずれる。実測ではページや行によらず常に
+  // 同じ値（+8.2pt 相当）だったので、実際に1つ置いて測り、その差を margin-top で打ち消す。
+  // 幅も高さも 0 の inline-block を vertical-align: baseline で置くと、その要素の上端が
+  // ちょうどその行のベースラインになることを利用して、本文とラベルの両方を測る。
+  function staticLabelShift(firstNode) {
+    if (!firstNode || !firstNode.parentNode || firstNode.nodeValue.length < 2) return 0;
+    function mark() {
+      var i = create("i");
+      i.style.cssText = "display:inline-block; width:0; height:0; vertical-align:baseline;";
+      return i;
+    }
+    // 実際のラベルと同じく「行頭の1文字あと」に置いて測る（行頭ちょうどだと静的位置が
+    // 前の行の末尾になってしまい、正しい差が取れない）。
+    var rest = firstNode.splitText(1);
+    var parent = firstNode.parentNode;
+    var bodyMark = mark();                                   // 流し込み＝本文のベースライン
+    var probe = create("span", { class: "print-linenum" });  // 静的位置＝ラベルのベースライン
+    var probeMark = mark();
+    probe.appendChild(document.createTextNode("8"));
+    probe.appendChild(probeMark);
+    parent.insertBefore(bodyMark, rest);
+    parent.insertBefore(probe, rest);
+    var d = bodyMark.getBoundingClientRect().top - probeMark.getBoundingClientRect().top;
+    probe.remove();
+    bodyMark.remove();
+    parent.normalize();   // 分割したテキストノードを元に戻す
+    return d;
+  }
+
+  // 印刷用の計測コンテナ。外側に A4 本文幅を与え、内側の .exam-doc.linenum-target は
+  // 幅を指定せず自動にすることで、実際の #print-area 内と同じ入れ子・同じ折り返しにする。
   var lineMeasureOuter = null, lineMeasureBox = null;
-  function lineMarksSimulated(examDocHtml) {
+  function lineStartsSimulated(examDocHtml) {
     if (!lineMeasureOuter) {
       lineMeasureOuter = create("div");
       lineMeasureOuter.style.cssText = "position:fixed; left:-99999px; top:0; visibility:hidden;";
@@ -1767,27 +1810,56 @@
       lineMeasureOuter.appendChild(lineMeasureBox);
       document.body.appendChild(lineMeasureOuter);
     }
-    lineMeasureOuter.style.width = A4_CONTENT_PX + "px";
+    lineMeasureOuter.style.width = PRINT_BODY_WIDTH;
     lineMeasureBox.style.fontFamily = "var(--serif)";
     lineMeasureBox.style.fontSize = (PRINT_FS_PT[Store.getPrintFontSize()] || 12) + "pt";
     lineMeasureBox.style.lineHeight = String(PRINT_LH[Store.getPrintLineHeight()] || 1.9);
     lineMeasureBox.innerHTML = examDocHtml;
-    return lineMarksDirect(lineMeasureBox);
+    return lineStartPositions(lineMeasureBox);
   }
 
-  function addLineNumberMarks(examDoc, marks) {
-    $all(".print-linenum", examDoc).forEach(function (n) { n.remove(); });
-    marks.forEach(function (m) {
-      var label = create("span", { class: "print-linenum" }, String(m.lineNo));
-      label.style.top = m.top + "px";
-      examDoc.appendChild(label);
+  // 5行ごとの行頭に行番号を差し込む。
+  // ラベルは position:absolute だが top を指定しない（left だけ指定する）。こうすると
+  // 縦方向は「その場に流し込まれていたら来るはずの位置」＝その行のベースラインになるため、
+  //   - 本文とラベルでフォント・サイズが違ってもベースラインが自動的に揃う
+  //   - 改ページで本文がずれても、ラベルは同じ行にくっついたまま移動する
+  // という2点が同時に解決する（top を計算して置く方式では、実際のPDFで本文より
+  // 約3.7pt高い位置に出たり、ページをまたぐと最大7.5pt ずれるのを確認済み）。
+  function insertLineNumbers(examDoc, measured) {
+    var starts = measured.starts, shift = measured.shift || 0;
+    var nodes = countableTextNodes(examDoc);
+    var items = [];
+    starts.forEach(function (s, i) {
+      var lineNo = i + 1;
+      if (lineNo % 5 === 0) items.push({ lineNo: lineNo, nodeIndex: s.nodeIndex, offset: s.offset });
+    });
+    // 後ろから挿入する（splitText しても、まだ処理していない前方のノードがずれない）
+    items.reverse().forEach(function (it) {
+      var node = nodes[it.nodeIndex];
+      if (!node || !node.parentNode) return;
+      var len = node.nodeValue.length;
+      // 行頭ちょうどではなく「行頭の1文字あと」に入れる。行頭に置くと、この要素は
+      // 行送りに影響しない（幅ゼロの流し込み扱い）ため、静的位置が「前の行の末尾」と
+      // みなされて1行ぶん上にずれてしまう（実測で確認）。
+      var at = Math.min(it.offset + 1, len);
+      var target = node, before = true;
+      if (at >= len) before = false;
+      else target = node.splitText(at);
+      var label = create("span", { class: "print-linenum" }, String(it.lineNo));
+      // 静的位置と本文ベースラインの一定のずれを打ち消す
+      if (shift) label.style.marginTop = shift + "px";
+      if (before) target.parentNode.insertBefore(label, target);
+      else target.parentNode.insertBefore(label, target.nextSibling);
     });
   }
-  // forPrint=true: #print-area 向け（画面外シミュレーションで計測）。
+
+  // forPrint=true: #print-area 向け（画面外シミュレーションで行頭を求める）。
   // forPrint=false: プレビュー向け（見えている要素をそのまま計測）。
   function applyPrintLineNumbers(root, forPrint) {
     $all(".exam-doc.linenum-target", root).forEach(function (examDoc) {
-      addLineNumberMarks(examDoc, forPrint ? lineMarksSimulated(examDoc.innerHTML) : lineMarksDirect(examDoc));
+      $all(".print-linenum", examDoc).forEach(function (n) { n.remove(); });
+      examDoc.normalize();   // 前回の splitText で分かれたテキストノードを戻す
+      insertLineNumbers(examDoc, forPrint ? lineStartsSimulated(examDoc.innerHTML) : lineStartPositions(examDoc));
     });
   }
 
