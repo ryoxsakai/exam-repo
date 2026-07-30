@@ -1654,9 +1654,8 @@
 
   // 本文セクション（.exam-doc.linenum-target）に5行ごとの行番号を付ける。
   // CSSのcounterは要素単位でしか数えられず、折り返し後の「見た目の行」の境界を
-  // 判定できないため、Range.getClientRects()（インライン内容が複数行にまたがる場合、
-  // 行ごとに1つずつ矩形を返す）で実際の行境界を計測し、5行ごとに絶対配置のラベルを
-  // 挿入する。大問（本文セクション）ごとに1行目から数え直す。
+  // 判定できないため、Range.getClientRects() で実際の行境界を計測し、5行ごとに
+  // 絶対配置のラベルを挿入する。大問（本文セクション）ごとに1行目から数え直す。
   //
   // プレビュー（画面上に見えている .print-doc）と実際の印刷（#print-area。画面上は
   // display:none で、@media print のときだけ表示される）で計測方法を分ける必要がある:
@@ -1672,16 +1671,50 @@
   var PRINT_FS_PT = { xs: 9, sm: 10.5, md: 12, lg: 14, xl: 16 };   // #print-area.fs-* .exam-doc と同じ値
   var PRINT_LH = { "1": 1.3, "2": 1.6, "3": 1.9, "4": 2.3, "5": 2.8 }; // #print-area.lh-* .exam-doc と同じ値
 
+  // 本文として数えないもの（語注一覧・語数表示・行番号ラベル自身）
+  var LINENUM_SKIP = ".footnote-section, .word-count, .print-linenum";
+
   function lineMarksDirect(examDoc) {
     var top0 = examDoc.getBoundingClientRect().top;
-    var marks = [], lineNo = 0;
-    $all(".blk", examDoc).forEach(function (blk) {
+    // 行の高さ。同じ視覚行の矩形をまとめる際の許容差に使う
+    var lh = parseFloat(getComputedStyle(examDoc).lineHeight);
+    if (!lh) lh = parseFloat(getComputedStyle(examDoc).fontSize) * 1.9 || 24;
+    var tol = lh * 0.5;
+
+    // テキストノードだけを文書順に集めて矩形を取る。
+    // Range.getClientRects() は「インライン要素そのものの矩形」と「その中の
+    // テキストノードの矩形」を別々に返すため、範囲を要素ごと（.blk 全体など）で
+    // 取ると <strong> や <u>、空所バッジのある行が1行なのに複数カウントされて
+    // 行番号がずれる（実機で確認した不具合）。テキストノード単位で取り、
+    // 同じ行に載っている矩形は下の top クラスタリングでまとめる。
+    var rects = [];
+    var walker = document.createTreeWalker(examDoc, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (n) {
+        if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+        var p = n.parentElement;
+        if (p && p.closest && p.closest(LINENUM_SKIP)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    var node;
+    while ((node = walker.nextNode())) {
       var range = document.createRange();
-      range.selectNodeContents(blk);
-      var rects = range.getClientRects();
-      for (var i = 0; i < rects.length; i++) {
+      range.selectNodeContents(node);
+      var list = range.getClientRects();
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].width > 0 && list[i].height > 0) rects.push(list[i]);
+      }
+    }
+    rects.sort(function (a, b) { return a.top - b.top; });
+
+    // top が近い矩形は同じ視覚行とみなす（上付き文字・空所バッジなどは本文と
+    // top が数px ずれるため、行の高さの半分を許容差にして吸収する）。
+    var marks = [], lineNo = 0, lineTop = null;
+    rects.forEach(function (rc) {
+      if (lineTop === null || rc.top - lineTop > tol) {
+        lineTop = rc.top;
         lineNo++;
-        if (lineNo % 5 === 0) marks.push({ lineNo: lineNo, top: rects[i].top - top0 });
+        if (lineNo % 5 === 0) marks.push({ lineNo: lineNo, top: rc.top - top0 });
       }
     });
     return marks;
