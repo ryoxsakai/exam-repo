@@ -114,7 +114,9 @@
 - **大問見出しに通し番号・試験情報を入れる**（`pr-qsubtitle` / `Store.getPrintQSubtitle`）: `printQHeading` が「大問3」の代わりに「1. 2018 関西医科 前期 大問3」形式で出力する。通し番号は印刷順（`printQuestions` の並び）での位置に固定するため、問題面と解答面で同じ大問が同じ番号になる。試験情報は各大問に添えた `q._ctx`（`{year, university_name, schedule}`）から作る。
 - **印刷する大問 / セクションの選択**（`renderPrintSectionControls`。セクションの取捨は閲覧モーダルと共通の `Store.isPrintSection`）
 - **空所のフォント**: `[[1]]` `[[A]]` 等の空所バッジ（`.blank-badge`）は、印刷（プレビュー `.print-doc` / 実際の印刷 `#print-area` とも）では Arial に固定する（閲覧モーダルの既定 `--sans` には影響しない）。
-- **本文に5行ごとの行番号をつける**（`pr-linenum` / `Store.getPrintLineNumbers`）: CSSのcounterは要素単位でしか数えられず折り返し後の「見た目の行」の境界を判定できないため、JS側で `Range.getClientRects()`（インライン内容が複数行にまたがる場合、行ごとに1つずつ矩形を返す）を使って実際の行境界を計測し、5行ごとに絶対配置のラベル（`.print-linenum`）を挿入する（`addLineNumberMarks`。大問＝本文セクションごとに1行目から数え直す）。
+- **本文に5行ごとの行番号をつける**（`pr-linenum` / `Store.getPrintLineNumbers`）: CSSのcounterは要素単位でしか数えられず折り返し後の「見た目の行」の境界を判定できないため、JS側で `Range.getClientRects()` を使って実際の行境界を計測し、5行ごとに絶対配置のラベル（`.print-linenum`）を挿入する（`addLineNumberMarks`。大問＝本文セクションごとに1行目から数え直す）。
+  - **必ずテキストノード単位で矩形を取る**（`lineMarksDirect` の TreeWalker）。`Range.getClientRects()` は「インライン要素そのものの矩形」と「その中のテキストノードの矩形」を別々に返すため、`.blk`（段落）全体で範囲を取ると `<strong>` `<u>` や空所バッジのある行が1行なのに複数カウントされ、装飾を含む行を通過するたびに行番号がずれていく（実機で確認した不具合）。取得した矩形は `top` が行の高さの半分以内のものを同じ視覚行としてまとめ、上付き・下付き・空所バッジのぶんのずれを吸収する。ラベルの縦位置はその行で最も背の高い矩形（＝本文テキストの行）に合わせる。
+  - **リード文は行番号の対象外**（`leadBlocks`）。`Markup.mergeLeadSections` が「リード文」を `@@**文**` の形で本文の先頭へ統合するため、描画後は「先頭から連続する、中身が全て太字の段落」として現れる。これを英文本体の行として数えないよう除外する（途中に出てくる太字は本文の一部なので、通常の本文が1つ現れた時点で打ち切る）。語注一覧（`.footnote-section`）・語数表示（`.word-count`）も同様に対象外。
   - プレビュー（画面上に見えている `.print-doc`）はそのまま `getClientRects()` で直接計測する（`lineMarksDirect`）。
   - 実際の印刷（`#print-area`）は画面上 `display:none`（`@media print` のときだけ表示）で、計測しようとした瞬間は矩形が全て0になってしまう（`beforeprint` イベントで試しても印刷レイアウトがまだ反映されないことを実機で確認済み）。そのため `@media print` 側と同じ数値（A4本文幅・`pr-fontsize`に対応するpt値・`pr-lineheight`に対応する行間）を画面外の計測用コンテナ（`lineMeasureOuter`/`lineMeasureBox`）に直接指定して再現し、そこで計測した結果をそのまま `#print-area` 側のラベルに使う（`lineMarksSimulated`）。同じ内容・同じ幅・同じフォントサイズなら折り返し位置は一致するため、実際に印刷されたときに正しい位置に重なる。
 
