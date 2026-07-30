@@ -1,7 +1,7 @@
 /* =====================================================================
    入試問題データベース — 共通スタイル
-   - UI・ゴシック: Noto Sans JP
-   - 入試問題（明朝系）: 英字 Lora + 和文 Noto Serif JP（混植。--serif）
+   - UI・ゴシック: ヒラギノ角ゴシック（ローカルにあれば）→ Noto Sans JP（--sans）
+   - 入試問題（明朝系）: Century Schoolbook/ヒラギノ明朝（ローカルにあれば）→ 英字 Lora + 和文 Noto Serif JP（--serif）
    - 配色: ブルー系パレット (#03045E / #0077B6 / #00B4D8 / #90E0EF / #CAF0F8)
    - デザイン: フラット・ミニマル（UI8風）
    ===================================================================== */
@@ -43,11 +43,16 @@
   --shadow:    0 1px 2px rgba(3,4,94,.05), 0 4px 12px -6px rgba(3,4,94,.06);
   --shadow-lg: 0 16px 48px -16px rgba(3,4,94,.22);
 
-  /* 問題文（明朝系）: 英字は Lora、和文は Noto Serif JP。Lora は欧文専用の書体なので
-     日本語のグリフはスタックの次にある Noto Serif JP で描かれる（混植）。
-     ゴシック系（UI・見出し・バッジ等）は Noto Sans JP。いずれも Google Fonts で読み込む。 */
-  --serif: "Lora", "Noto Serif JP", Georgia, "Times New Roman", serif;
-  --sans:  "Noto Sans JP", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* 問題文（明朝系）: 英字は Century Schoolbook（ローカルにあれば）→ Lora（Google Fonts）、
+     和文は ヒラギノ明朝（ローカルにあれば）→ Noto Serif JP（Google Fonts）。
+     ゴシック系（UI・見出し・バッジ等）は ヒラギノ角ゴシック（ローカルにあれば）→ Noto Sans JP。
+     font-family はグリフ単位でフォールバックするため、Century Schoolbook / Lora は
+     日本語グリフを持たず自動的に読み飛ばされ、和文側の優先順位（ヒラギノ→Noto Serif JP）
+     には影響しない（sans側の Hiragino Kaku Gothic ProN は英字グリフも持つため、
+     インストールされている環境では英字UIの見た目にも反映される＝意図した挙動）。
+     ローカルフォント名はWebKit/Safari向けに英語名・日本語名の両方を列挙している。 */
+  --serif: "Century Schoolbook", "Century Schoolbook L", "Lora", "Hiragino Mincho ProN", "ヒラギノ明朝 ProN", "Noto Serif JP", Georgia, "Times New Roman", serif;
+  --sans:  "Hiragino Kaku Gothic ProN", "ヒラギノ角ゴシック ProN", "Noto Sans JP", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 * { box-sizing: border-box; }
