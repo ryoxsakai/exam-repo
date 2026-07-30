@@ -27,6 +27,7 @@
     printHideLabels: "exam_print_hide_labels", // 印刷時に「問題」「本文」「設問」のセクション名を出さない
     printQPageBreak: "exam_print_qbreak",    // 印刷時に大問ごとに改ページする
     printQSubtitle: "exam_print_qsubtitle",  // 大問見出しを「1. 2018 ○○ 前期 大問3」形式にする
+    printLineNumbers: "exam_print_linenum",  // 印刷時、本文セクションに5行ごとの行番号を付ける
     printFolderTitles: "exam_print_folder_titles", // お気に入りフォルダ印刷の表紙タイトル {folderId: title}
     replaceRules:  "exam_replace_rules",     // 登録データ一括置換のルール [{from,to,regex}]
     difficultyVocabWeight: "exam_difficulty_vocab_weight", // 長文難易度の語彙:文長の重み(0〜1、この端末のみ)
@@ -306,6 +307,10 @@
        （viewer.js 側で判断。ここはユーザーが明示的に選んだ値の保存のみ）。 */
     getPrintQSubtitle: function () { return read(KEYS.printQSubtitle, false) === true; },
     setPrintQSubtitle: function (on) { write(KEYS.printQSubtitle, !!on); },
+
+    /* 問題印刷タブ: 本文セクションに5行ごとの行番号を付ける（既定はオフ） */
+    getPrintLineNumbers: function () { return read(KEYS.printLineNumbers, false) === true; },
+    setPrintLineNumbers: function (on) { write(KEYS.printLineNumbers, !!on); },
 
     /* お気に入りフォルダ印刷の表紙タイトル（フォルダid → {top, mid, bottom} の3行）。
        localStorage をこの端末のキャッシュ／未ログイン時のフォールバックとして常に保持し、

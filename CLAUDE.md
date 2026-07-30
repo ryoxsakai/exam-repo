@@ -113,6 +113,10 @@
 - **文字サイズ / 行間**（`pr-fontsize` / `pr-lineheight`。表紙以外に適用）
 - **大問見出しに通し番号・試験情報を入れる**（`pr-qsubtitle` / `Store.getPrintQSubtitle`）: `printQHeading` が「大問3」の代わりに「1. 2018 関西医科 前期 大問3」形式で出力する。通し番号は印刷順（`printQuestions` の並び）での位置に固定するため、問題面と解答面で同じ大問が同じ番号になる。試験情報は各大問に添えた `q._ctx`（`{year, university_name, schedule}`）から作る。
 - **印刷する大問 / セクションの選択**（`renderPrintSectionControls`。セクションの取捨は閲覧モーダルと共通の `Store.isPrintSection`）
+- **空所のフォント**: `[[1]]` `[[A]]` 等の空所バッジ（`.blank-badge`）は、印刷（プレビュー `.print-doc` / 実際の印刷 `#print-area` とも）では Arial に固定する（閲覧モーダルの既定 `--sans` には影響しない）。
+- **本文に5行ごとの行番号をつける**（`pr-linenum` / `Store.getPrintLineNumbers`）: CSSのcounterは要素単位でしか数えられず折り返し後の「見た目の行」の境界を判定できないため、JS側で `Range.getClientRects()`（インライン内容が複数行にまたがる場合、行ごとに1つずつ矩形を返す）を使って実際の行境界を計測し、5行ごとに絶対配置のラベル（`.print-linenum`）を挿入する（`addLineNumberMarks`。大問＝本文セクションごとに1行目から数え直す）。
+  - プレビュー（画面上に見えている `.print-doc`）はそのまま `getClientRects()` で直接計測する（`lineMarksDirect`）。
+  - 実際の印刷（`#print-area`）は画面上 `display:none`（`@media print` のときだけ表示）で、計測しようとした瞬間は矩形が全て0になってしまう（`beforeprint` イベントで試しても印刷レイアウトがまだ反映されないことを実機で確認済み）。そのため `@media print` 側と同じ数値（A4本文幅・`pr-fontsize`に対応するpt値・`pr-lineheight`に対応する行間）を画面外の計測用コンテナ（`lineMeasureOuter`/`lineMeasureBox`）に直接指定して再現し、そこで計測した結果をそのまま `#print-area` 側のラベルに使う（`lineMarksSimulated`）。同じ内容・同じ幅・同じフォントサイズなら折り返し位置は一致するため、実際に印刷されたときに正しい位置に重なる。
 
 #### お気に入りフォルダの一括印刷
 
@@ -158,4 +162,4 @@
 
 - **Worker(D1) config**: サイトタイトル / 方式(schedules) / 年度(year_presets) … 全端末で共有
 - **Worker(D1) user_settings**: タブ順 / お気に入りフォルダ印刷の表紙タイトル（Googleログイン時のみ。`GET/PUT /api/user-settings`）… ログインアカウントに紐づけて端末をまたいで共有
-- **localStorage**: Worker URL / タブ順（未ログイン時、またはログイン時もこの端末用のフォールバックとして常に保存） / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`) / 印刷オプション（文字サイズ・行間・対象セクション、ラベルを外す(`exam_print_hide_labels`)・大問ごとに改ページ(`exam_print_qbreak`)・通し番号つき見出し(`exam_print_qsubtitle`)） / お気に入りフォルダ印刷の表紙タイトル(`exam_print_folder_titles`。ログイン時はアカウントにも保存)
+- **localStorage**: Worker URL / タブ順（未ログイン時、またはログイン時もこの端末用のフォールバックとして常に保存） / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`) / 印刷オプション（文字サイズ・行間・対象セクション、ラベルを外す(`exam_print_hide_labels`)・大問ごとに改ページ(`exam_print_qbreak`)・通し番号つき見出し(`exam_print_qsubtitle`)・5行ごとの行番号(`exam_print_linenum`)） / お気に入りフォルダ印刷の表紙タイトル(`exam_print_folder_titles`。ログイン時はアカウントにも保存)
