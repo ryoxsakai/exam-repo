@@ -293,9 +293,13 @@
     ]).then(function (res) {
       var cfg = res[0] || {}, unis = (res[1] && res[1].universities) || [];
       state.config = cfg;
-      // 大学名 → 略称のマップ（表示用）
+      // 大学名 → 略称／よみがなのマップ（表示・五十音ソート用）
       state.uniAbbr = {};
-      unis.forEach(function (u) { if (u && u.name && u.abbreviation) state.uniAbbr[u.name] = u.abbreviation; });
+      unis.forEach(function (u) {
+        if (!u || !u.name) return;
+        if (u.abbreviation) state.uniAbbr[u.name] = u.abbreviation;
+        if (u.reading) state.uniReading[u.name] = u.reading;
+      });
       // タイトルは Worker 側設定があれば優先（未保存ならローカル）
       if (cfg.site_title) {
         el("site-title").textContent = cfg.site_title;
@@ -312,7 +316,7 @@
       }
       fillSelect(el("sm-year"), cfg.year_presets || [], "指定なし");
       fillSelect(el("sm-schedule"), cfg.schedules || [], "指定なし");
-      fillSelect(el("sm-university"), unis.map(function (u) { return u.name; }), "指定なし");
+      fillSelect(el("sm-university"), unis.map(function (u) { return u.name; }).sort(uniCmp), "指定なし");
       fillSelect(el("sm-category"), cfg.question_categories || [], "指定なし");
     });
   }
