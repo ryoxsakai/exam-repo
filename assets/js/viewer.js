@@ -244,6 +244,13 @@
         renderPrintPreview();
       });
     }
+    if (el("pr-linenum")) {
+      el("pr-linenum").checked = Store.getPrintLineNumbers();
+      el("pr-linenum").addEventListener("change", function () {
+        Store.setPrintLineNumbers(el("pr-linenum").checked);
+        renderPrintPreview();
+      });
+    }
     el("btn-print-run").addEventListener("click", runPrint);
     el("btn-print-run-2").addEventListener("click", runPrint);
 
@@ -1543,9 +1550,14 @@
   function printField(label, text, opts) {
     var body = isBodySection(label);
     var hideLabel = opts && opts.hideLabels && LABEL_HIDABLE.indexOf(label) >= 0;
+    // 本文セクションのみ、5行ごとの行番号の対象にする（renderPrintPreview/runPrint 側で
+    // .linenum-target を目印に実際の行番号を後付けする。CSSだけでは折り返し後の
+    // 「見た目の行」境界を判定できないため JS 側で計測する。addLineNumbers 参照）。
+    var lineNum = opts && opts.lineNumbers && label === "本文";
     return '<div class="print-field">' +
       (hideLabel ? "" : '<div class="print-field-label">' + esc(label) + "</div>") +
-      '<div class="exam-doc' + (body ? "" : " no-indent") + '">' + Markup.render(text, markupOpts(label)).html + "</div></div>";
+      '<div class="exam-doc' + (body ? "" : " no-indent") + (lineNum ? " linenum-target" : "") + '">' +
+      Markup.render(text, markupOpts(label)).html + "</div></div>";
   }
 
   // 印刷ドキュメントの HTML を構築（表紙 → 問題面 → 解答面）
@@ -1635,8 +1647,82 @@
       cover: el("pr-cover").checked,
       hideLabels: el("pr-hide-labels") ? el("pr-hide-labels").checked : false,
       qBreak: el("pr-qbreak") ? el("pr-qbreak").checked : false,
-      qSubtitle: el("pr-qsubtitle") ? el("pr-qsubtitle").checked : false
+      qSubtitle: el("pr-qsubtitle") ? el("pr-qsubtitle").checked : false,
+      lineNumbers: el("pr-linenum") ? el("pr-linenum").checked : false
     };
+  }
+
+  // 本文セクション（.exam-doc.linenum-target）に5行ごとの行番号を付ける。
+  // CSSのcounterは要素単位でしか数えられず、折り返し後の「見た目の行」の境界を
+  // 判定できないため、Range.getClientRects()（インライン内容が複数行にまたがる場合、
+  // 行ごとに1つずつ矩形を返す）で実際の行境界を計測し、5行ごとに絶対配置のラベルを
+  // 挿入する。大問（本文セクション）ごとに1行目から数え直す。
+  //
+  // プレビュー（画面上に見えている .print-doc）と実際の印刷（#print-area。画面上は
+  // display:none で、@media print のときだけ表示される）で計測方法を分ける必要がある:
+  //   - プレビューは既に画面に見えているので、その場で直接 getClientRects() できる。
+  //   - #print-area は計測しようとした瞬間 display:none のため矩形が全て0になってしまう
+  //     （beforeprint イベントで試しても、印刷レイアウトがまだ反映されていないことを
+  //     実機で確認済み）。そのため、@media print 側と同じ数値（A4本文幅・pt指定の
+  //     フォントサイズ）を画面外の計測用コンテナへ直接指定して再現し、そこで計測した
+  //     結果（.exam-doc 先頭からの相対位置）をそのまま #print-area 側のラベルに使う。
+  //     同じ内容・同じ幅・同じフォントサイズであれば折り返し位置は一致するため、
+  //     実際に印刷されたときに正しい位置に重なる。
+  var A4_CONTENT_PX = (210 - 18 * 2) / 25.4 * 96; // @page { margin: 15mm 18mm; size: A4; } の本文幅
+  var PRINT_FS_PT = { xs: 9, sm: 10.5, md: 12, lg: 14, xl: 16 };   // #print-area.fs-* .exam-doc と同じ値
+  var PRINT_LH = { "1": 1.3, "2": 1.6, "3": 1.9, "4": 2.3, "5": 2.8 }; // #print-area.lh-* .exam-doc と同じ値
+
+  function lineMarksDirect(examDoc) {
+    var top0 = examDoc.getBoundingClientRect().top;
+    var marks = [], lineNo = 0;
+    $all(".blk", examDoc).forEach(function (blk) {
+      var range = document.createRange();
+      range.selectNodeContents(blk);
+      var rects = range.getClientRects();
+      for (var i = 0; i < rects.length; i++) {
+        lineNo++;
+        if (lineNo % 5 === 0) marks.push({ lineNo: lineNo, top: rects[i].top - top0 });
+      }
+    });
+    return marks;
+  }
+
+  // 外側コンテナに A4 本文幅ぶんの幅だけを与え、内側の .exam-doc.linenum-target は
+  // 幅を指定せず自動（親の幅いっぱい）にすることで、実際の #print-area 内での
+  // 入れ子（幅指定なしの auto 幅の子孫）と同じ挙動にする。.linenum-target の
+  // padding-left（行番号ぶんの余白）も実際と同じCSSルールから自動的に反映される
+  // ため、折り返し幅の計算がここだけ食い違うことがない。
+  var lineMeasureOuter = null, lineMeasureBox = null;
+  function lineMarksSimulated(examDocHtml) {
+    if (!lineMeasureOuter) {
+      lineMeasureOuter = create("div");
+      lineMeasureOuter.style.cssText = "position:fixed; left:-99999px; top:0; visibility:hidden;";
+      lineMeasureBox = create("div", { class: "exam-doc linenum-target" });
+      lineMeasureOuter.appendChild(lineMeasureBox);
+      document.body.appendChild(lineMeasureOuter);
+    }
+    lineMeasureOuter.style.width = A4_CONTENT_PX + "px";
+    lineMeasureBox.style.fontFamily = "var(--serif)";
+    lineMeasureBox.style.fontSize = (PRINT_FS_PT[Store.getPrintFontSize()] || 12) + "pt";
+    lineMeasureBox.style.lineHeight = String(PRINT_LH[Store.getPrintLineHeight()] || 1.9);
+    lineMeasureBox.innerHTML = examDocHtml;
+    return lineMarksDirect(lineMeasureBox);
+  }
+
+  function addLineNumberMarks(examDoc, marks) {
+    $all(".print-linenum", examDoc).forEach(function (n) { n.remove(); });
+    marks.forEach(function (m) {
+      var label = create("span", { class: "print-linenum" }, String(m.lineNo));
+      label.style.top = m.top + "px";
+      examDoc.appendChild(label);
+    });
+  }
+  // forPrint=true: #print-area 向け（画面外シミュレーションで計測）。
+  // forPrint=false: プレビュー向け（見えている要素をそのまま計測）。
+  function applyPrintLineNumbers(root, forPrint) {
+    $all(".exam-doc.linenum-target", root).forEach(function (examDoc) {
+      addLineNumberMarks(examDoc, forPrint ? lineMarksSimulated(examDoc.innerHTML) : lineMarksDirect(examDoc));
+    });
   }
 
   // 印刷ドキュメントのルートに付けるクラス（文字サイズ・行間・大問ごとの改ページ）。
@@ -1958,6 +2044,7 @@
     if (!html) { el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>印刷対象がありません。チェックや登録内容を確認してください。</div></div>'; return; }
     el("print-preview").innerHTML = '<div class="print-doc ' + printDocClasses(opts) + '">' + html + "</div>";
     wirePrintTitleEdit();
+    if (opts.lineNumbers) applyPrintLineNumbers(el("print-preview"));
   }
 
   // 表紙の3行（上・中央・下）をそれぞれダブルタップ（ダブルクリック）で編集できるようにする。
@@ -2030,6 +2117,7 @@
     if (!area) { area = create("div", { id: "print-area" }); document.body.appendChild(area); }
     area.className = "print-out " + printDocClasses(opts);
     area.innerHTML = html;
+    if (opts.lineNumbers) applyPrintLineNumbers(area, true);
     window.print();
   }
 

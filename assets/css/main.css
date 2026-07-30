@@ -881,6 +881,9 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   background: #fff; border: 1px solid var(--line); border-radius: 14px;
   box-shadow: var(--shadow-sm); padding: 36px 40px; font-family: var(--serif); color: #000; line-height: 1.9;
 }
+/* 印刷（プレビュー・実際の印刷とも）では空所バッジ（[[1]] [[A]] 等）の文字を Arial にする。
+   閲覧モーダルの空所（.blank-badge、既定 --sans）には影響しない。 */
+.print-doc .blank-badge { font-family: Arial, Helvetica, sans-serif; }
 .print-cover {
   text-align: center; padding: 64px 16px; margin-bottom: 24px;
   border-bottom: 2px dashed var(--line);
@@ -922,6 +925,14 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 .print-doc.qbreak .print-q + .print-q,
 .print-doc.qbreak .print-part + .print-part .print-q:first-child {
   border-top: 2px dashed var(--line); padding-top: 22px; margin-top: 22px;
+}
+/* 「本文に5行ごとの行番号をつける」ON のとき、本文セクションの左に数字を出す余白を
+   確保する（実際の数字は viewer.js が計測して .print-linenum を絶対配置で挿入する）。 */
+.exam-doc.linenum-target { position: relative; padding-left: 2.6em; }
+.print-linenum {
+  position: absolute; left: 0; width: 2.1em; text-align: right;
+  font-family: Arial, Helvetica, sans-serif; font-size: .72em; color: var(--muted);
+  line-height: 1; user-select: none;
 }
 
 /* 印刷プレビューのモバイル表示。実際の印刷は @media print 側（pt指定・ID選択子）が
@@ -986,6 +997,7 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area .blank-badge {
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
     background: #fff !important; color: #000 !important; border-color: #000 !important;
+    font-family: Arial, Helvetica, sans-serif;
   }
   #print-area mark.hl {
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
