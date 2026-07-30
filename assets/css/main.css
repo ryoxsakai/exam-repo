@@ -921,9 +921,10 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 .print-field { margin-bottom: 14px; }
 .print-field-label { font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
 /* 「大問ごとに改ページ」ON のとき、プレビュー上でも改ページ位置が分かるようにする
-   （実際の改ページは @media print 側で指定。ここは画面上の目印だけ） */
-.print-doc.qbreak .print-q + .print-q,
-.print-doc.qbreak .print-part + .print-part .print-q:first-child {
+   （実際の改ページは @media print 側で指定。ここは画面上の目印だけ）。
+   問題面（.print-part-q）と解答・解説面（.print-part-a）で別々に効かせる。 */
+.print-doc.qbreak-q .print-part-q .print-q + .print-q,
+.print-doc.qbreak-a .print-part-a .print-q + .print-q {
   border-top: 2px dashed var(--line); padding-top: 22px; margin-top: 22px;
 }
 /* 「本文に5行ごとの行番号をつける」ON のとき、本文セクションの左に数字を出す余白を
@@ -1046,8 +1047,12 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
      大問も途中で改ページしてよい（見出し直後の改ページ防止は下で別途対応）。 */
   #print-area.print-out .print-q { margin-bottom: 16pt; }
   /* 「大問ごとに改ページ」ON: 2つ目以降の大問を必ず新しいページから始める。
-     各パートの先頭の大問は .print-part + .print-part の改ページで既に新ページなので対象外。 */
-  #print-area.print-out.qbreak .print-q + .print-q { page-break-before: always; break-before: page; }
+     各パートの先頭の大問は .print-part + .print-part の改ページで既に新ページなので対象外。
+     問題面（.print-part-q）と解答・解説面（.print-part-a）で別々に設定できる。 */
+  #print-area.print-out.qbreak-q .print-part-q .print-q + .print-q,
+  #print-area.print-out.qbreak-a .print-part-a .print-q + .print-q {
+    page-break-before: always; break-before: page;
+  }
   #print-area.print-out .print-q-head { font-size: 13pt; font-weight: 700; margin-bottom: 6pt; }
   #print-area.print-out .print-field-label { font-size: 10pt; font-weight: 600; margin-bottom: 3pt; }
   /* 行番号ONのときは本文幅を絶対単位で固定する（@page の本文幅と同じ 174mm）。
