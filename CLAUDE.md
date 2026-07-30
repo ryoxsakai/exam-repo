@@ -7,7 +7,7 @@
 - **フロントエンド**: 素の HTML/CSS/JS（ビルド不要の静的サイト）。GitHub Pages（`exam.lrnr.jp`）に **deploy from a branch** で配信。
   - `index.html` … 閲覧ページ（通常検索 / お気に入り / コーパス検索）
   - `setting/index.html` … 設定ページ（メイン設定 / 接続設定 / 入試問題一覧 / 問題登録 / コーパス検索設定）
-  - `assets/css/main.css` … デザインシステム（配色はエメラルド+ブルー。フォントは Google Fonts で読み込み、`--sans`=ゴシック: Noto Sans JP、`--serif`=問題文の明朝系: 英字 Lora + 和文 Noto Serif JP の混植）
+  - `assets/css/main.css` … デザインシステム（配色はエメラルド+ブルー。フォントは Google Fonts で読み込み、`--sans`=ゴシック: ヒラギノ角ゴシック（ローカルにあれば）→ Noto Sans JP、`--serif`=問題文の明朝系: Century Schoolbook/ヒラギノ明朝（ローカルにあれば）→ 英字 Lora + 和文 Noto Serif JP の混植。font-family はグリフ単位でフォールバックするため、ローカル英字フォントは和文側の優先順位に影響しない）
   - `assets/js/` … `store`(localStorage) / `auth`(Firebase Auth) / `api`(Worker) / `ui` / `markup` / `corpus` / `onboarding`(使い方ガイド) / `viewer` / `settings`
 - **バックエンド**: `worker/index.ts`（Cloudflare Worker） + `schema.sql`（D1 / SQLite）。`wrangler.toml` で設定。
   - `.github/workflows/worker-deploy.yml` が `worker/**` 変更時に自動デプロイ。
