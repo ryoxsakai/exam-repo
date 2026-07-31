@@ -68,6 +68,7 @@
     favSet: null,        // ログイン中ユーザーのお気に入り Set("examId:qnum")。null=未取得
     favRows: [],         // お気に入りタブ表示用（Api.getFavorites の favorites）
     favFolders: [],        // お気に入りフォルダ（Api.getFavorites の folders）
+    favSections: [],       // お気に入りのセクション見出し（Api.getFavorites の sections。中身を持たない）
     favCollapsed: Store.getFavCollapsed(),  // 折りたたみ中のフォルダ id → true（デフォルトは展開表示。この端末に保存）
     favDrag: null          // ドラッグ中のノード情報。null=非ドラッグ中
   };
@@ -200,7 +201,9 @@
     if (el("favorite-folder-modal")) {
       UI.wireModal(el("favorite-folder-modal"));
       var favNewFolderBtn = el("btn-favorites-new-folder");
-      if (favNewFolderBtn) favNewFolderBtn.addEventListener("click", function () { openFavoriteFolderModal({ mode: "create", parentId: null }); });
+      if (favNewFolderBtn) favNewFolderBtn.addEventListener("click", function () { openFavoriteFolderModal({ mode: "create", kind: "folder", parentId: null }); });
+      var favNewSectionBtn = el("btn-favorites-new-section");
+      if (favNewSectionBtn) favNewSectionBtn.addEventListener("click", function () { openFavoriteFolderModal({ mode: "create", kind: "section", parentId: null }); });
       if (el("fav-folder-save")) el("fav-folder-save").addEventListener("click", saveFavoriteFolderModal);
     }
     initFavoritesArea();
@@ -229,15 +232,19 @@
         renderPrintPreview();
       });
     }
-    // 大問ごとの改ページ・パート見出しの有無は、問題面と解答・解説面で別々に設定する
+    // 大問／セクションごとの改ページ・パート見出しの有無は、問題面と解答・解説面で別々に設定する
     [["pr-qbreak-q", "q", "break"], ["pr-qbreak-a", "a", "break"],
+     ["pr-sbreak-q", "q", "sbreak"], ["pr-sbreak-a", "a", "sbreak"],
      ["pr-hide-head-q", "q", "head"], ["pr-hide-head-a", "a", "head"]].forEach(function (t) {
       var box = el(t[0]);
       if (!box) return;
       var side = t[1], kind = t[2];
-      box.checked = kind === "break" ? Store.getPrintQPageBreak(side) : Store.getPrintHidePartHead(side);
+      box.checked = kind === "break" ? Store.getPrintQPageBreak(side)
+        : kind === "sbreak" ? Store.getPrintSectionPageBreak(side)
+        : Store.getPrintHidePartHead(side);
       box.addEventListener("change", function () {
         if (kind === "break") Store.setPrintQPageBreak(side, box.checked);
+        else if (kind === "sbreak") Store.setPrintSectionPageBreak(side, box.checked);
         else Store.setPrintHidePartHead(side, box.checked);
         renderPrintPreview();
       });
@@ -662,12 +669,13 @@
   function ensureFavoritesLoaded(force) {
     if (state.favSet && !force) return Promise.resolve(state.favSet);
     if (!window.Auth || !Auth.getCurrentUser()) {
-      state.favSet = new Set(); state.favRows = []; state.favFolders = [];
+      state.favSet = new Set(); state.favRows = []; state.favFolders = []; state.favSections = [];
       return Promise.resolve(state.favSet);
     }
     return Api.getFavorites().then(function (data) {
       state.favRows = data.favorites || [];
       state.favFolders = data.folders || [];
+      state.favSections = data.sections || [];
       state.favSet = new Set(state.favRows.map(function (f) { return f.exam_id + ":" + f.question_number; }));
       // お気に入りから外れた試験のキャッシュは削除し、際限なく増えないようにする
       Store.pruneCachedExams(state.favRows.map(function (f) { return f.exam_id; }));
@@ -726,32 +734,43 @@
       box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message || "取得に失敗しました") + "</div></div>";
     });
   }
-  // 大問の1件を表す一意キー。フォルダは "folder:<id>"、お気に入りは "fav:<examId>:<qnum>"
+  // ツリー内の1件を表す一意キー。フォルダは "folder:<id>"、セクションは "section:<id>"、
+  // お気に入りは "fav:<examId>:<qnum>"
   function favNodeKey(it) {
-    return it.kind === "folder" ? "folder:" + it.folder.id : "fav:" + it.favorite.exam_id + ":" + it.favorite.question_number;
+    if (it.kind === "folder") return "folder:" + it.folder.id;
+    if (it.kind === "section") return "section:" + it.section.id;
+    return "fav:" + it.favorite.exam_id + ":" + it.favorite.question_number;
   }
 
-  // 指定コンテナ（フォルダ id。null=ルート直下）の子要素を、フォルダ・お気に入りをまとめて sort_order 順に返す
+  // ツリー内の1件の sort_order（フォルダ・セクション・お気に入りで持ち主が違うだけ）
+  function favNodeSortOrder(it) {
+    var rec = it.kind === "folder" ? it.folder : it.kind === "section" ? it.section : it.favorite;
+    return Number(rec.sort_order) || 0;
+  }
+
+  // 指定コンテナ（フォルダ id。null=ルート直下）の子要素を、
+  // フォルダ・セクション・お気に入りをまとめて sort_order 順に返す
   function favChildrenOf(parentId) {
+    var inContainer = function (v) { return (v == null ? null : Number(v)) === parentId; };
     var folders = (state.favFolders || []).filter(function (f) {
-      return (f.parent_id == null ? null : Number(f.parent_id)) === parentId;
+      return inContainer(f.parent_id);
     }).map(function (f) { return { kind: "folder", folder: f }; });
+    var sections = (state.favSections || []).filter(function (s) {
+      return inContainer(s.parent_id);
+    }).map(function (s) { return { kind: "section", section: s }; });
     var favs = (state.favRows || []).filter(function (f) {
-      return (f.folder_id == null ? null : Number(f.folder_id)) === parentId;
+      return inContainer(f.folder_id);
     }).map(function (f) { return { kind: "favorite", favorite: f }; });
-    var items = folders.concat(favs);
-    items.sort(function (a, b) {
-      var sa = Number(a.kind === "folder" ? a.folder.sort_order : a.favorite.sort_order) || 0;
-      var sb = Number(b.kind === "folder" ? b.folder.sort_order : b.favorite.sort_order) || 0;
-      return sa - sb;
-    });
+    var items = folders.concat(sections, favs);
+    items.sort(function (a, b) { return favNodeSortOrder(a) - favNodeSortOrder(b); });
     return items;
   }
 
   function renderFavorites() {
     var box = el("favorites-area");
     if (!box) return;
-    var hasAny = (state.favRows && state.favRows.length) || (state.favFolders && state.favFolders.length);
+    var hasAny = (state.favRows && state.favRows.length) || (state.favFolders && state.favFolders.length) ||
+      (state.favSections && state.favSections.length);
     if (!hasAny) {
       box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-star ic"></i>お気に入りはまだありません。問題閲覧モーダルの星アイコンから登録できます。</div></div>';
       return;
@@ -791,6 +810,21 @@
         "</div>" +
         (collapsed ? "" : renderFavContainer(Number(f.id), depth + 1)) +
         "</div>";
+    }
+    if (it.kind === "section") {
+      // セクションは中身を持たない見出し。フォルダ・大問と同じ1要素として並べ替えできるが、
+      // 展開/折りたたみは無く、印刷時に見出しとして出力される。
+      var s = it.section;
+      return '<div class="fav-node fav-section" data-node="' + key + '">' +
+        '<div class="fav-row" draggable="true">' +
+          '<span class="fav-drag-handle" title="ドラッグ／長押しで並べ替え"><i class="fa-solid fa-grip-vertical"></i></span>' +
+          '<i class="fa-solid fa-bookmark fav-section-ic"></i>' +
+          '<span class="fav-meta"><span class="fav-name">' + esc(s.name) + "</span></span>" +
+          '<span class="fav-actions">' +
+            '<button class="icon-btn sm" data-fav-rename-section="' + s.id + '" title="セクション名を変更"><i class="fa-solid fa-pen"></i></button>' +
+            '<button class="icon-btn sm" data-fav-delete-section="' + s.id + '" title="セクションを削除"><i class="fa-solid fa-trash"></i></button>' +
+          "</span>" +
+        "</div></div>";
     }
     var r = it.favorite;
     var uniFull = r.university_name || "";
@@ -864,12 +898,24 @@
       if (renameBtn) {
         var rid = Number(renameBtn.getAttribute("data-fav-rename"));
         var folder = (state.favFolders || []).filter(function (f) { return Number(f.id) === rid; })[0];
-        if (folder) openFavoriteFolderModal({ mode: "rename", id: rid, name: folder.name });
+        if (folder) openFavoriteFolderModal({ mode: "rename", kind: "folder", id: rid, name: folder.name });
         return;
       }
       var delBtn = t.closest && t.closest("[data-fav-delete-folder]");
       if (delBtn) {
         deleteFavoriteFolderConfirm(Number(delBtn.getAttribute("data-fav-delete-folder")));
+        return;
+      }
+      var renameSecBtn = t.closest && t.closest("[data-fav-rename-section]");
+      if (renameSecBtn) {
+        var sid = Number(renameSecBtn.getAttribute("data-fav-rename-section"));
+        var sec = (state.favSections || []).filter(function (x) { return Number(x.id) === sid; })[0];
+        if (sec) openFavoriteFolderModal({ mode: "rename", kind: "section", id: sid, name: sec.name });
+        return;
+      }
+      var delSecBtn = t.closest && t.closest("[data-fav-delete-section]");
+      if (delSecBtn) {
+        deleteFavoriteSectionConfirm(Number(delSecBtn.getAttribute("data-fav-delete-section")));
       }
     });
 
@@ -889,6 +935,7 @@
       var node = row.closest(".fav-node");
       if (!node) return null;
       var key = node.getAttribute("data-node");
+      // フォルダだけが「中へ入れる」対象。セクションは中身を持たないので大問と同じ扱い（前後のみ）。
       var isFolder = key.indexOf("folder:") === 0;
       var container = node.parentElement; // .fav-children（このノードが属するコンテナ）
       var pAttr = container && container.getAttribute("data-parent");
@@ -949,10 +996,13 @@
     if (!dropInfo || !dragKey) return;
     if (dropInfo.before === dragKey || dropInfo.after === dragKey) return; // 自分自身の上へのドロップは無視
     var dragParts = dragKey.split(":");
-    var isDragFolder = dragParts[0] === "folder";
+    var dragKind = dragParts[0] === "folder" ? "folder" : dragParts[0] === "section" ? "section" : "favorite";
+    var isDragFolder = dragKind === "folder";
+    var isDragSection = dragKind === "section";
     var dragFolderId = isDragFolder ? Number(dragParts[1]) : null;
-    var dragExamId = isDragFolder ? null : Number(dragParts[1]);
-    var dragQnum = isDragFolder ? null : Number(dragParts[2]);
+    var dragSectionId = isDragSection ? Number(dragParts[1]) : null;
+    var dragExamId = dragKind === "favorite" ? Number(dragParts[1]) : null;
+    var dragQnum = dragKind === "favorite" ? Number(dragParts[2]) : null;
     var targetParentId = dropInfo.parentId != null ? Number(dropInfo.parentId) : null;
 
     if (isDragFolder) {
@@ -967,13 +1017,16 @@
 
     var items = favChildrenOf(targetParentId).filter(function (it) {
       if (isDragFolder) return !(it.kind === "folder" && Number(it.folder.id) === dragFolderId);
+      if (isDragSection) return !(it.kind === "section" && Number(it.section.id) === dragSectionId);
       return !(it.kind === "favorite" && Number(it.favorite.exam_id) === dragExamId && Number(it.favorite.question_number) === dragQnum);
     });
 
     var dragItem = isDragFolder
       ? { kind: "folder", folder: (state.favFolders || []).filter(function (f) { return Number(f.id) === dragFolderId; })[0] }
+      : isDragSection
+      ? { kind: "section", section: (state.favSections || []).filter(function (s) { return Number(s.id) === dragSectionId; })[0] }
       : { kind: "favorite", favorite: (state.favRows || []).filter(function (f) { return Number(f.exam_id) === dragExamId && Number(f.question_number) === dragQnum; })[0] };
-    if (!dragItem.folder && !dragItem.favorite) return;
+    if (!dragItem.folder && !dragItem.section && !dragItem.favorite) return;
 
     var insertIndex = items.length;
     if (dropInfo.before || dropInfo.after) {
@@ -986,14 +1039,15 @@
 
     items.forEach(function (it, idx) {
       if (it.kind === "folder") { it.folder.parent_id = targetParentId; it.folder.sort_order = idx; }
+      else if (it.kind === "section") { it.section.parent_id = targetParentId; it.section.sort_order = idx; }
       else { it.favorite.folder_id = targetParentId; it.favorite.sort_order = idx; }
     });
     renderFavorites();
 
     var apiItems = items.map(function (it) {
-      return it.kind === "folder"
-        ? { type: "folder", id: it.folder.id }
-        : { type: "favorite", examId: it.favorite.exam_id, questionNumber: it.favorite.question_number };
+      if (it.kind === "folder") return { type: "folder", id: it.folder.id };
+      if (it.kind === "section") return { type: "section", id: it.section.id };
+      return { type: "favorite", examId: it.favorite.exam_id, questionNumber: it.favorite.question_number };
     });
     Api.reorderFavorites(targetParentId, apiItems).catch(function (e) {
       UI.toast(e.message || "並べ替えに失敗しました", "err");
@@ -1125,28 +1179,41 @@
     state.favDrag = null;
   }
 
-  /* ---- お気に入りフォルダの作成・改名・削除モーダル ---- */
+  /* ---- お気に入りフォルダ／セクションの作成・改名・削除モーダル ----
+     フォルダとセクションは「コンテナ内の名前つき1要素」という点で同じなので、
+     作成・改名のモーダルもAPIも共通にし、opts.kind（"folder"/"section"）で文言だけ切り替える。 */
   var favFolderModalState = null;
   function openFavoriteFolderModal(opts) {
     if (!el("favorite-folder-modal")) return;
     favFolderModalState = opts;
-    el("favorite-folder-modal-title").textContent = opts.mode === "rename" ? "フォルダ名を変更" : "新規フォルダ";
-    el("fav-folder-name").value = opts.mode === "rename" ? (opts.name || "") : "";
+    var isSection = opts.kind === "section";
+    var noun = isSection ? "セクション" : "フォルダ";
+    el("favorite-folder-modal-title").textContent = opts.mode === "rename" ? noun + "名を変更" : "新規" + noun;
+    var icon = el("favorite-folder-modal-icon");
+    if (icon) icon.className = "fa-solid " + (isSection ? "fa-bookmark" : "fa-folder-plus") + " ic";
+    var label = el("fav-folder-name-label");
+    if (label) label.textContent = noun + "名";
+    var input = el("fav-folder-name");
+    input.placeholder = isSection ? "例: 第1章 医療・健康" : "例: 頻出テーマ";
+    input.value = opts.mode === "rename" ? (opts.name || "") : "";
     UI.openModal(el("favorite-folder-modal"));
-    setTimeout(function () { el("fav-folder-name").focus(); }, 0);
+    setTimeout(function () { input.focus(); }, 0);
   }
   function saveFavoriteFolderModal() {
     if (!favFolderModalState) return;
-    var name = (el("fav-folder-name").value || "").trim();
-    if (!name) { UI.toast("フォルダ名を入力してください", "err"); return; }
     var opts = favFolderModalState;
-    var p = opts.mode === "rename" ? Api.renameFavoriteFolder(opts.id, name) : Api.createFavoriteFolder(name, opts.parentId);
+    var noun = opts.kind === "section" ? "セクション" : "フォルダ";
+    var name = (el("fav-folder-name").value || "").trim();
+    if (!name) { UI.toast(noun + "名を入力してください", "err"); return; }
+    var p = opts.mode === "rename"
+      ? Api.renameFavoriteFolder(opts.id, name)
+      : Api.createFavoriteFolder(name, opts.parentId, opts.kind);
     p.then(function () {
       UI.closeModal(el("favorite-folder-modal"));
       return ensureFavoritesLoaded(true);
     }).then(function () {
       renderFavorites();
-      UI.toast(opts.mode === "rename" ? "フォルダ名を変更しました" : "フォルダを作成しました", "ok");
+      UI.toast(noun + (opts.mode === "rename" ? "名を変更しました" : "を作成しました"), "ok");
     }).catch(function (e) { UI.toast(e.message || "保存に失敗しました", "err"); });
   }
   function deleteFavoriteFolderConfirm(id) {
@@ -1157,6 +1224,17 @@
     }).then(function () {
       renderFavorites();
       UI.toast("フォルダを削除しました", "ok");
+    }).catch(function (e) { UI.toast(e.message || "削除に失敗しました", "err"); });
+  }
+  // セクションは中身を持たないので、削除しても大問・フォルダには影響しない
+  function deleteFavoriteSectionConfirm(id) {
+    var sec = (state.favSections || []).filter(function (s) { return Number(s.id) === id; })[0];
+    if (!confirm("セクション「" + (sec ? sec.name : "") + "」を削除しますか？（大問は削除されません）")) return;
+    Api.deleteFavoriteFolder(id).then(function () {
+      return ensureFavoritesLoaded(true);
+    }).then(function () {
+      renderFavorites();
+      UI.toast("セクションを削除しました", "ok");
     }).catch(function (e) { UI.toast(e.message || "削除に失敗しました", "err"); });
   }
 
@@ -1607,6 +1685,21 @@
     return qs.filter(isPrintQ);
   }
 
+  // 印刷順の要素列（セクション見出し + 大問）。お気に入りフォルダの印刷では
+  // ユーザーがツリーに挿入したセクションが同じ順序で挟まる。
+  // セクションを持たない試験単位の印刷では大問だけの列になる。
+  function printItems(ex) {
+    var qs = printQuestions(ex);
+    if (!ex.items) return qs.map(function (q) { return { kind: "question", q: q }; });
+    // 「印刷する大問」で外した大問はここで除く（セクション見出しは常に残し、
+    // その面に中身が1つも出ないセクションは描画時に落とす。part() 参照）
+    var keep = {};
+    qs.forEach(function (q) { keep[printQKey(q)] = true; });
+    return ex.items.filter(function (it) {
+      return it.kind === "section" || keep[printQKey(it.q)];
+    });
+  }
+
   function buildPrintHtml(ex, opts) {
     var html = "";
     if (opts.cover) {
@@ -1632,18 +1725,33 @@
       }
     }
     var qs = printQuestions(ex);
+    var items = printItems(ex);
+    // 通し番号は qs 内の位置に固定し、問題面と解答面で同じ大問が同じ番号になるようにする
+    // （セクション見出しは番号を消費しない）
+    var seqOf = {};
+    qs.forEach(function (q, i) { seqOf[printQKey(q)] = i + 1; });
     // answerSide=false が問題面（print-part-q）、true が解答・解説面（print-part-a）。
     // 面ごとに「大問ごとの改ページ」「パート見出しを出すか」を切り替えられるよう、
     // 面を表すクラスを付けておく（改ページの指定は CSS 側で面別に効かせる）。
     function part(title, answerSide) {
       var inner = "";
-      qs.forEach(function (q, i) {
+      // セクション見出しは、その面に実際に中身が出る大問が来るまで保留する。
+      // こうすると「この面には中身が無いセクション」（例: 解答が未登録の大問だけの
+      // セクション、大問を全部チェックから外したセクション）の見出しだけが
+      // ぽつんと印刷されるのを防げる。
+      var pendingSection = null;
+      items.forEach(function (it) {
+        if (it.kind === "section") { pendingSection = it; return; }
+        var q = it.q;
         var secs = questionSections(q).filter(function (s) {
           return s.text && s.text.trim() && (isAnswerSide(s.type) === answerSide) && Store.isPrintSection(s.type);
         });
         if (!secs.length) return;
-        // 通し番号は qs 内の位置に固定し、問題面と解答面で同じ大問が同じ番号になるようにする
-        inner += '<div class="print-q"><div class="print-q-head">' + esc(printQHeading(q, i + 1, opts)) + "</div>";
+        if (pendingSection) {
+          inner += '<div class="print-section-head">' + esc(pendingSection.name) + "</div>";
+          pendingSection = null;
+        }
+        inner += '<div class="print-q"><div class="print-q-head">' + esc(printQHeading(q, seqOf[printQKey(q)], opts)) + "</div>";
         secs.forEach(function (s) { inner += printField(s.type, s.text, opts); });
         inner += "</div>";
       });
@@ -1664,6 +1772,8 @@
       hideLabels: el("pr-hide-labels") ? el("pr-hide-labels").checked : false,
       qBreakQ: el("pr-qbreak-q") ? el("pr-qbreak-q").checked : false,
       qBreakA: el("pr-qbreak-a") ? el("pr-qbreak-a").checked : false,
+      sBreakQ: el("pr-sbreak-q") ? el("pr-sbreak-q").checked : false,
+      sBreakA: el("pr-sbreak-a") ? el("pr-sbreak-a").checked : false,
       hideHeadQ: el("pr-hide-head-q") ? el("pr-hide-head-q").checked : false,
       hideHeadA: el("pr-hide-head-a") ? el("pr-hide-head-a").checked : false,
       qSubtitle: el("pr-qsubtitle") ? el("pr-qsubtitle").checked : false,
@@ -1882,12 +1992,14 @@
     });
   }
 
-  // 印刷ドキュメントのルートに付けるクラス（文字サイズ・行間・大問ごとの改ページ）。
+  // 印刷ドキュメントのルートに付けるクラス（文字サイズ・行間・大問／セクションごとの改ページ）。
   // プレビュー(.print-doc)と実際の印刷(#print-area.print-out)で同じ指定を使う。
   function printDocClasses(opts) {
     return "fs-" + Store.getPrintFontSize() + " lh-" + Store.getPrintLineHeight() +
       (opts && opts.qBreakQ ? " qbreak-q" : "") +
-      (opts && opts.qBreakA ? " qbreak-a" : "");
+      (opts && opts.qBreakA ? " qbreak-a" : "") +
+      (opts && opts.sBreakQ ? " sbreak-q" : "") +
+      (opts && opts.sBreakA ? " sbreak-a" : "");
   }
 
   // 選択中の試験から登場するセクション種別を問題面／解答面に分けてチェックUI化。
@@ -1965,17 +2077,25 @@
 
   /* --- 印刷タブ: お気に入りフォルダを一括印刷する --- */
 
-  // フォルダ配下のお気に入りを、ユーザーが並べた表示順で再帰的に集める
+  // フォルダ配下を、ユーザーが並べた表示順のまま再帰的に平坦化する
   // （サブフォルダの中身もそのフォルダの位置に展開して含める）。
-  function favoritesInFolder(folderId) {
+  // セクション見出しも順序を保ったまま含めるので、そのまま印刷の並びとして使える。
+  function favEntriesInFolder(folderId) {
     var out = [];
     (function walk(pid) {
       favChildrenOf(pid).forEach(function (it) {
-        if (it.kind === "favorite") out.push(it.favorite);
+        if (it.kind === "favorite" || it.kind === "section") out.push(it);
         else walk(Number(it.folder.id));
       });
     })(folderId);
     return out;
+  }
+
+  // フォルダ配下のお気に入り（大問）だけを表示順で集める
+  function favoritesInFolder(folderId) {
+    return favEntriesInFolder(folderId)
+      .filter(function (e) { return e.kind === "favorite"; })
+      .map(function (e) { return e.favorite; });
   }
 
   // フォルダの表紙3行（上・中央・下）。中央は未設定ならフォルダ名を既定にし、
@@ -2029,7 +2149,8 @@
     var box = el("print-preview");
     box.innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
     ensureFavoritesLoaded().then(function () {
-      var favs = favoritesInFolder(folderId);
+      var entries = favEntriesInFolder(folderId);
+      var favs = entries.filter(function (e) { return e.kind === "favorite"; }).map(function (e) { return e.favorite; });
       if (!favs.length) {
         state.printExam = null;
         renderPrintSectionControls();
@@ -2043,9 +2164,15 @@
       })).then(function (results) {
         var byExam = {};
         results.forEach(function (r) { if (r && r.exam) byExam[r.exam.id] = r.exam; });
-        // お気に入りの並び順のまま、対応する大問データを引き当てる（試験情報を _ctx に添える）
-        var questions = [];
-        favs.forEach(function (f) {
+        // お気に入りの並び順のまま、対応する大問データを引き当てる（試験情報を _ctx に添える）。
+        // items はセクション見出しを含めた印刷順の要素列（questions は大問だけの一覧）。
+        var questions = [], items = [];
+        entries.forEach(function (e) {
+          if (e.kind === "section") {
+            items.push({ kind: "section", id: e.section.id, name: e.section.name });
+            return;
+          }
+          var f = e.favorite;
           var exam = byExam[f.exam_id];
           if (!exam) return;
           var q = (exam.questions || []).filter(function (x) {
@@ -2057,6 +2184,7 @@
           copy.exam_id = exam.id;
           copy._ctx = { year: exam.year, university_name: exam.university_name, schedule: exam.schedule };
           questions.push(copy);
+          items.push({ kind: "question", q: copy });
         });
         if (!questions.length) {
           state.printExam = null;
@@ -2067,7 +2195,7 @@
         state.printExam = {
           kind: "favFolder", folderId: folderId,
           title: favFolderTitle(folderId), titleParts: favFolderTitleParts(folderId),
-          questions: questions
+          questions: questions, items: items
         };
         state.printQSel = {};
         questions.forEach(function (q) { state.printQSel[printQKey(q)] = true; });

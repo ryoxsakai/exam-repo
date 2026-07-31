@@ -64,11 +64,11 @@
 | `GET /api/search` | 全文検索（word,universityName,year,schedule。出現回数つき） |
 | `GET /api/corpus` | **全大問の英文テキスト一括取得**（クライアント側コーパス分析用） |
 | `POST /api/upload` / `GET /api/image/:key` | 問題画像を R2 へ保存 / 配信（`wrangler.toml` の `[[r2_buckets]] binding=IMAGES`） |
-| `GET/POST /api/favorites` `DELETE /api/favorites/:examId/:questionNumber` | ログインユーザーの大問お気に入り（要 `Authorization: Bearer <Firebase IDトークン>`）。GET は `favorites` に加え `folders`（フォルダ一覧）も返す |
-| `POST /api/favorite-folders` `PUT/DELETE /api/favorite-folders/:id` `POST /api/favorite-folders/reorder` | お気に入りフォルダの作成・改名・削除・並べ替え（要ログイン） |
+| `GET/POST /api/favorites` `DELETE /api/favorites/:examId/:questionNumber` | ログインユーザーの大問お気に入り（要 `Authorization: Bearer <Firebase IDトークン>`）。GET は `favorites` に加え `folders`（フォルダ一覧）・`sections`（セクション見出し一覧）も返す |
+| `POST /api/favorite-folders` `PUT/DELETE /api/favorite-folders/:id` `POST /api/favorite-folders/reorder` | お気に入りフォルダ／セクションの作成・改名・削除・並べ替え（要ログイン）。POST の `kind`（`"folder"`/`"section"`）で種別を指定し、改名・削除・並べ替えは両者で共通 |
 | `GET/PUT /api/user-settings` | ログインユーザーごとの端末をまたぐ設定（要ログイン。`tab_order_main`/`tab_order_setting`=タブ並び順、`print_titles`=お気に入りフォルダ印刷の表紙タイトル `{フォルダid:{top,mid,bottom}}`）。PUT は渡されたキーだけを部分更新する |
 
-データモデル: `universities`(name, reading=よみがな, abbreviation=略称表示用) 1—N `exams`(year, schedule) 1—N `questions`(question_number, label, problem_text, answer_text, commentary_text)。`label` は大問の表示ラベル（任意。例「1A」。空なら「大問」+`question_number` を表示する表示専用の上書き。並び順・識別は常に整数 `question_number` を使用）。`favorites`(uid, exam_id, question_number) は `questions.id` ではなく他APIと同じ `(exam_id, question_number)` で大問を識別する。`favorite_folders`(uid, name, parent_id, sort_order) は自己参照の `parent_id`（NULL=ルート直下）で階層化し、`favorites` にも同じ意味の `folder_id`/`sort_order` を持たせて、フォルダとお気に入りをまとめて1つの表示順（コンテナ=uid+parent_id/folder_id 内の `sort_order`）で並べる。`user_settings`(uid PRIMARY KEY, tab_order_main, tab_order_setting, print_titles) はログインユーザー1人につき1行で、`tab_order_*` はタブid配列、`print_titles` は `{フォルダid:{top,mid,bottom}}` のJSON文字列（値が文字列なら中央行のみの旧形式）（いずれも未設定は空文字列）。
+データモデル: `universities`(name, reading=よみがな, abbreviation=略称表示用) 1—N `exams`(year, schedule) 1—N `questions`(question_number, label, problem_text, answer_text, commentary_text)。`label` は大問の表示ラベル（任意。例「1A」。空なら「大問」+`question_number` を表示する表示専用の上書き。並び順・識別は常に整数 `question_number` を使用）。`favorites`(uid, exam_id, question_number) は `questions.id` ではなく他APIと同じ `(exam_id, question_number)` で大問を識別する。`favorite_folders`(uid, name, parent_id, sort_order, kind) は自己参照の `parent_id`（NULL=ルート直下）で階層化し、`favorites` にも同じ意味の `folder_id`/`sort_order` を持たせて、フォルダとお気に入りをまとめて1つの表示順（コンテナ=uid+parent_id/folder_id 内の `sort_order`）で並べる。`kind` は `'folder'`（中に要素を入れられる）と `'section'`（中身を持たない見出し）の別で、セクションも「コンテナ内の名前つき1要素」という点はフォルダと同じなのでテーブル・並べ替え・改名・削除の仕組みを共有し、この列だけで振る舞いを分ける（既存行はすべて `'folder'`）。`user_settings`(uid PRIMARY KEY, tab_order_main, tab_order_setting, print_titles) はログインユーザー1人につき1行で、`tab_order_*` はタブid配列、`print_titles` は `{フォルダid:{top,mid,bottom}}` のJSON文字列（値が文字列なら中央行のみの旧形式）（いずれも未設定は空文字列）。
 
 ### 認証（Firebase Auth / Googleログイン）
 
@@ -78,12 +78,19 @@
 
 ### お気に入りのフォルダ分け・並べ替え（`assets/js/viewer.js`）
 
-- お気に入りタブはフォルダ・大問を1本の木構造（`#favorites-area` 内 `.fav-tree`）として描画する。並び順・所属フォルダは `favorites.sort_order`/`folder_id` と `favorite_folders.sort_order`/`parent_id` で管理し、フォルダ・お気に入りをまとめて1つの表示順にする。
+- お気に入りタブはフォルダ・セクション・大問を1本の木構造（`#favorites-area` 内 `.fav-tree`）として描画する。並び順・所属フォルダは `favorites.sort_order`/`folder_id` と `favorite_folders.sort_order`/`parent_id` で管理し、3種をまとめて1つの表示順にする（`favChildrenOf`）。
 - 並べ替え・フォルダ間移動・階層化（フォルダをフォルダへドロップ）は PC はネイティブ Drag and Drop API、スマホはタップ長押し（`touchstart`から一定時間後にドラッグ開始、閾値以上動いたらスクロールとみなし中止）で行い、いずれも `POST /api/favorite-folders/reorder` で確定する（ドロップ先コンテナの子要素を渡した順序で `sort_order`/`folder_id`(`parent_id`) に一括反映。移動元に残る要素の番号は詰め直さない）。
 - スマホの長押しドラッグ中だけ `body.fav-dragging-touch` を付与し、CSS側でその間だけテキスト選択・長押しコールアウトを禁止する（常時ではなく JS がドラッグ中と判定した時だけ適用）。
 - フォルダ削除時、配下のフォルダ・お気に入りは削除せず削除フォルダの親へ繰り上げる（`fixOrphanedRecords` でも念のため参照切れの `folder_id`/`parent_id` をルートへ戻す）。
 - お気に入り登録済みの大問を含む試験は `Store.getCachedExam`/`setCachedExam`（localStorage `exam_fav_cache`。examId単位）にキャッシュし、`openExam` で表示時に stale-while-revalidate（キャッシュがあれば即座に表示しつつ裏で `Api.getExam` を取得し直して差し替え）で体感速度を上げる。お気に入りから外れた試験は `ensureFavoritesLoaded` が `Store.pruneCachedExams` でその都度キャッシュから削除し、際限なく増えないようにする。
 - フォルダの折りたたみ状態（`state.favCollapsed`。フォルダid→真偽）は `Store.getFavCollapsed`/`setFavCollapsed`（localStorage `exam_fav_collapsed`。この端末のみ）に保存し、再読み込みやログインし直しても復元される。トグル時（`data-toggle` クリック）に即保存し、削除済みフォルダのキーは `ensureFavoritesLoaded` が `Store.pruneFavCollapsed` でその都度削除する。
+
+#### セクション（印刷時の見出し）
+
+- お気に入りタブのツールバーの「セクションを挿入」（`#btn-favorites-new-section`）で、**中身を持たない見出し**をツリーに挿入できる。大問・フォルダと同じ1要素として扱われ、**同じドラッグ＆ドロップ（スマホは長押し）で並べ替え・フォルダ間移動**ができ、鉛筆ボタンで改名、ゴミ箱ボタンで削除する（削除しても大問は消えない）。
+- サーバー側は `favorite_folders` の `kind='section'` 行。作成・改名・削除・並べ替えのエンドポイントはフォルダと共通で、違いは「親になれない」ことだけ（`isFavoriteFolder` が親指定を `kind='folder'` に限り、`fixOrphanedRecords` もセクションを指す `folder_id`/`parent_id` をルートへ戻す）。クライアントでは扱いが別なので `GET /api/favorites` のレスポンスで `folders` と `sections` に分けて返す。
+- ドロップ判定（`computeFavDropTarget`）では、行の中央50%への「中へ入れる」判定はフォルダ行だけに適用し、セクションは大問と同じく前後への挿入のみを受け付ける。
+- 印刷では、お気に入りフォルダを印刷対象にしたときにセクションが**見出し（`.print-section-head`）として同じ順序で挟まる**（下記「お気に入りフォルダの一括印刷」参照）。
 
 ### タブの並べ替え（`UI.makeSortableList`。`assets/js/ui.js`）
 
@@ -109,7 +116,10 @@
 
 - **表紙をつける**（`pr-cover`）
 - **「問題」「本文」「設問」のラベルを外す**（`pr-hide-labels` / `Store.getPrintHideLabels`）: `printField` がこの3種（`LABEL_HIDABLE`）のセクション名見出しを出力しなくなり、中身だけが印刷される。解答・解説・全訳などはどのセクションか分からなくなると困るため対象外で、常にラベルを出す。
-- **大問ごとに改ページ（問題面／解答・解説面で別々）**（`pr-qbreak-q` / `pr-qbreak-a` / `Store.getPrintQPageBreak(side)`）: ルート要素に `qbreak-q` / `qbreak-a` クラスを付け、`@media print` の `#print-area.print-out.qbreak-q .print-part-q .print-q + .print-q { page-break-before: always }`（解答面は `qbreak-a` / `.print-part-a`）で2つ目以降の大問を新しいページから始める（各パート先頭の大問は `.print-part + .print-part` の改ページで既に新ページ）。面の区別のため `part()` が `.print-part-q` / `.print-part-a` を付けている。画面のプレビューでは破線で改ページ位置を示す。面別に分ける前の設定（`exam_print_qbreak`）が残っている場合はその値を両面に引き継ぐ。
+- **大問ごとに改ページ（問題面／解答・解説面で別々）**（`pr-qbreak-q` / `pr-qbreak-a` / `Store.getPrintQPageBreak(side)`）: ルート要素に `qbreak-q` / `qbreak-a` クラスを付け、`@media print` の `#print-area.print-out.qbreak-q .print-part-q .print-q ~ .print-q { page-break-before: always }`（解答面は `qbreak-a` / `.print-part-a`）で2つ目以降の大問を新しいページから始める（各パート先頭の大問は `.print-part + .print-part` の改ページで既に新ページ）。面の区別のため `part()` が `.print-part-q` / `.print-part-a` を付けている。画面のプレビューでは破線で改ページ位置を示す。面別に分ける前の設定（`exam_print_qbreak`）が残っている場合はその値を両面に引き継ぐ。**隣接（`+`）ではなく一般兄弟（`~`）を使う**のは、大問と大問の間にセクション見出しが挟まっても「2つ目以降の大問」と判定できるようにするため。
+- **セクションごとに改ページ（問題面／解答・解説面で別々）**（`pr-sbreak-q` / `pr-sbreak-a` / `Store.getPrintSectionPageBreak(side)`）: ルート要素に `sbreak-q` / `sbreak-a` クラスを付け、`.print-q ~ .print-section-head` で2つ目以降のセクション見出しの前を改ページする（パート先頭の見出しは対象外）。お気に入りフォルダの印刷でのみ意味を持つ。
+  - **大問ごとの改ページONのときも、セクション見出しの前で改ページする**。そうしないと見出しだけが前ページの末尾に取り残される（改ページ位置が見出しの「後ろ」＝次の大問の前になってしまう）ため。
+  - 上と対で、**セクション見出しの直後の大問は改ページしない**（`.print-section-head + .print-q { page-break-before: auto }`）。これが無いと「見出しだけのページ→中身のページ」と白紙同然のページができる。上のルールと詳細度を揃え、**後に書くことで打ち消している**。
 - **パート見出しを外す（問題面／解答・解説面で別々）**（`pr-hide-head-q` / `pr-hide-head-a` / `Store.getPrintHidePartHead(side)`）: `part()` が `.print-part-head`（「問題」「解答・解説」）を出力しなくなる。
 - **文字サイズ / 行間**（`pr-fontsize` / `pr-lineheight`。表紙以外に適用）
 - **大問見出しに通し番号・試験情報を入れる**（`pr-qsubtitle` / `Store.getPrintQSubtitle`）: `printQHeading` が「大問3」の代わりに「1. 2018 関西医科 前期 大問3」形式で出力する。通し番号は印刷順（`printQuestions` の並び）での位置に固定するため、問題面と解答面で同じ大問が同じ番号になる。試験情報は各大問に添えた `q._ctx`（`{year, university_name, schedule}`）から作る。
@@ -127,7 +137,9 @@
 #### お気に入りフォルダの一括印刷
 
 - 印刷ツリーの冒頭に「お気に入り」ノード（`printFavTreeHtml`）を出し、フォルダを選ぶとそのフォルダのお気に入り大問をまとめて印刷できる（要ログイン。未ログイン時・フォルダが無い場合は案内文を出し、大学ツリーは通常どおり使える）。
-- 対象は `favoritesInFolder(folderId)` が**サブフォルダも再帰的に**辿って集めた大問で、順序はユーザーがお気に入りタブで並べた表示順（`sort_order`）をそのまま使う（`printQuestions` は `kind === "favFolder"` のとき大問番号でのソートをしない）。
+- 対象は `favEntriesInFolder(folderId)` が**サブフォルダも再帰的に**辿って集めたセクション見出し＋大問で、順序はユーザーがお気に入りタブで並べた表示順（`sort_order`）をそのまま使う（`printQuestions` は `kind === "favFolder"` のとき大問番号でのソートをしない）。`favoritesInFolder` はそのうち大問だけを返す薄いラッパ。
+- **セクション見出しは印刷順に挟まれ、問題面・解答・解説面の両方に出る**（`state.printExam.items` = `{kind:"section"|"question"}` の列。`printItems` が「印刷する大問」で外した大問を除いて返す）。`part()` は見出しを**保留（`pendingSection`）してから、その面に実際に中身が出る大問が来た時点で初めて出力する**。こうすると「その面には中身が無いセクション」（解答が未登録の大問だけのセクション、大問を全部チェックから外したセクション）の見出しだけが紙に残らない。
+- 大問見出しの通し番号は `printQuestions` の並びでの位置に固定する（`seqOf`）ため、**セクション見出しは番号を消費せず**、問題面と解答面で同じ大問が同じ番号になる。
 - フォルダ行は階層をインデントで示しつつ**すべて選択可能**にしている（選択と開閉が競合しないよう、フォルダ側は常に展開表示）。各行に配下の問数を表示する。
 - 表紙は試験単位と同じ3行構成（上=`.pc-year` / 中央=`.pc-uni` / 下=`.pc-sched`）。**中央は既定でフォルダ名、上下は空**で、3行いずれも**ダブルタップ（ダブルクリック）で `contenteditable` 編集**できる（`wirePrintTitleEdit`。スマホで `dblclick` が出ない場合に備えタップ2回も自前で判定）。Enter/フォーカス外れで確定、Escで取り消し。中央を空にすると既定のフォルダ名へ戻り、上下は空のまま。
 - 空の行は中身が無いとクリック領域が潰れてダブルタップできないため、`.pc-title-edit` に `min-height`/`min-width` と**薄いグレーの背景（`--line-soft`）＋破線枠**を与えてタップ範囲を可視化する。この装飾は `@media print` 側で `background: transparent` / `border: 0` / `min-height: 0` / `padding: 0` に打ち消すため、**紙の上では白紙のまま**入力した行の文字だけが出る。
@@ -168,4 +180,4 @@
 
 - **Worker(D1) config**: サイトタイトル / 方式(schedules) / 年度(year_presets) … 全端末で共有
 - **Worker(D1) user_settings**: タブ順 / お気に入りフォルダ印刷の表紙タイトル（Googleログイン時のみ。`GET/PUT /api/user-settings`）… ログインアカウントに紐づけて端末をまたいで共有
-- **localStorage**: Worker URL / タブ順（未ログイン時、またはログイン時もこの端末用のフォールバックとして常に保存） / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`) / 印刷オプション（文字サイズ・行間・対象セクション、ラベルを外す(`exam_print_hide_labels`)・大問ごとに改ページ(`exam_print_qbreak_q`/`exam_print_qbreak_a`)・パート見出しを外す(`exam_print_hide_head_q`/`exam_print_hide_head_a`)・通し番号つき見出し(`exam_print_qsubtitle`)・5行ごとの行番号(`exam_print_linenum`)） / お気に入りフォルダ印刷の表紙タイトル(`exam_print_folder_titles`。ログイン時はアカウントにも保存)
+- **localStorage**: Worker URL / タブ順（未ログイン時、またはログイン時もこの端末用のフォールバックとして常に保存） / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`) / 印刷オプション（文字サイズ・行間・対象セクション、ラベルを外す(`exam_print_hide_labels`)・大問ごとに改ページ(`exam_print_qbreak_q`/`exam_print_qbreak_a`)・セクションごとに改ページ(`exam_print_sbreak_q`/`exam_print_sbreak_a`)・パート見出しを外す(`exam_print_hide_head_q`/`exam_print_hide_head_a`)・通し番号つき見出し(`exam_print_qsubtitle`)・5行ごとの行番号(`exam_print_linenum`)） / お気に入りフォルダ印刷の表紙タイトル(`exam_print_folder_titles`。ログイン時はアカウントにも保存)

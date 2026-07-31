@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+JP:wght@400;500;600;700;800&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="assets/css/main.css?v=20260731b" />
+  <link rel="stylesheet" href="assets/css/main.css?v=20260801a" />
 </head>
 <body>
   <!-- ===== Topbar ===== -->
@@ -73,9 +73,10 @@
     <!-- ===== タブ: お気に入り ===== -->
     <section data-panel="favorites" class="panel">
       <div class="toolbar">
-        <span class="hint"><i class="fa-solid fa-star"></i> 問題閲覧モーダルの星アイコンでお気に入り登録した大問がここに並びます（Googleログインが必要）。フォルダやドラッグ＆ドロップ（スマホは長押し）で並べ替えできます。</span>
+        <span class="hint"><i class="fa-solid fa-star"></i> 問題閲覧モーダルの星アイコンでお気に入り登録した大問がここに並びます（Googleログインが必要）。フォルダ・セクションやドラッグ＆ドロップ（スマホは長押し）で並べ替えできます。</span>
         <span class="spacer"></span>
         <button class="icon-btn" id="btn-favorites-new-folder" title="新規フォルダ"><i class="fa-solid fa-folder-plus"></i></button>
+        <button class="icon-btn" id="btn-favorites-new-section" title="セクションを挿入（印刷時の見出しになります）"><i class="fa-solid fa-bookmark"></i></button>
         <button class="icon-btn" id="btn-favorites-refresh" title="再読み込み"><i class="fa-solid fa-rotate-right"></i></button>
       </div>
       <div id="favorites-area"></div>
@@ -131,6 +132,10 @@
             <input type="checkbox" id="pr-qbreak-q"> <span>問題面：大問ごとに改ページ</span></label>
           <label class="check-inline" title="解答・解説面で、大問1つごとに新しいページから印刷します">
             <input type="checkbox" id="pr-qbreak-a"> <span>解答面：大問ごとに改ページ</span></label>
+          <label class="check-inline" title="お気に入りフォルダの印刷で、問題面のセクション見出し1つごとに新しいページから印刷します">
+            <input type="checkbox" id="pr-sbreak-q"> <span>問題面：セクションごとに改ページ</span></label>
+          <label class="check-inline" title="お気に入りフォルダの印刷で、解答・解説面のセクション見出し1つごとに新しいページから印刷します">
+            <input type="checkbox" id="pr-sbreak-a"> <span>解答面：セクションごとに改ページ</span></label>
           <label class="check-inline" title="問題面の先頭にある「問題」の見出しを出しません">
             <input type="checkbox" id="pr-hide-head-q"> <span>「問題」ヘッダーを外す</span></label>
           <label class="check-inline" title="解答・解説面の先頭にある「解答・解説」の見出しを出しません">
@@ -257,17 +262,17 @@
     </div>
   </div>
 
-  <!-- ===== お気に入り: 新規フォルダモーダル ===== -->
+  <!-- ===== お気に入り: 新規フォルダ／セクションモーダル（見出し・ラベルは JS が切り替える） ===== -->
   <div class="modal-overlay" id="favorite-folder-modal">
     <div class="modal">
       <div class="modal-head">
-        <i class="fa-solid fa-folder-plus ic"></i>
+        <i class="fa-solid fa-folder-plus ic" id="favorite-folder-modal-icon"></i>
         <h3 id="favorite-folder-modal-title">新規フォルダ</h3>
         <span class="spacer"></span>
         <button class="icon-btn" data-close title="閉じる"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="modal-body">
-        <label class="field"><span class="field-label">フォルダ名</span>
+        <label class="field"><span class="field-label" id="fav-folder-name-label">フォルダ名</span>
           <input type="text" id="fav-folder-name" placeholder="例: 頻出テーマ" maxlength="100" />
         </label>
       </div>
@@ -341,14 +346,14 @@
   <!-- Firebase Authentication（Googleログイン用。Firestore等は未使用） -->
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="assets/js/store.js?v=20260731b"></script>
+  <script src="assets/js/store.js?v=20260801a"></script>
   <script src="assets/js/auth.js?v=20260706a"></script>
-  <script src="assets/js/api.js?v=20260723a"></script>
+  <script src="assets/js/api.js?v=20260801a"></script>
   <script src="assets/js/ui.js?v=20260726a"></script>
   <script src="assets/js/markup.js?v=20260721c"></script>
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260701h"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/viewer.js?v=20260731c"></script>
+  <script src="assets/js/viewer.js?v=20260801a"></script>
 </body>
 </html>

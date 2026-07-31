@@ -254,6 +254,14 @@ async function fixOrphanedRecords(env: Env) {
   await env.DB.prepare(
     "UPDATE favorite_folders SET parent_id = NULL WHERE parent_id IS NOT NULL AND parent_id NOT IN (SELECT id FROM favorite_folders)"
   ).run().catch(() => { /* favorite_folders テーブル未作成の初回は無視 */ });
+  // セクション（kind='section'）は中身を持たない見出しなので、親になってはいけない。
+  // API 側でも親指定を kind='folder' に限っているが、念のためルート直下へ戻す。
+  await env.DB.prepare(
+    "UPDATE favorites SET folder_id = NULL WHERE folder_id IS NOT NULL AND folder_id IN (SELECT id FROM favorite_folders WHERE kind = 'section')"
+  ).run().catch(() => { /* kind 列がまだ無い場合は無視 */ });
+  await env.DB.prepare(
+    "UPDATE favorite_folders SET parent_id = NULL WHERE parent_id IS NOT NULL AND parent_id IN (SELECT id FROM favorite_folders WHERE kind = 'section')"
+  ).run().catch(() => { /* kind 列がまだ無い場合は無視 */ });
 }
 
 // 問題種別「長文読解」を「長文」へ統一する。取り込みプロンプトが以前 category の例として
@@ -346,6 +354,18 @@ async function ensureFavoriteFoldersTable(env: Env) {
   );
 }
 
+// favorite_folders に kind 列が無い既存DBへの後方互換マイグレーション。
+// kind = 'folder'（中に要素を入れられるフォルダ） / 'section'（中身を持たない見出し）。
+// セクションはフォルダと同じ「コンテナ内の1要素」なので、テーブル・並べ替え・改名・削除の
+// 仕組みをそのまま共有し、この列だけで振る舞いを分ける（既存行はすべて 'folder'）。
+async function ensureFavoriteFolderKindColumn(env: Env) {
+  try {
+    await env.DB.exec("ALTER TABLE favorite_folders ADD COLUMN kind TEXT NOT NULL DEFAULT 'folder'");
+  } catch {
+    // 既に列が存在する場合は無視
+  }
+}
+
 // favorites テーブルにフォルダ分け・並べ替え用の列が無い既存DBへの後方互換マイグレーション
 async function ensureFavoriteFolderColumns(env: Env) {
   try {
@@ -402,6 +422,7 @@ async function ensureMigrations(env: Env) {
   await ensureUniversityHiddenColumn(env);
   await ensureFavoritesTable(env);
   await ensureFavoriteFoldersTable(env);
+  await ensureFavoriteFolderKindColumn(env);
   await ensureFavoriteFolderColumns(env);
   await ensureUserSettingsTable(env);
   await ensureUserSettingsPrintTitlesColumn(env);
@@ -418,7 +439,17 @@ async function ensureRepairs(env: Env) {
   repairsDone = true;
 }
 
+// 指定 id が「そのユーザーの、中に要素を入れられるフォルダ」か。
+// セクション（kind='section'）は見出しなので親になれず、ここでは false を返す。
+async function isFavoriteFolder(env: Env, uid: string, id: number): Promise<boolean> {
+  const row = await env.DB.prepare(
+    "SELECT id FROM favorite_folders WHERE id = ? AND uid = ? AND kind != 'section'"
+  ).bind(id, uid).first();
+  return !!row;
+}
+
 // 指定コンテナ（uid + parentId）内の末尾に新規追加する際の sort_order（フォルダ・お気に入り件数の合計）
+// （セクションは favorite_folders の行なのでフォルダ側の件数に含まれる）
 async function nextFavoriteSortOrder(env: Env, uid: string, parentId: number | null): Promise<number> {
   const folderCount = await env.DB.prepare(
     parentId == null
@@ -1511,10 +1542,15 @@ export default {
             WHERE f.uid = ?
             ORDER BY f.sort_order ASC, f.created_at DESC
           `).bind(uid).all();
-          const { results: folders } = await env.DB.prepare(
-            "SELECT id, name, parent_id, sort_order FROM favorite_folders WHERE uid = ? ORDER BY sort_order ASC"
-          ).bind(uid).all();
-          return json({ favorites, folders }, 200, origin);
+          // フォルダ（中に要素を入れられる）とセクション（中身を持たない見出し）は同じテーブルに
+          // 入っているが、クライアント側の扱いが別なのでレスポンスでは分けて返す。
+          type FavNode = { id: number; name: string; parent_id: number | null; sort_order: number; kind: string };
+          const { results: nodes } = await env.DB.prepare(
+            "SELECT id, name, parent_id, sort_order, kind FROM favorite_folders WHERE uid = ? ORDER BY sort_order ASC"
+          ).bind(uid).all<FavNode>();
+          const folders = (nodes || []).filter((n: FavNode) => n.kind !== "section");
+          const sections = (nodes || []).filter((n: FavNode) => n.kind === "section");
+          return json({ favorites, folders, sections }, 200, origin);
         }
 
         // POST /api/favorites  body: { examId, questionNumber }
@@ -1554,40 +1590,47 @@ export default {
         const uid = await getAuthUid(request);
         if (!uid) return json({ error: "ログインが必要です。" }, 401, origin);
 
-        // POST /api/favorite-folders  body: { name, parentId }
+        // POST /api/favorite-folders  body: { name, parentId, kind }
+        //   kind = "folder"（既定。中に要素を入れられる）/ "section"（中身を持たない見出し）
         if (path === "/api/favorite-folders" && request.method === "POST") {
-          type Body = { name?: string; parentId?: number | null };
+          type Body = { name?: string; parentId?: number | null; kind?: string };
           const body = await request.json<Body>().catch(() => ({}) as Body);
+          const kind = body.kind === "section" ? "section" : "folder";
+          const noun = kind === "section" ? "セクション名" : "フォルダ名";
           const name = (body.name || "").trim();
-          if (!name) return json({ error: "フォルダ名を入力してください。" }, 400, origin);
+          if (!name) return json({ error: `${noun}を入力してください。` }, 400, origin);
           const parentId = body.parentId != null ? Number(body.parentId) : null;
-          if (parentId != null) {
-            const parent = await env.DB.prepare("SELECT id FROM favorite_folders WHERE id = ? AND uid = ?").bind(parentId, uid).first();
-            if (!parent) return json({ error: "移動先フォルダが見つかりません。" }, 404, origin);
+          if (parentId != null && !(await isFavoriteFolder(env, uid, parentId))) {
+            return json({ error: "移動先フォルダが見つかりません。" }, 404, origin);
           }
           const sortOrder = await nextFavoriteSortOrder(env, uid, parentId);
           const created = await env.DB.prepare(
-            "INSERT INTO favorite_folders (uid, name, parent_id, sort_order) VALUES (?, ?, ?, ?) RETURNING id, name, parent_id, sort_order"
-          ).bind(uid, name, parentId, sortOrder).first();
+            "INSERT INTO favorite_folders (uid, name, parent_id, sort_order, kind) VALUES (?, ?, ?, ?, ?) RETURNING id, name, parent_id, sort_order, kind"
+          ).bind(uid, name, parentId, sortOrder, kind).first();
           return json({ folder: created }, 201, origin);
         }
 
         const idMatch = path.match(/^\/api\/favorite-folders\/(\d+)$/);
 
         // PUT /api/favorite-folders/:id  body: { name }（改名のみ。移動・並べ替えは /reorder で行う）
+        // フォルダ・セクションのどちらも同じ経路で改名する。
         if (idMatch && request.method === "PUT") {
           const id = Number(idMatch[1]);
           type Body = { name?: string };
           const body = await request.json<Body>().catch(() => ({}) as Body);
+          const node = await env.DB.prepare(
+            "SELECT id, kind FROM favorite_folders WHERE id = ? AND uid = ?"
+          ).bind(id, uid).first<{ id: number; kind: string }>();
+          if (!node) return json({ error: "フォルダが見つかりません。" }, 404, origin);
+          const isSection = node.kind === "section";
           const name = (body.name || "").trim();
-          if (!name) return json({ error: "フォルダ名を入力してください。" }, 400, origin);
-          const folder = await env.DB.prepare("SELECT id FROM favorite_folders WHERE id = ? AND uid = ?").bind(id, uid).first();
-          if (!folder) return json({ error: "フォルダが見つかりません。" }, 404, origin);
+          if (!name) return json({ error: `${isSection ? "セクション名" : "フォルダ名"}を入力してください。` }, 400, origin);
           await env.DB.prepare("UPDATE favorite_folders SET name = ? WHERE id = ? AND uid = ?").bind(name, id, uid).run();
           return json({ success: true }, 200, origin);
         }
 
         // DELETE /api/favorite-folders/:id（配下のフォルダ・お気に入りは削除せず、削除フォルダの親へ繰り上げる）
+        // セクション（kind='section'）は配下を持たないため、繰り上げの2文は何もヒットせず削除だけが効く。
         if (idMatch && request.method === "DELETE") {
           const id = Number(idMatch[1]);
           const folder = await env.DB.prepare(
@@ -1608,19 +1651,21 @@ export default {
         }
 
         // POST /api/favorite-folders/reorder
-        //   body: { parentId: number|null, items: [{type:"folder",id} | {type:"favorite",examId,questionNumber}] }
-        //   指定コンテナ（parentId）の子要素を、渡された順序で並べ替える（フォルダ・お気に入りをまとめた1つの表示順）。
+        //   body: { parentId: number|null, items: [{type:"folder"|"section",id} | {type:"favorite",examId,questionNumber}] }
+        //   指定コンテナ（parentId）の子要素を、渡された順序で並べ替える（フォルダ・セクション・
+        //   お気に入りをまとめた1つの表示順）。セクションはフォルダと同じテーブルの行なので
+        //   更新文も共通で、違いは循環参照チェックの対象外という点だけ（配下を持てないため）。
         //   移動元コンテナ側に残る要素の sort_order は詰め直さない（歯抜けでも ORDER BY sort_order には影響しない）。
         if (path === "/api/favorite-folders/reorder" && request.method === "POST") {
-          type Item = { type: "folder" | "favorite"; id?: number; examId?: number; questionNumber?: number };
+          type Item = { type: "folder" | "section" | "favorite"; id?: number; examId?: number; questionNumber?: number };
           type Body = { parentId?: number | null; items?: Item[] };
           const body = await request.json<Body>().catch(() => ({}) as Body);
           const parentId = body.parentId != null ? Number(body.parentId) : null;
           const items = Array.isArray(body.items) ? body.items : [];
 
-          if (parentId != null) {
-            const parent = await env.DB.prepare("SELECT id FROM favorite_folders WHERE id = ? AND uid = ?").bind(parentId, uid).first();
-            if (!parent) return json({ error: "移動先フォルダが見つかりません。" }, 404, origin);
+          // 移動先はフォルダのみ（セクションは中身を持てないので親になれない）
+          if (parentId != null && !(await isFavoriteFolder(env, uid, parentId))) {
+            return json({ error: "移動先フォルダが見つかりません。" }, 404, origin);
           }
 
           // 循環参照防止: フォルダを自分自身（またはその子孫）の中へ移動しようとしていないか確認
@@ -1641,7 +1686,7 @@ export default {
           }
 
           const stmts = items.map((it, idx) => {
-            if (it.type === "folder") {
+            if (it.type === "folder" || it.type === "section") {
               return env.DB.prepare(
                 "UPDATE favorite_folders SET parent_id = ?, sort_order = ? WHERE id = ? AND uid = ?"
               ).bind(parentId, idx, Number(it.id), uid);
