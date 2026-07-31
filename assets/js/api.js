@@ -169,14 +169,20 @@
         headers: { "Authorization": "Bearer " + token }
       });
     },
-    // お気に入りフォルダ（フォルダ分け・階層化・並べ替え）
-    createFavoriteFolder: async function (name, parentId) {
+    // お気に入りフォルダ／セクション（フォルダ分け・階層化・並べ替え）。
+    // kind: "folder"（既定。中に要素を入れられる）/ "section"（中身を持たない見出し）。
+    // 改名・削除・並べ替えはどちらも同じエンドポイントを共有する。
+    createFavoriteFolder: async function (name, parentId, kind) {
       var token = await Auth.getIdToken();
       if (!token) throw new Error("ログインが必要です。");
       return call("/api/favorite-folders", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
-        body: JSON.stringify({ name: name, parentId: parentId == null ? null : parentId })
+        body: JSON.stringify({
+          name: name,
+          parentId: parentId == null ? null : parentId,
+          kind: kind === "section" ? "section" : "folder"
+        })
       });
     },
     renameFavoriteFolder: async function (id, name) {
@@ -196,7 +202,7 @@
         headers: { "Authorization": "Bearer " + token }
       });
     },
-    // items: [{type:"folder", id} | {type:"favorite", examId, questionNumber}]（並べ替え後の順序）
+    // items: [{type:"folder"|"section", id} | {type:"favorite", examId, questionNumber}]（並べ替え後の順序）
     reorderFavorites: async function (parentId, items) {
       var token = await Auth.getIdToken();
       if (!token) throw new Error("ログインが必要です。");

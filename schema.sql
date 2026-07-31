@@ -54,13 +54,17 @@ CREATE TABLE IF NOT EXISTS word_lists (
 -- Favorite folders table (お気に入りのフォルダ分け。階層化可能)
 --   uid: Firebase Auth の ID トークンの sub クレーム
 --   parent_id: 自己参照（NULL = ルート直下）
---   sort_order: コンテナ（uid + parent_id）内での表示順（フォルダ・お気に入り共通の並び）
+--   sort_order: コンテナ（uid + parent_id）内での表示順（フォルダ・セクション・お気に入り共通の並び）
+--   kind: 'folder' = 中に要素を入れられるフォルダ / 'section' = 中身を持たない見出し
+--         （セクションはコンテナ内の1要素という点でフォルダと同じなので、並べ替え・改名・削除の
+--           仕組みをこのテーブルで共有し、振る舞いの違いはこの列だけで分ける）
 CREATE TABLE IF NOT EXISTS favorite_folders (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   uid TEXT NOT NULL,
   name TEXT NOT NULL,
   parent_id INTEGER,
   sort_order INTEGER NOT NULL DEFAULT 0,
+  kind TEXT NOT NULL DEFAULT 'folder',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

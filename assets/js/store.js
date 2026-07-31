@@ -30,6 +30,8 @@
     printQBreakA:  "exam_print_qbreak_a",    // 解答・解説面で大問ごとに改ページする
     printHideHeadQ: "exam_print_hide_head_q", // 「問題」パート見出しを出さない
     printHideHeadA: "exam_print_hide_head_a", // 「解答・解説」パート見出しを出さない
+    printSBreakQ:  "exam_print_sbreak_q",    // 問題面でセクションごとに改ページする
+    printSBreakA:  "exam_print_sbreak_a",    // 解答・解説面でセクションごとに改ページする
     printQSubtitle: "exam_print_qsubtitle",  // 大問見出しを「1. 2018 ○○ 前期 大問3」形式にする
     printLineNumbers: "exam_print_linenum",  // 印刷時、本文セクションに5行ごとの行番号を付ける
     printFolderTitles: "exam_print_folder_titles", // お気に入りフォルダ印刷の表紙タイトル {folderId: title}
@@ -313,6 +315,15 @@
     },
     setPrintQPageBreak: function (side, on) {
       write(side === "a" ? KEYS.printQBreakA : KEYS.printQBreakQ, !!on);
+    },
+
+    /* 問題印刷タブ: お気に入りフォルダに挿入したセクション見出しごとに改ページする
+       （既定は改ページしない）。問題面（side="q"）と解答・解説面（side="a"）で別々に設定できる。 */
+    getPrintSectionPageBreak: function (side) {
+      return read(side === "a" ? KEYS.printSBreakA : KEYS.printSBreakQ, false) === true;
+    },
+    setPrintSectionPageBreak: function (side, on) {
+      write(side === "a" ? KEYS.printSBreakA : KEYS.printSBreakQ, !!on);
     },
 
     /* 問題印刷タブ: パート見出し（「問題」「解答・解説」）を出さない（既定は出す） */

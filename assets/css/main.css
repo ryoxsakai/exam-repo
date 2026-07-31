@@ -176,6 +176,11 @@ a { color: var(--blue); text-decoration: none; }
   color: var(--muted); font-size: 11px; display: flex; align-items: center; justify-content: center;
 }
 .fav-folder-ic { color: var(--blue); flex: 0 0 auto; font-size: 13px; }
+/* セクション（中身を持たない見出し）。大問・フォルダと同じ行だが、区切りとして目立たせる */
+.fav-section-ic { color: var(--emerald); flex: 0 0 auto; font-size: 13px; }
+.fav-section > .fav-row { background: var(--emerald-soft); }
+.fav-section > .fav-row:hover { background: var(--emerald-soft); filter: brightness(.97); }
+.fav-section .fav-name { color: var(--emerald-dark); letter-spacing: .02em; }
 /* 情報部分（名称・年度・大学等）は伸縮させ、右側のボタン列（fav-actions）を常に右端へ固定する */
 .fav-meta { flex: 1 1 140px; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 3px 10px; }
 .fav-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
@@ -920,12 +925,31 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 .print-q-head { font-family: var(--sans); font-weight: 700; font-size: 16px; color: var(--emerald-dark); margin-bottom: 10px; }
 .print-field { margin-bottom: 14px; }
 .print-field-label { font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
-/* 「大問ごとに改ページ」ON のとき、プレビュー上でも改ページ位置が分かるようにする
-   （実際の改ページは @media print 側で指定。ここは画面上の目印だけ）。
-   問題面（.print-part-q）と解答・解説面（.print-part-a）で別々に効かせる。 */
-.print-doc.qbreak-q .print-part-q .print-q + .print-q,
-.print-doc.qbreak-a .print-part-a .print-q + .print-q {
+/* お気に入りフォルダに挿入したセクションの見出し（大問をまたぐ区切り） */
+.print-section-head {
+  font-family: var(--sans); font-weight: 800; font-size: 18px; color: var(--ink);
+  border-left: 5px solid var(--emerald); padding: 2px 0 2px 10px; margin: 0 0 16px;
+}
+/* 「大問ごとに改ページ」「セクションごとに改ページ」ON のとき、プレビュー上でも改ページ位置が
+   分かるようにする（実際の改ページは @media print 側で指定。ここは画面上の目印だけ）。
+   問題面（.print-part-q）と解答・解説面（.print-part-a）で別々に効かせる。
+   隣接（+）ではなく一般兄弟（~）を使うのは、大問と大問の間にセクション見出しが挟まっても
+   「2つ目以降の大問」として判定できるようにするため。 */
+.print-doc.qbreak-q .print-part-q .print-q ~ .print-q,
+.print-doc.qbreak-a .print-part-a .print-q ~ .print-q,
+/* 大問ごとの改ページ時、直前のセクション見出しは次の大問と同じページへ送りたいので
+   見出しの前で改ページする（見出しだけが前ページの末尾に取り残されるのを防ぐ） */
+.print-doc.qbreak-q .print-part-q .print-q ~ .print-section-head,
+.print-doc.qbreak-a .print-part-a .print-q ~ .print-section-head,
+.print-doc.sbreak-q .print-part-q .print-q ~ .print-section-head,
+.print-doc.sbreak-a .print-part-a .print-q ~ .print-section-head {
   border-top: 2px dashed var(--line); padding-top: 22px; margin-top: 22px;
+}
+/* セクション見出しの直後の大問は見出しと離さない（改ページ位置は見出しの前に移してある）。
+   上のルールと詳細度が同じなので、後に書くことで打ち消す。 */
+.print-doc.qbreak-q .print-part-q .print-section-head + .print-q,
+.print-doc.qbreak-a .print-part-a .print-section-head + .print-q {
+  border-top: 0; padding-top: 0; margin-top: 0;
 }
 /* 「本文に5行ごとの行番号をつける」ON のとき、本文セクションの左に数字を出す余白を
    確保する（実際の数字は viewer.js が計測して .print-linenum を絶対配置で挿入する）。 */
@@ -1048,10 +1072,28 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area.print-out .print-q { margin-bottom: 16pt; }
   /* 「大問ごとに改ページ」ON: 2つ目以降の大問を必ず新しいページから始める。
      各パートの先頭の大問は .print-part + .print-part の改ページで既に新ページなので対象外。
-     問題面（.print-part-q）と解答・解説面（.print-part-a）で別々に設定できる。 */
-  #print-area.print-out.qbreak-q .print-part-q .print-q + .print-q,
-  #print-area.print-out.qbreak-a .print-part-a .print-q + .print-q {
+     問題面（.print-part-q）と解答・解説面（.print-part-a）で別々に設定できる。
+     隣接（+）ではなく一般兄弟（~）を使うのは、大問と大問の間にセクション見出しが挟まっても
+     「2つ目以降の大問」として判定できるようにするため。 */
+  #print-area.print-out.qbreak-q .print-part-q .print-q ~ .print-q,
+  #print-area.print-out.qbreak-a .print-part-a .print-q ~ .print-q,
+  /* 「セクションごとに改ページ」ON: 2つ目以降のセクション見出しを新しいページから始める。
+     大問ごとの改ページONのときも、見出しだけが前ページ末尾に取り残されないよう
+     改ページ位置を見出しの前に移す（直後の大問側は下のルールで打ち消す）。 */
+  #print-area.print-out.qbreak-q .print-part-q .print-q ~ .print-section-head,
+  #print-area.print-out.qbreak-a .print-part-a .print-q ~ .print-section-head,
+  #print-area.print-out.sbreak-q .print-part-q .print-q ~ .print-section-head,
+  #print-area.print-out.sbreak-a .print-part-a .print-q ~ .print-section-head {
     page-break-before: always; break-before: page;
+  }
+  /* セクション見出しの直後の大問は見出しと同じページに続ける（上と同詳細度・後勝ち） */
+  #print-area.print-out.qbreak-q .print-part-q .print-section-head + .print-q,
+  #print-area.print-out.qbreak-a .print-part-a .print-section-head + .print-q {
+    page-break-before: auto; break-before: auto;
+  }
+  #print-area.print-out .print-section-head {
+    font-size: 14pt; font-weight: 800; border-left: 3pt solid #000;
+    padding: 1pt 0 1pt 7pt; margin: 0 0 10pt;
   }
   #print-area.print-out .print-q-head { font-size: 13pt; font-weight: 700; margin-bottom: 6pt; }
   #print-area.print-out .print-field-label { font-size: 10pt; font-weight: 600; margin-bottom: 3pt; }
@@ -1064,6 +1106,7 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
      セクション名と中身が分断されるのを防ぐ） */
   #print-area.print-out .print-part-head,
   #print-area.print-out .print-q-head,
+  #print-area.print-out .print-section-head,
   #print-area.print-out .print-field-label {
     break-after: avoid; page-break-after: avoid;
     break-inside: avoid; page-break-inside: avoid;
