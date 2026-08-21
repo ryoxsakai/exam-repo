@@ -916,6 +916,8 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 .pc-title-edit:empty { border: 1px dashed var(--line); }
 .print-cover .pc-uni { font-family: var(--sans); font-size: 42px; font-weight: 800; color: var(--ink); margin-bottom: 18px; }
 .print-cover .pc-sched { font-family: var(--sans); font-size: 24px; font-weight: 600; color: var(--muted); }
+.print-cover .pc-extra { font-family: var(--sans); font-size: 20px; font-weight: 600; color: var(--ink-soft); margin-bottom: 12px; }
+.pc-title-actions { display: flex; justify-content: center; gap: 8px; margin-top: 18px; }
 .print-part { margin-top: 8px; }
 .print-part + .print-part { margin-top: 40px; }
 .print-part-head { font-family: var(--sans); font-size: 19px; font-weight: 800; color: var(--ink); border-bottom: 2px solid var(--ink); padding-bottom: 6px; margin: 0 0 18px; }
@@ -1058,6 +1060,7 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
     background: transparent !important; background-image: none !important;
     min-height: 0 !important; min-width: 0 !important;
   }
+  #print-area.print-out .pc-title-actions { display: none !important; }
   /* 空の行は印刷では高さも余白も持たせず詰める（入力した行だけが出る） */
   #print-area.print-out .print-cover .pc-year:empty,
   #print-area.print-out .print-cover .pc-sched:empty,

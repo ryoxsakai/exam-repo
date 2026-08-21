@@ -1700,22 +1700,29 @@
     });
   }
 
-  function buildPrintHtml(ex, opts) {
+  function buildPrintHtml(ex, opts, useDraftTitles) {
     var html = "";
     if (opts.cover) {
       if (ex.kind === "favFolder") {
-        // お気に入りフォルダ: 試験単位と同じ3行構成。中央は既定でフォルダ名、上下は空。
-        // 3行いずれもダブルタップで編集でき、空の行も確実にタップできるよう
-        // プレビューでは薄いグレーの領域を出す（印刷では消える。CSS の .pc-title-edit 参照）。
-        var p = ex.titleParts || { top: "", mid: ex.title || "", bottom: "" };
-        var line = function (cls, part, text) {
+        // お気に入りフォルダ: 既定3行に加え、必要なら任意の行を追加できる。
+        // 編集中の下書きはプレビューだけに使い、印刷には保存済みの文言だけを使う。
+        var lines = favFolderTitleLines(ex.folderId);
+        var draft = state.printTitleDrafts && state.printTitleDrafts[String(ex.folderId)];
+        if (useDraftTitles && Array.isArray(draft)) lines = draft.slice();
+        while (lines.length < 3) lines.push("");
+        var line = function (cls, index, text) {
           return '<div class="' + cls + ' pc-title-edit" data-print-title="' + esc(String(ex.folderId)) +
-            '" data-part="' + part + '" title="ダブルタップ（ダブルクリック）で編集">' + esc(text) + "</div>";
+            '" data-line="' + index + '" title="ダブルタップ（ダブルクリック）で編集">' + esc(text) + "</div>";
         };
         html += '<div class="print-cover">' +
-          line("pc-year", "top", p.top) +
-          line("pc-uni", "mid", p.mid) +
-          line("pc-sched", "bottom", p.bottom) +
+          lines.map(function (text, index) {
+            var cls = index === 0 ? "pc-year" : index === 1 ? "pc-uni" : index === 2 ? "pc-sched" : "pc-extra";
+            return line(cls, index, text);
+          }).join("") +
+          '<div class="pc-title-actions" data-print-title-actions="' + esc(String(ex.folderId)) + '">' +
+            '<button type="button" class="btn ghost sm" data-print-title-add="' + esc(String(ex.folderId)) + '"><i class="fa-solid fa-plus"></i> 行を追加</button>' +
+            '<button type="button" class="btn primary sm" data-print-title-save="' + esc(String(ex.folderId)) + '" hidden><i class="fa-solid fa-floppy-disk"></i> 保存</button>' +
+          "</div>" +
           "</div>";
       } else {
         html += '<div class="print-cover">' +
@@ -2098,16 +2105,24 @@
       .map(function (e) { return e.favorite; });
   }
 
-  // フォルダの表紙3行（上・中央・下）。中央は未設定ならフォルダ名を既定にし、
-  // 上下は既定では空（ユーザーがダブルタップで入力したときだけ出る）。
+  // フォルダ表紙の先頭3行（上・中央・下）を、既存の利用箇所向けに返す。
   function favFolderTitleParts(folderId) {
-    var f = (state.favFolders || []).filter(function (x) { return Number(x.id) === Number(folderId); })[0];
-    var saved = Store.getPrintFolderTitleParts(folderId);
+    var lines = favFolderTitleLines(folderId);
     return {
-      top: saved.top || "",
-      mid: saved.mid || (f ? f.name : "お気に入り"),
-      bottom: saved.bottom || ""
+      top: lines[0] || "",
+      mid: lines[1] || "",
+      bottom: lines[2] || ""
     };
+  }
+  // 表紙タイトルの可変行。未保存時だけ従来と同じ「空・フォルダ名・空」の3行を既定にする。
+  function favFolderTitleLines(folderId) {
+    var f = (state.favFolders || []).filter(function (x) { return Number(x.id) === Number(folderId); })[0];
+    var savedMap = Store.getPrintFolderTitles();
+    var hasSaved = Object.prototype.hasOwnProperty.call(savedMap, String(folderId));
+    var lines = Store.getPrintFolderTitleLines(folderId);
+    if (!hasSaved) lines = ["", f ? f.name : "お気に入り", ""];
+    while (lines.length < 3) lines.push("");
+    return lines;
   }
   // 表紙中央の行（一覧・プレビューのタイトル表示用）
   function favFolderTitle(folderId) {
@@ -2326,23 +2341,41 @@
   function renderPrintPreview() {
     if (!state.printExam) return;
     var opts = printOptions();
-    var html = buildPrintHtml(state.printExam, opts);
+    var html = buildPrintHtml(state.printExam, opts, true);
     if (!html) { el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>印刷対象がありません。チェックや登録内容を確認してください。</div></div>'; return; }
     el("print-preview").innerHTML = '<div class="print-doc ' + printDocClasses(opts) + '">' + html + "</div>";
     wirePrintTitleEdit();
     if (opts.lineNumbers) applyPrintLineNumbers(el("print-preview"));
   }
 
-  // 表紙の3行（上・中央・下）をそれぞれダブルタップ（ダブルクリック）で編集できるようにする。
-  // 確定時は Store 経由でこの端末に保存し、ログイン中はアカウントにも保存する。
+  // 表紙の各行をダブルタップ（ダブルクリック）で編集できるようにする。
+  // 保存ボタンを押すまで下書きのまま保持し、印刷には反映しない。
   // 空の行もタップできるよう、CSS の .pc-title-edit で最小の高さと薄いグレーの領域を与えている。
   function wirePrintTitleEdit() {
     $all("[data-print-title]", el("print-preview")).forEach(function (node) {
       var folderId = node.getAttribute("data-print-title");
-      var part = node.getAttribute("data-part");
+
+      function getDraft() {
+        state.printTitleDrafts = state.printTitleDrafts || {};
+        var key = String(folderId);
+        if (!Array.isArray(state.printTitleDrafts[key])) state.printTitleDrafts[key] = favFolderTitleLines(folderId).slice();
+        return state.printTitleDrafts[key];
+      }
+      function syncDraft() {
+        var lines = [];
+        $all('[data-print-title="' + folderId + '"]', el("print-preview")).forEach(function (item) {
+          lines[Number(item.getAttribute("data-line"))] = (item.textContent || "").trim();
+        });
+        state.printTitleDrafts[String(folderId)] = lines;
+        var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
+        if (save) save.hidden = false;
+      }
 
       function beginEdit() {
         if (node.getAttribute("contenteditable") === "true") return;
+        getDraft();
+        var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
+        if (save) save.hidden = false;
         node.setAttribute("contenteditable", "true");
         node.classList.add("editing");
         node.focus();
@@ -2355,23 +2388,6 @@
           s.addRange(r);
         }
       }
-      function commit() {
-        if (node.getAttribute("contenteditable") !== "true") return;
-        node.setAttribute("contenteditable", "false");
-        node.classList.remove("editing");
-        var t = (node.textContent || "").trim();
-        Store.setPrintFolderTitlePart(folderId, part, t);
-        // 中央行を空にしたらフォルダ名へ戻す（上下は空のまま）
-        var parts = favFolderTitleParts(folderId);
-        if (state.printExam) {
-          state.printExam.titleParts = parts;
-          state.printExam.title = parts.mid;
-        }
-        node.textContent = part === "top" ? parts.top : part === "bottom" ? parts.bottom : parts.mid;
-        UI.toast(t ? "表紙の文字を保存しました"
-                   : (part === "mid" ? "表紙のタイトルをフォルダ名に戻しました" : "表紙の行を空にしました"), "ok");
-      }
-
       node.addEventListener("dblclick", beginEdit);
       // スマホ: 一部ブラウザで dblclick が出ないことがあるため、タップ2回を自前でも判定する
       var lastTap = 0;
@@ -2380,16 +2396,44 @@
         if (now - lastTap < 350) { beginEdit(); lastTap = 0; return; }
         lastTap = now;
       });
-      node.addEventListener("blur", commit);
+      node.addEventListener("input", syncDraft);
+      node.addEventListener("blur", function () { node.classList.remove("editing"); });
       node.addEventListener("keydown", function (e) {
         if (e.key === "Enter") { e.preventDefault(); node.blur(); }
         if (e.key === "Escape") {
           e.preventDefault();
-          var cur = favFolderTitleParts(folderId);
-          node.textContent = part === "top" ? cur.top : part === "bottom" ? cur.bottom : cur.mid;
+          delete state.printTitleDrafts[String(folderId)];
+          renderPrintPreview();
           node.setAttribute("contenteditable", "false");
           node.classList.remove("editing");
         }
+      });
+    });
+    $all("[data-print-title-add]", el("print-preview")).forEach(function (button) {
+      button.addEventListener("click", function () {
+        var folderId = button.getAttribute("data-print-title-add");
+        state.printTitleDrafts = state.printTitleDrafts || {};
+        var lines = state.printTitleDrafts[String(folderId)] || favFolderTitleLines(folderId).slice();
+        lines.push("");
+        state.printTitleDrafts[String(folderId)] = lines;
+        renderPrintPreview();
+        var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
+        if (save) save.hidden = false;
+      });
+    });
+    $all("[data-print-title-save]", el("print-preview")).forEach(function (button) {
+      button.addEventListener("click", function () {
+        var folderId = button.getAttribute("data-print-title-save");
+        var lines = (state.printTitleDrafts && state.printTitleDrafts[String(folderId)]) || favFolderTitleLines(folderId);
+        Store.setPrintFolderTitleLines(folderId, lines);
+        delete state.printTitleDrafts[String(folderId)];
+        if (state.printExam && String(state.printExam.folderId) === String(folderId)) {
+          state.printExam.titleLines = favFolderTitleLines(folderId);
+          state.printExam.titleParts = favFolderTitleParts(folderId);
+          state.printExam.title = state.printExam.titleParts.mid;
+        }
+        renderPrintPreview();
+        UI.toast("表紙の文字を保存しました", "ok");
       });
     });
   }
@@ -2397,7 +2441,7 @@
   function runPrint() {
     if (!state.printExam) { UI.toast("印刷対象がありません", "err"); return; }
     var opts = printOptions();
-    var html = buildPrintHtml(state.printExam, opts);
+    var html = buildPrintHtml(state.printExam, opts, false);
     if (!html) { UI.toast("印刷対象がありません", "err"); return; }
     var area = el("print-area");
     if (!area) { area = create("div", { id: "print-area" }); document.body.appendChild(area); }

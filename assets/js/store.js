@@ -344,10 +344,10 @@
     getPrintLineNumbers: function () { return read(KEYS.printLineNumbers, false) === true; },
     setPrintLineNumbers: function (on) { write(KEYS.printLineNumbers, !!on); },
 
-    /* お気に入りフォルダ印刷の表紙タイトル（フォルダid → {top, mid, bottom} の3行）。
+    /* お気に入りフォルダ印刷の表紙タイトル（フォルダid → { lines: [...] }）。
        localStorage をこの端末のキャッシュ／未ログイン時のフォールバックとして常に保持し、
        ログイン中は Worker(user_settings.print_titles) にも保存してアカウントに紐づける。
-       値が文字列の場合は中央行だけを保存した旧形式として読む（後方互換）。 */
+       値が文字列・{top,mid,bottom} の場合も従来データとして読める（後方互換）。 */
     getPrintFolderTitles: function () {
       var m = read(KEYS.printFolderTitles, {});
       return (m && typeof m === "object" && !Array.isArray(m)) ? m : {};
@@ -358,6 +358,13 @@
       var v = this.getPrintFolderTitles()[String(folderId)];
       if (typeof v === "string") return { top: "", mid: v, bottom: "" };
       if (v && typeof v === "object" && !Array.isArray(v)) {
+        if (Array.isArray(v.lines)) {
+          return {
+            top: typeof v.lines[0] === "string" ? v.lines[0] : "",
+            mid: typeof v.lines[1] === "string" ? v.lines[1] : "",
+            bottom: typeof v.lines[2] === "string" ? v.lines[2] : ""
+          };
+        }
         return {
           top: typeof v.top === "string" ? v.top : "",
           mid: typeof v.mid === "string" ? v.mid : "",
@@ -365,6 +372,26 @@
         };
       }
       return { top: "", mid: "", bottom: "" };
+    },
+    // 保存済みの表紙行を返す。旧3行形式も新しい可変行形式へ読み替える。
+    getPrintFolderTitleLines: function (folderId) {
+      var v = this.getPrintFolderTitles()[String(folderId)];
+      if (v && typeof v === "object" && !Array.isArray(v) && Array.isArray(v.lines)) {
+        return v.lines.map(function (line) { return typeof line === "string" ? line : ""; });
+      }
+      var p = this.getPrintFolderTitleParts(folderId);
+      return [p.top, p.mid, p.bottom];
+    },
+    // 表紙の全行をまとめて保存する。空行も位置を保つため削除せず保存する。
+    setPrintFolderTitleLines: function (folderId, lines) {
+      var m = this.getPrintFolderTitles();
+      var out = (Array.isArray(lines) ? lines : []).map(function (line) {
+        return String(line || "").trim();
+      });
+      while (out.length < 3) out.push("");
+      m[String(folderId)] = { lines: out };
+      this.setPrintFolderTitles(m);
+      this.pushPrintTitlesToAccount(m);
     },
     // 1行だけ保存する（part は "top"|"mid"|"bottom"）。空文字にするとその行を未設定に戻し、
     // 3行すべて未設定になればフォルダのキー自体を削除する。ログイン中はアカウントにも保存。
