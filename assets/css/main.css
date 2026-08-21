@@ -914,6 +914,12 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 .pc-title-edit.editing { background: #fff; box-shadow: 0 0 0 2px var(--emerald); }
 /* 空の行は「ここをダブルタップで入力できる」と分かるよう、さらに控えめな枠線を添える */
 .pc-title-edit:empty { border: 1px dashed var(--line); }
+.pc-title-row { display: grid; grid-template-columns: minmax(0, 1fr) 32px; gap: 6px; align-items: center; max-width: 100%; }
+.pc-title-row .pc-title-edit { min-width: 0; }
+.pc-title-settings-toggle {
+  width: 32px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: 8px;
+  background: #fff; color: var(--ink-soft); opacity: .78;
+}
 .print-cover .pc-uni { font-family: var(--sans); font-size: 42px; font-weight: 800; color: var(--ink); margin-bottom: 18px; }
 .print-cover .pc-sched { font-family: var(--sans); font-size: 24px; font-weight: 600; color: var(--muted); }
 .print-cover .pc-extra { font-family: var(--sans); font-size: 20px; font-weight: 600; color: var(--ink-soft); margin-bottom: 12px; }
@@ -1060,6 +1066,8 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
     background: transparent !important; background-image: none !important;
     min-height: 0 !important; min-width: 0 !important;
   }
+  #print-area.print-out .pc-title-row { display: block; }
+  #print-area.print-out .pc-title-settings-toggle { display: none !important; }
   #print-area.print-out .pc-title-actions { display: none !important; }
   /* 空の行は印刷では高さも余白も持たせず詰める（入力した行だけが出る） */
   #print-area.print-out .print-cover .pc-year:empty,

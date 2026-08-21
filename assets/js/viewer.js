@@ -1711,8 +1711,11 @@
         if (useDraftTitles && Array.isArray(draft)) lines = draft.slice();
         while (lines.length < 3) lines.push("");
         var line = function (cls, index, text) {
-          return '<div class="' + cls + ' pc-title-edit" data-print-title="' + esc(String(ex.folderId)) +
-            '" data-line="' + index + '" title="ダブルタップ（ダブルクリック）で編集">' + esc(text) + "</div>";
+          return '<div class="pc-title-row">' +
+            '<div class="' + cls + ' pc-title-edit" data-print-title="' + esc(String(ex.folderId)) +
+              '" data-line="' + index + '" title="ダブルタップ（ダブルクリック）で編集">' + esc(text) + "</div>" +
+            '<button type="button" class="pc-title-settings-toggle" title="文字設定（次の段階で有効化）" aria-label="この行の文字設定" disabled><i class="fa-solid fa-gear"></i></button>' +
+          "</div>";
         };
         html += '<div class="print-cover">' +
           lines.map(function (text, index) {
