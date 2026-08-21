@@ -1707,14 +1707,20 @@
         // お気に入りフォルダ: 既定3行に加え、必要なら任意の行を追加できる。
         // 編集中の下書きはプレビューだけに使い、印刷には保存済みの文言だけを使う。
         var lines = favFolderTitleLines(ex.folderId);
+        var sizes = favFolderTitleSizes(ex.folderId);
         var draft = state.printTitleDrafts && state.printTitleDrafts[String(ex.folderId)];
         if (useDraftTitles && Array.isArray(draft)) lines = draft.slice();
+        var sizeDraft = state.printTitleSizeDrafts && state.printTitleSizeDrafts[String(ex.folderId)];
+        if (useDraftTitles && Array.isArray(sizeDraft)) sizes = sizeDraft.slice();
         while (lines.length < 3) lines.push("");
         var line = function (cls, index, text) {
           return '<div class="pc-title-row">' +
-            '<div class="' + cls + ' pc-title-edit" data-print-title="' + esc(String(ex.folderId)) +
+            '<div class="' + cls + ' pc-title-edit' + (sizes[index] ? ' pc-title-size-' + sizes[index] : '') + '" data-print-title="' + esc(String(ex.folderId)) +
               '" data-line="' + index + '" title="ダブルタップ（ダブルクリック）で編集">' + esc(text) + "</div>" +
-            '<button type="button" class="pc-title-settings-toggle" title="文字設定（次の段階で有効化）" aria-label="この行の文字設定" disabled><i class="fa-solid fa-gear"></i></button>' +
+            '<button type="button" class="pc-title-settings-toggle" data-print-title-size-toggle="' + esc(String(ex.folderId)) + '" data-line="' + index + '" aria-label="この行の文字サイズ"><i class="fa-solid fa-gear"></i></button>' +
+            '<div class="pc-title-size-menu" data-print-title-size-menu="' + esc(String(ex.folderId)) + '" data-line="' + index + '" hidden>' +
+              '<span>文字サイズ</span>' + [1,2,3,4,5].map(function (n) { return '<button type="button" data-print-title-size="' + esc(String(ex.folderId)) + '" data-line="' + index + '" data-size="' + n + '"' + (sizes[index] === n ? ' class="selected"' : '') + '>' + n + '</button>'; }).join("") +
+            '</div>' +
           "</div>";
         };
         html += '<div class="print-cover">' +
@@ -2128,6 +2134,7 @@
     while (lines.length < 3) lines.push("");
     return lines;
   }
+  function favFolderTitleSizes(folderId) { return Store.getPrintFolderTitleSizes(folderId); }
   // 表紙中央の行（一覧・プレビューのタイトル表示用）
   function favFolderTitle(folderId) {
     return favFolderTitleParts(folderId).mid;
@@ -2407,6 +2414,7 @@
         if (e.key === "Escape") {
           e.preventDefault();
           delete state.printTitleDrafts[String(folderId)];
+          if (state.printTitleSizeDrafts) delete state.printTitleSizeDrafts[String(folderId)];
           renderPrintPreview();
           node.setAttribute("contenteditable", "false");
           node.classList.remove("editing");
@@ -2433,7 +2441,30 @@
         var lines = state.printTitleDrafts[String(folderId)] || favFolderTitleLines(folderId).slice();
         if (lines.length <= 3) return;
         lines.pop();
+        if (state.printTitleSizeDrafts && Array.isArray(state.printTitleSizeDrafts[String(folderId)])) state.printTitleSizeDrafts[String(folderId)].pop();
         state.printTitleDrafts[String(folderId)] = lines;
+        renderPrintPreview();
+        var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
+        if (save) save.hidden = false;
+      });
+    });
+    $all("[data-print-title-size-toggle]", el("print-preview")).forEach(function (button) {
+      button.addEventListener("click", function () {
+        var folderId = button.getAttribute("data-print-title-size-toggle");
+        var line = button.getAttribute("data-line");
+        var menu = el("print-preview").querySelector('[data-print-title-size-menu="' + folderId + '"][data-line="' + line + '"]');
+        if (menu) menu.hidden = !menu.hidden;
+      });
+    });
+    $all("[data-print-title-size]", el("print-preview")).forEach(function (button) {
+      button.addEventListener("click", function () {
+        var folderId = button.getAttribute("data-print-title-size");
+        var line = Number(button.getAttribute("data-line"));
+        state.printTitleSizeDrafts = state.printTitleSizeDrafts || {};
+        var sizes = state.printTitleSizeDrafts[String(folderId)] || favFolderTitleSizes(folderId).slice();
+        while (sizes.length <= line) sizes.push(null);
+        sizes[line] = Number(button.getAttribute("data-size"));
+        state.printTitleSizeDrafts[String(folderId)] = sizes;
         renderPrintPreview();
         var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
         if (save) save.hidden = false;
@@ -2443,8 +2474,9 @@
       button.addEventListener("click", function () {
         var folderId = button.getAttribute("data-print-title-save");
         var lines = (state.printTitleDrafts && state.printTitleDrafts[String(folderId)]) || favFolderTitleLines(folderId);
-        Store.setPrintFolderTitleLines(folderId, lines);
+        Store.setPrintFolderTitleLines(folderId, lines, (state.printTitleSizeDrafts && state.printTitleSizeDrafts[String(folderId)]) || favFolderTitleSizes(folderId));
         delete state.printTitleDrafts[String(folderId)];
+        if (state.printTitleSizeDrafts) delete state.printTitleSizeDrafts[String(folderId)];
         if (state.printExam && String(state.printExam.folderId) === String(folderId)) {
           state.printExam.titleLines = favFolderTitleLines(folderId);
           state.printExam.titleParts = favFolderTitleParts(folderId);
