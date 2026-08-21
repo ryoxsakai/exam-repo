@@ -921,6 +921,7 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   background: #fff; color: var(--ink-soft); opacity: .78;
 }
 .pc-title-size-menu { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; font-family: var(--sans); font-size: 12px; }
+.pc-title-size-menu[hidden], .pc-title-actions [data-print-title-save][hidden] { display: none !important; }
 .pc-title-size-menu button { width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
 .pc-title-size-menu button.selected { border-color: var(--emerald); box-shadow: 0 0 0 2px var(--emerald-soft); }
 .pc-title-edit.pc-title-size-1 { font-size: 14px; }.pc-title-edit.pc-title-size-2 { font-size: 18px; }.pc-title-edit.pc-title-size-3 { font-size: 22px; }.pc-title-edit.pc-title-size-4 { font-size: 28px; }.pc-title-edit.pc-title-size-5 { font-size: 34px; }
