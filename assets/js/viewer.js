@@ -1721,6 +1721,7 @@
           }).join("") +
           '<div class="pc-title-actions" data-print-title-actions="' + esc(String(ex.folderId)) + '">' +
             '<button type="button" class="btn ghost sm" data-print-title-add="' + esc(String(ex.folderId)) + '"><i class="fa-solid fa-plus"></i> 行を追加</button>' +
+            (lines.length > 3 ? '<button type="button" class="btn ghost sm" data-print-title-remove="' + esc(String(ex.folderId)) + '"><i class="fa-solid fa-trash"></i> 追加行を削除</button>' : '') +
             '<button type="button" class="btn primary sm" data-print-title-save="' + esc(String(ex.folderId)) + '" hidden><i class="fa-solid fa-floppy-disk"></i> 保存</button>' +
           "</div>" +
           "</div>";
@@ -2415,6 +2416,20 @@
         state.printTitleDrafts = state.printTitleDrafts || {};
         var lines = state.printTitleDrafts[String(folderId)] || favFolderTitleLines(folderId).slice();
         lines.push("");
+        state.printTitleDrafts[String(folderId)] = lines;
+        renderPrintPreview();
+        var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
+        if (save) save.hidden = false;
+      });
+    });
+    // 任意に追加した行だけを、末尾から1行ずつ取り除く。基本の3行は常に残す。
+    $all("[data-print-title-remove]", el("print-preview")).forEach(function (button) {
+      button.addEventListener("click", function () {
+        var folderId = button.getAttribute("data-print-title-remove");
+        state.printTitleDrafts = state.printTitleDrafts || {};
+        var lines = state.printTitleDrafts[String(folderId)] || favFolderTitleLines(folderId).slice();
+        if (lines.length <= 3) return;
+        lines.pop();
         state.printTitleDrafts[String(folderId)] = lines;
         renderPrintPreview();
         var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
