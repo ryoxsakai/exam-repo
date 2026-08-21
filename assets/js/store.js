@@ -382,14 +382,32 @@
       var p = this.getPrintFolderTitleParts(folderId);
       return [p.top, p.mid, p.bottom];
     },
+    getPrintFolderTitleSizes: function (folderId) {
+      var v = this.getPrintFolderTitles()[String(folderId)];
+      var raw = v && typeof v === "object" && Array.isArray(v.sizes) ? v.sizes : [];
+      var count = this.getPrintFolderTitleLines(folderId).length;
+      var out = [];
+      for (var i = 0; i < count; i++) {
+        var n = Number(raw[i]);
+        out.push(n >= 1 && n <= 5 ? n : null);
+      }
+      return out;
+    },
     // 表紙の全行をまとめて保存する。空行も位置を保つため削除せず保存する。
-    setPrintFolderTitleLines: function (folderId, lines) {
+    setPrintFolderTitleLines: function (folderId, lines, sizes) {
       var m = this.getPrintFolderTitles();
       var out = (Array.isArray(lines) ? lines : []).map(function (line) {
         return String(line || "").trim();
       });
       while (out.length < 3) out.push("");
-      m[String(folderId)] = { lines: out };
+      var outSizes = [];
+      var hasSizes = false;
+      for (var i = 0; i < out.length; i++) {
+        var n = Number(Array.isArray(sizes) ? sizes[i] : null);
+        outSizes.push(n >= 1 && n <= 5 ? n : null);
+        if (n >= 1 && n <= 5) hasSizes = true;
+      }
+      m[String(folderId)] = hasSizes ? { lines: out, sizes: outSizes } : { lines: out };
       this.setPrintFolderTitles(m);
       this.pushPrintTitlesToAccount(m);
     },
