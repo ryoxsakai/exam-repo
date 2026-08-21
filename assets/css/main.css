@@ -474,6 +474,19 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
 .tree-msg { padding: 8px 12px; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
 /* 印刷タブのツリー（大学→年度→方式を選択） */
 .pr-tree-box { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 4px; max-height: 320px; overflow: auto; }
+.print-settings { margin-top: 12px; }
+.print-settings > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--paper); color: var(--ink-soft); font-size: 14px; font-weight: 700;
+  cursor: pointer; user-select: none; list-style: none;
+}
+.print-settings > summary::-webkit-details-marker { display: none; }
+.print-settings[open] > summary { border-color: var(--emerald); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.print-settings-chevron { transition: transform .18s ease; }
+.print-settings[open] .print-settings-chevron { transform: rotate(180deg); }
+.print-settings-toolbar { margin: 0; padding: 14px 12px; gap: 14px; border: 1px solid var(--line); border-top: 0; }
+.print-settings #pr-sections .pr-seccard { margin-top: 10px; }
 .tree-row-pick.selected { background: var(--frost); font-weight: 700; }
 .tree-row-pick.selected .tree-ic { color: var(--blue-dark); }
 /* 印刷タブ: お気に入りフォルダ（階層はインデントで示し、常に展開表示） */
@@ -882,6 +895,7 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 .pr-secgroup-head { font-family: var(--sans); font-size: 13px; font-weight: 700; color: var(--ink-soft); margin-bottom: 8px; }
 .pr-secgroup-opts { display: flex; flex-wrap: wrap; gap: 8px 14px; }
 #print-preview { margin-top: 16px; }
+.print-doc.print-grayscale { filter: grayscale(1); }
 .print-doc {
   background: #fff; border: 1px solid var(--line); border-radius: 14px;
   box-shadow: var(--shadow-sm); padding: 36px 40px; font-family: var(--serif); color: #000; line-height: 1.9;
@@ -1069,6 +1083,13 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area .hl-pink   { background: #fbcfe8 !important; }
   #print-area .hl-green  { background: #bbf7d0 !important; }
   #print-area .hl-aqua   { background: #a5f3fc !important; }
+  /* グレースケール印刷では色付き要素を灰色系へ統一する。 */
+  #print-area.print-out.print-grayscale { -webkit-filter: grayscale(1); filter: grayscale(1); }
+  #print-area.print-out.print-grayscale .question-badge {
+    background: #e5e7eb !important; background-image: none !important;
+    color: #111827 !important; border-color: #9ca3af !important;
+  }
+  #print-area.print-out.print-grayscale mark.hl { background: #d1d5db !important; }
   /* ハイライトの文字色は黒に統一（リセットで上書き済みだが明示） */
   #print-area mark.hl { color: #000 !important; }
   /* 画像はページ幅に収め、途中で改ページしない */
@@ -1098,6 +1119,12 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area.print-out .pc-title-edit.pc-title-size-3 { font-size: 22pt !important; }
   #print-area.print-out .pc-title-edit.pc-title-size-4 { font-size: 28pt !important; }
   #print-area.print-out .pc-title-edit.pc-title-size-5 { font-size: 34pt !important; }
+  /* 通常印刷では表紙に保存した文字色を保持し、グレースケール時だけ黒へ戻す。 */
+  #print-area.print-out:not(.print-grayscale) .pc-title-edit.pc-title-color-1 { color: #111827 !important; }
+  #print-area.print-out:not(.print-grayscale) .pc-title-edit.pc-title-color-2 { color: #1f3a5f !important; }
+  #print-area.print-out:not(.print-grayscale) .pc-title-edit.pc-title-color-3 { color: #0f6f9c !important; }
+  #print-area.print-out:not(.print-grayscale) .pc-title-edit.pc-title-color-4 { color: #8a2d3b !important; }
+  #print-area.print-out:not(.print-grayscale) .pc-title-edit.pc-title-color-5 { color: #6b7280 !important; }
   #print-area.print-out .pc-title-actions { display: none !important; }
   /* 空の行は印刷では高さも余白も持たせず詰める（入力した行だけが出る） */
   #print-area.print-out .print-cover .pc-year:empty,

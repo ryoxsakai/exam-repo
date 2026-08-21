@@ -264,6 +264,13 @@
         renderPrintPreview();
       });
     }
+    if (el("pr-grayscale")) {
+      el("pr-grayscale").checked = Store.getPrintGrayscale();
+      el("pr-grayscale").addEventListener("change", function () {
+        Store.setPrintGrayscale(el("pr-grayscale").checked);
+        renderPrintPreview();
+      });
+    }
     el("btn-print-run").addEventListener("click", runPrint);
     el("btn-print-run-2").addEventListener("click", runPrint);
 
@@ -1800,7 +1807,8 @@
       hideHeadQ: el("pr-hide-head-q") ? el("pr-hide-head-q").checked : false,
       hideHeadA: el("pr-hide-head-a") ? el("pr-hide-head-a").checked : false,
       qSubtitle: el("pr-qsubtitle") ? el("pr-qsubtitle").checked : false,
-      lineNumbers: el("pr-linenum") ? el("pr-linenum").checked : false
+      lineNumbers: el("pr-linenum") ? el("pr-linenum").checked : false,
+      grayscale: el("pr-grayscale") ? el("pr-grayscale").checked : false
     };
   }
 
@@ -2022,7 +2030,8 @@
       (opts && opts.qBreakQ ? " qbreak-q" : "") +
       (opts && opts.qBreakA ? " qbreak-a" : "") +
       (opts && opts.sBreakQ ? " sbreak-q" : "") +
-      (opts && opts.sBreakA ? " sbreak-a" : "");
+      (opts && opts.sBreakA ? " sbreak-a" : "") +
+      (opts && opts.grayscale ? " print-grayscale" : "");
   }
 
   // 選択中の試験から登場するセクション種別を問題面／解答面に分けてチェックUI化。

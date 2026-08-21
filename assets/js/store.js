@@ -34,6 +34,7 @@
     printSBreakA:  "exam_print_sbreak_a",    // 解答・解説面でセクションごとに改ページする
     printQSubtitle: "exam_print_qsubtitle",  // 大問見出しを「1. 2018 ○○ 前期 大問3」形式にする
     printLineNumbers: "exam_print_linenum",  // 印刷時、本文セクションに5行ごとの行番号を付ける
+    printGrayscale: "exam_print_grayscale",  // 印刷時、バッジ・ハイライト・画像などをグレースケールにする
     printFolderTitles: "exam_print_folder_titles", // お気に入りフォルダ印刷の表紙タイトル {folderId: title}
     replaceRules:  "exam_replace_rules",     // 登録データ一括置換のルール [{from,to,regex}]
     difficultyVocabWeight: "exam_difficulty_vocab_weight", // 長文難易度の語彙:文長の重み(0〜1、この端末のみ)
@@ -343,6 +344,10 @@
     /* 問題印刷タブ: 本文セクションに5行ごとの行番号を付ける（既定はオフ） */
     getPrintLineNumbers: function () { return read(KEYS.printLineNumbers, false) === true; },
     setPrintLineNumbers: function (on) { write(KEYS.printLineNumbers, !!on); },
+
+    /* 問題印刷タブ: 色付きのバッジ・ハイライト・画像などをグレースケールで印刷する */
+    getPrintGrayscale: function () { return read(KEYS.printGrayscale, false) === true; },
+    setPrintGrayscale: function (on) { write(KEYS.printGrayscale, !!on); },
 
     /* お気に入りフォルダ印刷の表紙タイトル（フォルダid → { lines: [...] }）。
        localStorage をこの端末のキャッシュ／未ログイン時のフォールバックとして常に保持し、
