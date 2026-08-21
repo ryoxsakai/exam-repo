@@ -924,7 +924,11 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 .pc-title-size-menu[hidden], .pc-title-actions [data-print-title-save][hidden] { display: none !important; }
 .pc-title-size-menu button { width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
 .pc-title-size-menu button.selected { border-color: var(--emerald); box-shadow: 0 0 0 2px var(--emerald-soft); }
-.pc-title-edit.pc-title-size-1 { font-size: 14px; }.pc-title-edit.pc-title-size-2 { font-size: 18px; }.pc-title-edit.pc-title-size-3 { font-size: 22px; }.pc-title-edit.pc-title-size-4 { font-size: 28px; }.pc-title-edit.pc-title-size-5 { font-size: 34px; }
+.print-cover .pc-title-edit.pc-title-size-1 { font-size: 14px !important; }
+.print-cover .pc-title-edit.pc-title-size-2 { font-size: 18px !important; }
+.print-cover .pc-title-edit.pc-title-size-3 { font-size: 22px !important; }
+.print-cover .pc-title-edit.pc-title-size-4 { font-size: 28px !important; }
+.print-cover .pc-title-edit.pc-title-size-5 { font-size: 34px !important; }
 .print-cover .pc-uni { font-family: var(--sans); font-size: 42px; font-weight: 800; color: var(--ink); margin-bottom: 18px; }
 .print-cover .pc-sched { font-family: var(--sans); font-size: 24px; font-weight: 600; color: var(--muted); }
 .print-cover .pc-extra { font-family: var(--sans); font-size: 20px; font-weight: 600; color: var(--ink-soft); margin-bottom: 12px; }
