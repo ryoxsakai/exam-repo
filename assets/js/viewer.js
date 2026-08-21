@@ -1708,20 +1708,24 @@
         // 編集中の下書きはプレビューだけに使い、印刷には保存済みの文言だけを使う。
         var lines = favFolderTitleLines(ex.folderId);
         var sizes = favFolderTitleSizes(ex.folderId);
+        var colors = favFolderTitleColors(ex.folderId);
         var draft = state.printTitleDrafts && state.printTitleDrafts[String(ex.folderId)];
         if (useDraftTitles && Array.isArray(draft)) lines = draft.slice();
         var sizeDraft = state.printTitleSizeDrafts && state.printTitleSizeDrafts[String(ex.folderId)];
         if (useDraftTitles && Array.isArray(sizeDraft)) sizes = sizeDraft.slice();
+        var colorDraft = state.printTitleColorDrafts && state.printTitleColorDrafts[String(ex.folderId)];
+        if (useDraftTitles && Array.isArray(colorDraft)) colors = colorDraft.slice();
         var sizeMenuOpen = useDraftTitles && state.printTitleSizeOpen;
         while (lines.length < 3) lines.push("");
         var line = function (cls, index, text) {
           var isSizeMenuOpen = sizeMenuOpen && String(sizeMenuOpen.folderId) === String(ex.folderId) && Number(sizeMenuOpen.line) === index;
           return '<div class="pc-title-row">' +
-            '<div class="' + cls + ' pc-title-edit' + (sizes[index] ? ' pc-title-size-' + sizes[index] : '') + '" data-print-title="' + esc(String(ex.folderId)) +
+            '<div class="' + cls + ' pc-title-edit' + (sizes[index] ? ' pc-title-size-' + sizes[index] : '') + (colors[index] ? ' pc-title-color-' + colors[index] : '') + '" data-print-title="' + esc(String(ex.folderId)) +
               '" data-line="' + index + '" title="ダブルタップ（ダブルクリック）で編集">' + esc(text) + "</div>" +
-            '<button type="button" class="pc-title-settings-toggle" data-print-title-size-toggle="' + esc(String(ex.folderId)) + '" data-line="' + index + '" aria-label="この行の文字サイズ" aria-expanded="' + (isSizeMenuOpen ? 'true' : 'false') + '"><i class="fa-solid fa-gear"></i></button>' +
+            '<button type="button" class="pc-title-settings-toggle" data-print-title-size-toggle="' + esc(String(ex.folderId)) + '" data-line="' + index + '" aria-label="この行の文字設定" aria-expanded="' + (isSizeMenuOpen ? 'true' : 'false') + '"><i class="fa-solid fa-gear"></i></button>' +
             '<div class="pc-title-size-menu" data-print-title-size-menu="' + esc(String(ex.folderId)) + '" data-line="' + index + '"' + (isSizeMenuOpen ? '' : ' hidden') + '>' +
-              '<span>文字サイズ</span>' + [1,2,3,4,5].map(function (n) { return '<button type="button" data-print-title-size="' + esc(String(ex.folderId)) + '" data-line="' + index + '" data-size="' + n + '"' + (sizes[index] === n ? ' class="selected"' : '') + '>' + n + '</button>'; }).join("") +
+              '<div class="pc-title-setting-line"><span>文字サイズ</span>' + [1,2,3,4,5].map(function (n) { return '<button type="button" data-print-title-size="' + esc(String(ex.folderId)) + '" data-line="' + index + '" data-size="' + n + '"' + (sizes[index] === n ? ' class="selected"' : '') + '>' + n + '</button>'; }).join("") + '</div>' +
+              '<div class="pc-title-setting-line"><span>文字色</span>' + [1,2,3,4,5].map(function (n) { return '<button type="button" class="pc-title-color-choice pc-title-color-choice-' + n + (colors[index] === n ? ' selected' : '') + '" data-print-title-color="' + esc(String(ex.folderId)) + '" data-line="' + index + '" data-color="' + n + '" aria-label="文字色' + n + '"><i class="fa-solid fa-circle"></i></button>'; }).join("") + '</div>' +
             '</div>' +
           "</div>";
         };
@@ -2137,6 +2141,7 @@
     return lines;
   }
   function favFolderTitleSizes(folderId) { return Store.getPrintFolderTitleSizes(folderId); }
+  function favFolderTitleColors(folderId) { return Store.getPrintFolderTitleColors(folderId); }
   // 表紙中央の行（一覧・プレビューのタイトル表示用）
   function favFolderTitle(folderId) {
     return favFolderTitleParts(folderId).mid;
@@ -2417,6 +2422,7 @@
           e.preventDefault();
           delete state.printTitleDrafts[String(folderId)];
           if (state.printTitleSizeDrafts) delete state.printTitleSizeDrafts[String(folderId)];
+          if (state.printTitleColorDrafts) delete state.printTitleColorDrafts[String(folderId)];
           renderPrintPreview();
           node.setAttribute("contenteditable", "false");
           node.classList.remove("editing");
@@ -2444,6 +2450,7 @@
         if (lines.length <= 3) return;
         lines.pop();
         if (state.printTitleSizeDrafts && Array.isArray(state.printTitleSizeDrafts[String(folderId)])) state.printTitleSizeDrafts[String(folderId)].pop();
+        if (state.printTitleColorDrafts && Array.isArray(state.printTitleColorDrafts[String(folderId)])) state.printTitleColorDrafts[String(folderId)].pop();
         state.printTitleDrafts[String(folderId)] = lines;
         renderPrintPreview();
         var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
@@ -2479,13 +2486,34 @@
         if (save) save.hidden = false;
       });
     });
+    $all("[data-print-title-color]", el("print-preview")).forEach(function (button) {
+      button.addEventListener("click", function () {
+        var folderId = button.getAttribute("data-print-title-color");
+        var line = Number(button.getAttribute("data-line"));
+        state.printTitleColorDrafts = state.printTitleColorDrafts || {};
+        var colors = state.printTitleColorDrafts[String(folderId)] || favFolderTitleColors(folderId).slice();
+        while (colors.length <= line) colors.push(null);
+        colors[line] = Number(button.getAttribute("data-color"));
+        state.printTitleColorDrafts[String(folderId)] = colors;
+        state.printTitleSizeOpen = { folderId: String(folderId), line: line };
+        renderPrintPreview();
+        var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
+        if (save) save.hidden = false;
+      });
+    });
     $all("[data-print-title-save]", el("print-preview")).forEach(function (button) {
       button.addEventListener("click", function () {
         var folderId = button.getAttribute("data-print-title-save");
         var lines = (state.printTitleDrafts && state.printTitleDrafts[String(folderId)]) || favFolderTitleLines(folderId);
-        Store.setPrintFolderTitleLines(folderId, lines, (state.printTitleSizeDrafts && state.printTitleSizeDrafts[String(folderId)]) || favFolderTitleSizes(folderId));
+        Store.setPrintFolderTitleLines(
+          folderId,
+          lines,
+          (state.printTitleSizeDrafts && state.printTitleSizeDrafts[String(folderId)]) || favFolderTitleSizes(folderId),
+          (state.printTitleColorDrafts && state.printTitleColorDrafts[String(folderId)]) || favFolderTitleColors(folderId)
+        );
         if (state.printTitleDrafts) delete state.printTitleDrafts[String(folderId)];
         if (state.printTitleSizeDrafts) delete state.printTitleSizeDrafts[String(folderId)];
+        if (state.printTitleColorDrafts) delete state.printTitleColorDrafts[String(folderId)];
         state.printTitleSizeOpen = null;
         if (state.printExam && String(state.printExam.folderId) === String(folderId)) {
           state.printExam.titleLines = favFolderTitleLines(folderId);

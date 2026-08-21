@@ -393,8 +393,19 @@
       }
       return out;
     },
+    getPrintFolderTitleColors: function (folderId) {
+      var v = this.getPrintFolderTitles()[String(folderId)];
+      var raw = v && typeof v === "object" && Array.isArray(v.colors) ? v.colors : [];
+      var count = this.getPrintFolderTitleLines(folderId).length;
+      var out = [];
+      for (var i = 0; i < count; i++) {
+        var n = Number(raw[i]);
+        out.push(n >= 1 && n <= 5 ? n : null);
+      }
+      return out;
+    },
     // 表紙の全行をまとめて保存する。空行も位置を保つため削除せず保存する。
-    setPrintFolderTitleLines: function (folderId, lines, sizes) {
+    setPrintFolderTitleLines: function (folderId, lines, sizes, colors) {
       var m = this.getPrintFolderTitles();
       var out = (Array.isArray(lines) ? lines : []).map(function (line) {
         return String(line || "").trim();
@@ -407,7 +418,17 @@
         outSizes.push(n >= 1 && n <= 5 ? n : null);
         if (n >= 1 && n <= 5) hasSizes = true;
       }
-      m[String(folderId)] = hasSizes ? { lines: out, sizes: outSizes } : { lines: out };
+      var outColors = [];
+      var hasColors = false;
+      for (var j = 0; j < out.length; j++) {
+        var c = Number(Array.isArray(colors) ? colors[j] : null);
+        outColors.push(c >= 1 && c <= 5 ? c : null);
+        if (c >= 1 && c <= 5) hasColors = true;
+      }
+      var value = { lines: out };
+      if (hasSizes) value.sizes = outSizes;
+      if (hasColors) value.colors = outColors;
+      m[String(folderId)] = value;
       this.setPrintFolderTitles(m);
       this.pushPrintTitlesToAccount(m);
     },
