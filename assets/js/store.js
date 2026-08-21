@@ -344,7 +344,7 @@
     getPrintLineNumbers: function () { return read(KEYS.printLineNumbers, false) === true; },
     setPrintLineNumbers: function (on) { write(KEYS.printLineNumbers, !!on); },
 
-    /* お気に入りフォルダ印刷の表紙タイトル（フォルダid → { lines: [...] }）。
+    /* お気に入りフォルダ印刷の表紙タイトル（フォルダid → { lines: [...], styles: [...] }）。
        localStorage をこの端末のキャッシュ／未ログイン時のフォールバックとして常に保持し、
        ログイン中は Worker(user_settings.print_titles) にも保存してアカウントに紐づける。
        値が文字列・{top,mid,bottom} の場合も従来データとして読める（後方互換）。 */
@@ -377,19 +377,46 @@
     getPrintFolderTitleLines: function (folderId) {
       var v = this.getPrintFolderTitles()[String(folderId)];
       if (v && typeof v === "object" && !Array.isArray(v) && Array.isArray(v.lines)) {
-        return v.lines.map(function (line) { return typeof line === "string" ? line : ""; });
+        return v.lines.map(function (line) {
+          return typeof line === "string" ? line : (line && typeof line.text === "string" ? line.text : "");
+        });
       }
       var p = this.getPrintFolderTitleParts(folderId);
       return [p.top, p.mid, p.bottom];
     },
-    // 表紙の全行をまとめて保存する。空行も位置を保つため削除せず保存する。
-    setPrintFolderTitleLines: function (folderId, lines) {
+    // 表紙行ごとの文字サイズ・色。旧形式には設定がないため、すべて未指定として返す。
+    getPrintFolderTitleLineStyles: function (folderId) {
+      var v = this.getPrintFolderTitles()[String(folderId)];
+      var count = this.getPrintFolderTitleLines(folderId).length;
+      var raw = v && typeof v === "object" && !Array.isArray(v) && Array.isArray(v.styles) ? v.styles : [];
+      return Array.from({ length: count }, function (_, index) {
+        var s = raw[index] || {};
+        var size = Number(s.size);
+        var color = Number(s.color);
+        return {
+          size: size >= 1 && size <= 5 ? size : null,
+          color: color >= 1 && color <= 5 ? color : null
+        };
+      });
+    },
+    // 表紙の全行をまとめて保存する。空行も位置を保ち、任意に加えた行だけは削除できる。
+    setPrintFolderTitleLines: function (folderId, lines, styles) {
       var m = this.getPrintFolderTitles();
       var out = (Array.isArray(lines) ? lines : []).map(function (line) {
         return String(line || "").trim();
       });
       while (out.length < 3) out.push("");
-      m[String(folderId)] = { lines: out };
+      var outStyles = out.map(function (_, index) {
+        var s = Array.isArray(styles) ? (styles[index] || {}) : {};
+        var size = Number(s.size);
+        var color = Number(s.color);
+        var result = {};
+        if (size >= 1 && size <= 5) result.size = size;
+        if (color >= 1 && color <= 5) result.color = color;
+        return result;
+      });
+      var hasStyles = outStyles.some(function (s) { return s.size || s.color; });
+      m[String(folderId)] = hasStyles ? { lines: out, styles: outStyles } : { lines: out };
       this.setPrintFolderTitles(m);
       this.pushPrintTitlesToAccount(m);
     },
