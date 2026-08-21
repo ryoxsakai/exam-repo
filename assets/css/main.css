@@ -920,15 +920,27 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   width: 32px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: 8px;
   background: #fff; color: var(--ink-soft); opacity: .78;
 }
-.pc-title-size-menu { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; font-family: var(--sans); font-size: 12px; }
+.pc-title-size-menu { grid-column: 1 / -1; display: grid; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; font-family: var(--sans); font-size: 12px; }
 .pc-title-size-menu[hidden], .pc-title-actions [data-print-title-save][hidden] { display: none !important; }
+.pc-title-setting-line { display: flex; align-items: center; gap: 6px; }
+.pc-title-setting-line > span { min-width: 72px; }
 .pc-title-size-menu button { width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
 .pc-title-size-menu button.selected { border-color: var(--emerald); box-shadow: 0 0 0 2px var(--emerald-soft); }
+.pc-title-color-choice-1 { color: #111827; }
+.pc-title-color-choice-2 { color: #1f3a5f; }
+.pc-title-color-choice-3 { color: #0f6f9c; }
+.pc-title-color-choice-4 { color: #8a2d3b; }
+.pc-title-color-choice-5 { color: #6b7280; }
 .print-cover .pc-title-edit.pc-title-size-1 { font-size: 14px !important; }
 .print-cover .pc-title-edit.pc-title-size-2 { font-size: 18px !important; }
 .print-cover .pc-title-edit.pc-title-size-3 { font-size: 22px !important; }
 .print-cover .pc-title-edit.pc-title-size-4 { font-size: 28px !important; }
 .print-cover .pc-title-edit.pc-title-size-5 { font-size: 34px !important; }
+.print-cover .pc-title-edit.pc-title-color-1 { color: #111827 !important; }
+.print-cover .pc-title-edit.pc-title-color-2 { color: #1f3a5f !important; }
+.print-cover .pc-title-edit.pc-title-color-3 { color: #0f6f9c !important; }
+.print-cover .pc-title-edit.pc-title-color-4 { color: #8a2d3b !important; }
+.print-cover .pc-title-edit.pc-title-color-5 { color: #6b7280 !important; }
 .print-cover .pc-uni { font-family: var(--sans); font-size: 42px; font-weight: 800; color: var(--ink); margin-bottom: 18px; }
 .print-cover .pc-sched { font-family: var(--sans); font-size: 24px; font-weight: 600; color: var(--muted); }
 .print-cover .pc-extra { font-family: var(--sans); font-size: 20px; font-weight: 600; color: var(--ink-soft); margin-bottom: 12px; }
