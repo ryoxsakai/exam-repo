@@ -1707,33 +1707,12 @@
         // お気に入りフォルダ: 既定3行に加え、必要なら任意の行を追加できる。
         // 編集中の下書きはプレビューだけに使い、印刷には保存済みの文言だけを使う。
         var lines = favFolderTitleLines(ex.folderId);
-        var styles = favFolderTitleLineStyles(ex.folderId);
         var draft = state.printTitleDrafts && state.printTitleDrafts[String(ex.folderId)];
-        var hasDraft = useDraftTitles && draft && Array.isArray(draft.lines) && Array.isArray(draft.styles);
-        if (hasDraft) {
-          lines = draft.lines.slice();
-          styles = draft.styles.slice();
-        }
+        if (useDraftTitles && Array.isArray(draft)) lines = draft.slice();
         while (lines.length < 3) lines.push("");
-        while (styles.length < lines.length) styles.push({});
         var line = function (cls, index, text) {
-          var s = styles[index] || {};
-          var sizeClass = s.size ? " pc-size-" + s.size : "";
-          var colorClass = s.color ? " pc-color-" + s.color : "";
-          var id = esc(String(ex.folderId));
-          var settingsOpen = state.printTitleSettingsOpen === String(ex.folderId) + ":" + index;
-          return '<div class="pc-title-row" data-print-title-row="' + id + '" data-line="' + index + '">' +
-            '<div class="' + cls + ' pc-title-edit' + sizeClass + colorClass + '" data-print-title="' + id +
-              '" data-line="' + index + '" title="ダブルタップ（ダブルクリック）で編集">' + esc(text) + "</div>" +
-            '<button type="button" class="pc-title-settings-toggle" data-print-title-settings-toggle="' + id + '" data-line="' + index + '" aria-label="この行の文字設定"><i class="fa-solid fa-gear"></i></button>' +
-            '<div class="pc-title-settings" data-print-title-settings="' + id + '" data-line="' + index + '"' + (settingsOpen ? "" : " hidden") + '>' +
-              '<div class="pc-title-settings-label">文字サイズ</div><div class="pc-title-settings-choices">' +
-                [1, 2, 3, 4, 5].map(function (level) { return '<button type="button" data-print-title-size="' + id + '" data-line="' + index + '" data-value="' + level + '" class="pc-size-choice pc-size-choice-' + level + (s.size === level ? ' selected' : '') + '">' + level + '</button>'; }).join("") +
-              '</div><div class="pc-title-settings-label">文字色</div><div class="pc-title-settings-choices">' +
-                [1, 2, 3, 4, 5].map(function (level) { return '<button type="button" data-print-title-color="' + id + '" data-line="' + index + '" data-value="' + level + '" class="pc-color-choice pc-color-choice-' + level + (s.color === level ? ' selected' : '') + '" aria-label="文字色 ' + level + '"></button>'; }).join("") +
-              (index >= 3 ? '<button type="button" class="pc-title-delete" data-print-title-delete="' + id + '" data-line="' + index + '"><i class="fa-solid fa-trash"></i> この行を削除</button>' : '') +
-            "</div>" +
-          "</div>";
+          return '<div class="' + cls + ' pc-title-edit" data-print-title="' + esc(String(ex.folderId)) +
+            '" data-line="' + index + '" title="ダブルタップ（ダブルクリック）で編集">' + esc(text) + "</div>";
         };
         html += '<div class="print-cover">' +
           lines.map(function (text, index) {
@@ -1742,7 +1721,7 @@
           }).join("") +
           '<div class="pc-title-actions" data-print-title-actions="' + esc(String(ex.folderId)) + '">' +
             '<button type="button" class="btn ghost sm" data-print-title-add="' + esc(String(ex.folderId)) + '"><i class="fa-solid fa-plus"></i> 行を追加</button>' +
-            '<button type="button" class="btn primary sm" data-print-title-save="' + esc(String(ex.folderId)) + '"' + (hasDraft ? "" : " hidden") + '><i class="fa-solid fa-floppy-disk"></i> 保存</button>' +
+            '<button type="button" class="btn primary sm" data-print-title-save="' + esc(String(ex.folderId)) + '" hidden><i class="fa-solid fa-floppy-disk"></i> 保存</button>' +
           "</div>" +
           "</div>";
       } else {
@@ -2145,11 +2124,6 @@
     while (lines.length < 3) lines.push("");
     return lines;
   }
-  function favFolderTitleLineStyles(folderId) {
-    var styles = Store.getPrintFolderTitleLineStyles(folderId);
-    while (styles.length < favFolderTitleLines(folderId).length) styles.push({});
-    return styles;
-  }
   // 表紙中央の行（一覧・プレビューのタイトル表示用）
   function favFolderTitle(folderId) {
     return favFolderTitleParts(folderId).mid;
@@ -2374,15 +2348,6 @@
     if (opts.lineNumbers) applyPrintLineNumbers(el("print-preview"));
   }
 
-  function getPrintTitleDraft(folderId) {
-    state.printTitleDrafts = state.printTitleDrafts || {};
-    var key = String(folderId);
-    if (!state.printTitleDrafts[key] || !Array.isArray(state.printTitleDrafts[key].lines)) {
-      state.printTitleDrafts[key] = { lines: favFolderTitleLines(folderId).slice(), styles: favFolderTitleLineStyles(folderId).slice() };
-    }
-    return state.printTitleDrafts[key];
-  }
-
   // 表紙の各行をダブルタップ（ダブルクリック）で編集できるようにする。
   // 保存ボタンを押すまで下書きのまま保持し、印刷には反映しない。
   // 空の行もタップできるよう、CSS の .pc-title-edit で最小の高さと薄いグレーの領域を与えている。
@@ -2391,15 +2356,17 @@
       var folderId = node.getAttribute("data-print-title");
 
       function getDraft() {
-        return getPrintTitleDraft(folderId);
+        state.printTitleDrafts = state.printTitleDrafts || {};
+        var key = String(folderId);
+        if (!Array.isArray(state.printTitleDrafts[key])) state.printTitleDrafts[key] = favFolderTitleLines(folderId).slice();
+        return state.printTitleDrafts[key];
       }
       function syncDraft() {
-        var draft = getDraft();
         var lines = [];
         $all('[data-print-title="' + folderId + '"]', el("print-preview")).forEach(function (item) {
           lines[Number(item.getAttribute("data-line"))] = (item.textContent || "").trim();
         });
-        draft.lines = lines;
+        state.printTitleDrafts[String(folderId)] = lines;
         var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
         if (save) save.hidden = false;
       }
@@ -2436,7 +2403,6 @@
         if (e.key === "Escape") {
           e.preventDefault();
           delete state.printTitleDrafts[String(folderId)];
-          state.printTitleSettingsOpen = "";
           renderPrintPreview();
           node.setAttribute("contenteditable", "false");
           node.classList.remove("editing");
@@ -2446,52 +2412,21 @@
     $all("[data-print-title-add]", el("print-preview")).forEach(function (button) {
       button.addEventListener("click", function () {
         var folderId = button.getAttribute("data-print-title-add");
-        var draft = getPrintTitleDraft(folderId);
-        draft.lines.push("");
-        draft.styles.push({});
+        state.printTitleDrafts = state.printTitleDrafts || {};
+        var lines = state.printTitleDrafts[String(folderId)] || favFolderTitleLines(folderId).slice();
+        lines.push("");
+        state.printTitleDrafts[String(folderId)] = lines;
         renderPrintPreview();
         var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
         if (save) save.hidden = false;
       });
     });
-    $all("[data-print-title-settings-toggle]", el("print-preview")).forEach(function (button) {
-      button.addEventListener("click", function () {
-        var folderId = button.getAttribute("data-print-title-settings-toggle");
-        var line = button.getAttribute("data-line");
-        var key = String(folderId) + ":" + line;
-        state.printTitleSettingsOpen = state.printTitleSettingsOpen === key ? "" : key;
-        renderPrintPreview();
-      });
-    });
-    function changeStyle(button, prop) {
-      var folderId = button.getAttribute(prop === "size" ? "data-print-title-size" : "data-print-title-color");
-      var line = Number(button.getAttribute("data-line"));
-      var value = Number(button.getAttribute("data-value"));
-      var draft = getPrintTitleDraft(folderId);
-      while (draft.styles.length <= line) draft.styles.push({});
-      draft.styles[line][prop] = value;
-      renderPrintPreview();
-    }
-    $all("[data-print-title-size]", el("print-preview")).forEach(function (button) { button.addEventListener("click", function () { changeStyle(button, "size"); }); });
-    $all("[data-print-title-color]", el("print-preview")).forEach(function (button) { button.addEventListener("click", function () { changeStyle(button, "color"); }); });
-    $all("[data-print-title-delete]", el("print-preview")).forEach(function (button) {
-      button.addEventListener("click", function () {
-        var folderId = button.getAttribute("data-print-title-delete");
-        var line = Number(button.getAttribute("data-line"));
-        var draft = getPrintTitleDraft(folderId);
-        draft.lines.splice(line, 1);
-        draft.styles.splice(line, 1);
-        state.printTitleSettingsOpen = "";
-        renderPrintPreview();
-      });
-    });
     $all("[data-print-title-save]", el("print-preview")).forEach(function (button) {
       button.addEventListener("click", function () {
         var folderId = button.getAttribute("data-print-title-save");
-        var draft = getPrintTitleDraft(folderId);
-        Store.setPrintFolderTitleLines(folderId, draft.lines, draft.styles);
+        var lines = (state.printTitleDrafts && state.printTitleDrafts[String(folderId)]) || favFolderTitleLines(folderId);
+        Store.setPrintFolderTitleLines(folderId, lines);
         delete state.printTitleDrafts[String(folderId)];
-        state.printTitleSettingsOpen = "";
         if (state.printExam && String(state.printExam.folderId) === String(folderId)) {
           state.printExam.titleLines = favFolderTitleLines(folderId);
           state.printExam.titleParts = favFolderTitleParts(folderId);
