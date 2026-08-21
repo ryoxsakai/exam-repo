@@ -1712,13 +1712,15 @@
         if (useDraftTitles && Array.isArray(draft)) lines = draft.slice();
         var sizeDraft = state.printTitleSizeDrafts && state.printTitleSizeDrafts[String(ex.folderId)];
         if (useDraftTitles && Array.isArray(sizeDraft)) sizes = sizeDraft.slice();
+        var sizeMenuOpen = useDraftTitles && state.printTitleSizeOpen;
         while (lines.length < 3) lines.push("");
         var line = function (cls, index, text) {
+          var isSizeMenuOpen = sizeMenuOpen && String(sizeMenuOpen.folderId) === String(ex.folderId) && Number(sizeMenuOpen.line) === index;
           return '<div class="pc-title-row">' +
             '<div class="' + cls + ' pc-title-edit' + (sizes[index] ? ' pc-title-size-' + sizes[index] : '') + '" data-print-title="' + esc(String(ex.folderId)) +
               '" data-line="' + index + '" title="ダブルタップ（ダブルクリック）で編集">' + esc(text) + "</div>" +
-            '<button type="button" class="pc-title-settings-toggle" data-print-title-size-toggle="' + esc(String(ex.folderId)) + '" data-line="' + index + '" aria-label="この行の文字サイズ"><i class="fa-solid fa-gear"></i></button>' +
-            '<div class="pc-title-size-menu" data-print-title-size-menu="' + esc(String(ex.folderId)) + '" data-line="' + index + '" hidden>' +
+            '<button type="button" class="pc-title-settings-toggle" data-print-title-size-toggle="' + esc(String(ex.folderId)) + '" data-line="' + index + '" aria-label="この行の文字サイズ" aria-expanded="' + (isSizeMenuOpen ? 'true' : 'false') + '"><i class="fa-solid fa-gear"></i></button>' +
+            '<div class="pc-title-size-menu" data-print-title-size-menu="' + esc(String(ex.folderId)) + '" data-line="' + index + '"' + (isSizeMenuOpen ? '' : ' hidden') + '>' +
               '<span>文字サイズ</span>' + [1,2,3,4,5].map(function (n) { return '<button type="button" data-print-title-size="' + esc(String(ex.folderId)) + '" data-line="' + index + '" data-size="' + n + '"' + (sizes[index] === n ? ' class="selected"' : '') + '>' + n + '</button>'; }).join("") +
             '</div>' +
           "</div>";
@@ -2453,7 +2455,13 @@
         var folderId = button.getAttribute("data-print-title-size-toggle");
         var line = button.getAttribute("data-line");
         var menu = el("print-preview").querySelector('[data-print-title-size-menu="' + folderId + '"][data-line="' + line + '"]');
-        if (menu) menu.hidden = !menu.hidden;
+        if (!menu) return;
+        var willOpen = menu.hidden;
+        $all("[data-print-title-size-menu]", el("print-preview")).forEach(function (other) { other.hidden = true; });
+        $all("[data-print-title-size-toggle]", el("print-preview")).forEach(function (other) { other.setAttribute("aria-expanded", "false"); });
+        menu.hidden = !willOpen;
+        button.setAttribute("aria-expanded", willOpen ? "true" : "false");
+        state.printTitleSizeOpen = willOpen ? { folderId: String(folderId), line: Number(line) } : null;
       });
     });
     $all("[data-print-title-size]", el("print-preview")).forEach(function (button) {
@@ -2465,6 +2473,7 @@
         while (sizes.length <= line) sizes.push(null);
         sizes[line] = Number(button.getAttribute("data-size"));
         state.printTitleSizeDrafts[String(folderId)] = sizes;
+        state.printTitleSizeOpen = { folderId: String(folderId), line: line };
         renderPrintPreview();
         var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
         if (save) save.hidden = false;
@@ -2475,8 +2484,9 @@
         var folderId = button.getAttribute("data-print-title-save");
         var lines = (state.printTitleDrafts && state.printTitleDrafts[String(folderId)]) || favFolderTitleLines(folderId);
         Store.setPrintFolderTitleLines(folderId, lines, (state.printTitleSizeDrafts && state.printTitleSizeDrafts[String(folderId)]) || favFolderTitleSizes(folderId));
-        delete state.printTitleDrafts[String(folderId)];
+        if (state.printTitleDrafts) delete state.printTitleDrafts[String(folderId)];
         if (state.printTitleSizeDrafts) delete state.printTitleSizeDrafts[String(folderId)];
+        state.printTitleSizeOpen = null;
         if (state.printExam && String(state.printExam.folderId) === String(folderId)) {
           state.printExam.titleLines = favFolderTitleLines(folderId);
           state.printExam.titleParts = favFolderTitleParts(folderId);
