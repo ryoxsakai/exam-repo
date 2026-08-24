@@ -331,6 +331,124 @@ function buildQuestionFormatGroups(rows: Record<string, unknown>[]) {
   );
 }
 
+type TrendComparisonCriteria = {
+  label: string;
+  university_name?: string;
+  year_from: number | null;
+  year_to: number | null;
+  schedule?: string;
+  category?: string;
+  passage_only: boolean;
+};
+
+function parseTrendComparisonCriteria(value: unknown, defaultLabel: string): TrendComparisonCriteria {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${defaultLabel} comparison criteria are required`);
+  const input = value as Record<string, unknown>;
+  const yearFrom = optionalNonNegativeInteger(input.year_from, `${defaultLabel}.year_from`);
+  const yearTo = optionalNonNegativeInteger(input.year_to, `${defaultLabel}.year_to`);
+  if (yearFrom !== null && yearTo !== null && yearFrom > yearTo) throw new Error(`${defaultLabel}.year_from must not exceed ${defaultLabel}.year_to`);
+
+  return {
+    label: String(input.label || defaultLabel),
+    university_name: input.university_name ? String(input.university_name) : undefined,
+    year_from: yearFrom,
+    year_to: yearTo,
+    schedule: input.schedule ? String(input.schedule) : undefined,
+    category: input.category ? String(input.category) : undefined,
+    passage_only: input.passage_only === true,
+  };
+}
+
+async function loadTrendComparisonRows(criteria: TrendComparisonCriteria, env: McpEnv) {
+  let sql = "SELECT q.id AS question_id, q.category, q.problem_text, e.id AS exam_id, e.year, e.schedule, u.name AS university_name FROM questions q JOIN exams e ON q.exam_id = e.id JOIN universities u ON e.university_id = u.id WHERE u.hidden = 0"; const values: (string | number)[] = [];
+  if (criteria.university_name) { sql += " AND u.name LIKE ?"; values.push(`%${criteria.university_name}%`); }
+  if (criteria.year_from !== null) { sql += " AND e.year >= ?"; values.push(criteria.year_from); }
+  if (criteria.year_to !== null) { sql += " AND e.year <= ?"; values.push(criteria.year_to); }
+  if (criteria.schedule) { sql += " AND e.schedule = ?"; values.push(criteria.schedule); }
+  if (criteria.category) { sql += " AND q.category = ?"; values.push(criteria.category); }
+  sql += " ORDER BY u.name ASC, e.year DESC, e.schedule ASC, q.question_number";
+
+  const rows = (await env.DB.prepare(sql).bind(...values).all<Record<string, unknown>>()).results;
+  return criteria.passage_only
+    ? rows.filter((row) => Boolean(extractMarkedSection(row.problem_text, "本文")))
+    : rows;
+}
+
+function percentageRecord(counts: Record<string, number>, total: number) {
+  return Object.fromEntries(Object.entries(counts).map(([key, count]) => [key, total ? roundMetric(count / total * 100) : 0]));
+}
+
+function buildTrendComparisonSnapshot(rows: Record<string, unknown>[]) {
+  const examIds = new Set<number>();
+  const categoryCounts: Record<string, number> = {};
+  const formatQuestionCounts: Record<string, number> = {};
+  const passageWordCounts: number[] = [];
+
+  for (const row of rows) {
+    examIds.add(Number(row.exam_id));
+    const category = String(row.category || "未分類");
+    categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+
+    const analysis = analyzeQuestionFormatRecord(row);
+    for (const format of analysis.formats) {
+      formatQuestionCounts[format] = (formatQuestionCounts[format] || 0) + 1;
+    }
+
+    const passageText = extractMarkedSection(row.problem_text, "本文");
+    if (passageText) passageWordCounts.push(countEnglishWords(passageText));
+  }
+
+  const examCount = examIds.size;
+  const questionCount = rows.length;
+  const passageCount = passageWordCounts.length;
+  const totalPassageWords = passageWordCounts.reduce((total, count) => total + count, 0);
+  return {
+    exam_count: examCount,
+    question_count: questionCount,
+    questions_per_exam: examCount ? roundMetric(questionCount / examCount) : null,
+    category_counts: categoryCounts,
+    category_rate_percent: percentageRecord(categoryCounts, questionCount),
+    format_question_counts: formatQuestionCounts,
+    format_question_rate_percent: percentageRecord(formatQuestionCounts, questionCount),
+    passage_count: passageCount,
+    passage_rate_percent: questionCount ? roundMetric(passageCount / questionCount * 100) : null,
+    passage_word_count: passageCount ? {
+      total: totalPassageWords,
+      average: roundMetric(totalPassageWords / passageCount),
+      minimum: Math.min(...passageWordCounts),
+      maximum: Math.max(...passageWordCounts),
+    } : null,
+  };
+}
+
+function numericRecordDifference(left: Record<string, number>, right: Record<string, number>) {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return Object.fromEntries(Array.from(keys).sort().map((key) => [key, roundMetric((right[key] || 0) - (left[key] || 0))]));
+}
+
+function nullableDifference(left: number | null, right: number | null) {
+  return left === null || right === null ? null : roundMetric(right - left);
+}
+
+function buildTrendComparisonDifference(
+  left: ReturnType<typeof buildTrendComparisonSnapshot>,
+  right: ReturnType<typeof buildTrendComparisonSnapshot>,
+) {
+  return {
+    direction: "right_minus_left",
+    exam_count: right.exam_count - left.exam_count,
+    question_count: right.question_count - left.question_count,
+    questions_per_exam: nullableDifference(left.questions_per_exam, right.questions_per_exam),
+    passage_count: right.passage_count - left.passage_count,
+    passage_rate_percentage_points: nullableDifference(left.passage_rate_percent, right.passage_rate_percent),
+    average_passage_word_count: nullableDifference(left.passage_word_count?.average ?? null, right.passage_word_count?.average ?? null),
+    category_counts: numericRecordDifference(left.category_counts, right.category_counts),
+    category_rate_percentage_points: numericRecordDifference(left.category_rate_percent, right.category_rate_percent),
+    format_question_counts: numericRecordDifference(left.format_question_counts, right.format_question_counts),
+    format_question_rate_percentage_points: numericRecordDifference(left.format_question_rate_percent, right.format_question_rate_percent),
+  };
+}
+
 function buildExamTrends(rows: Record<string, unknown>[], passageOnly = false) {
   type TrendAccumulator = {
     university_name: string;
@@ -642,6 +760,24 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
       },
     };
   }
+  if (name === "compare_exam_trends") {
+    const leftCriteria = parseTrendComparisonCriteria(args.left, "left");
+    const rightCriteria = parseTrendComparisonCriteria(args.right, "right");
+    const [leftRows, rightRows] = await Promise.all([
+      loadTrendComparisonRows(leftCriteria, env),
+      loadTrendComparisonRows(rightCriteria, env),
+    ]);
+    const left = buildTrendComparisonSnapshot(leftRows);
+    const right = buildTrendComparisonSnapshot(rightRows);
+
+    return {
+      format_definitions: QUESTION_FORMAT_DEFINITIONS,
+      detection_note: "設問形式は設問文のキーワードと既存マークアップによる規則ベースの推定です。",
+      left: { criteria: leftCriteria, metrics: left },
+      right: { criteria: rightCriteria, metrics: right },
+      difference: buildTrendComparisonDifference(left, right),
+    };
+  }
   if (name === "analyze_question_formats") {
     const yearFrom = optionalNonNegativeInteger(args.year_from, "year_from");
     const yearTo = optionalNonNegativeInteger(args.year_to, "year_to");
@@ -762,6 +898,7 @@ const TOOLS = [
   { name: "analyze_passage", title: "長文分析", description: "exam_idと大問番号を指定し、{{本文}}セクションの語数・文数・段落数・平均文長・Flesch Reading Ease・Flesch-Kincaid Gradeを算出します。可読性指標は英語の音節数を推定した参考値で、入試問題の難易度そのものではありません。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" }, question_number: { type: "integer" } }, required: ["exam_id", "question_number"], additionalProperties: false } },
   { name: "search_sources", title: "出典検索", description: "問題本文の!!!!...!!!!マーカー内に登録された出典を検索します。著者名・書名・媒体名などの部分一致に加え、大学名・年度範囲・方式・カテゴリで絞り込めます。出典文字列はデータベース内の表記のまま返します。", inputSchema: { type: "object", properties: { keyword: { type: "string", description: "出典文字列内の部分一致キーワード" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, sort: { type: "string", enum: ["year_desc", "year_asc", "source_asc"], default: "year_desc" }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
   { name: "get_random_questions", title: "条件付きランダム出題", description: "大学・年度範囲・方式・カテゴリ・長文語数などの条件に合う大問をランダムに抽出します。本文は返さず、選定結果のexam_idと大問番号などを返すため、必要な問題だけget_questionで取得できます。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを対象にする" }, min_word_count: { type: "integer", minimum: 0, description: "長文本文の最低語数。指定すると長文のみが対象" }, max_word_count: { type: "integer", minimum: 0, description: "長文本文の最大語数。指定すると長文のみが対象" }, count: { type: "integer", minimum: 1, maximum: 20, default: 5, description: "抽出件数" } }, additionalProperties: false } },
+  { name: "compare_exam_trends", title: "大学・期間別傾向比較", description: "2つの大学・期間・方式などを直接比較し、試験数・大問数・1試験当たり大問数・カテゴリ別件数・設問形式別件数・長文比率・平均語数と、その差分を返します。差分はrightからleftを引いた値です。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { left: { type: "object", properties: { label: { type: "string", description: "比較結果に表示する任意の名称" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを対象にする" } }, additionalProperties: false }, right: { type: "object", properties: { label: { type: "string", description: "比較結果に表示する任意の名称" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを対象にする" } }, additionalProperties: false } }, required: ["left", "right"], additionalProperties: false } },
   { name: "analyze_question_formats", title: "設問形式分析", description: "既存マークアップと設問文のキーワードから、長文読解・空所補充・選択式・和訳・英作文／英訳・語句整序・内容一致・要約・説明記述・題名選択を規則ベースで判定し、大学・年度・方式別に集計します。全訳は判定対象から除外します。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, format_code: { type: "string", enum: ["long_passage", "blank_fill", "multiple_choice", "japanese_translation", "english_composition", "word_order", "content_matching", "summary", "explanation", "title_selection"], description: "この形式を含む問題だけを集計" }, limit: { type: "integer", minimum: 1, maximum: 100, default: 100, description: "返却する大学・年度・方式グループ数" } }, additionalProperties: false } },
   { name: "get_exam_trends", title: "大学別・年度別傾向分析", description: "大学名・年度・方式ごとに、試験数・大問数・カテゴリ別件数・長文数・本文語数の合計／平均／最小／最大を集計します。大学名・年度範囲・方式・カテゴリ・長文限定で対象を絞り込めます。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを集計する" }, limit: { type: "integer", minimum: 1, maximum: 100, default: 100, description: "返却する大学・年度・方式グループ数" } }, additionalProperties: false } },
   { name: "validate_questions", title: "問題データ検査", description: "登録済み問題を読み取り専用で検査し、問題・解答・全訳・解説・出典の欠落、マークアップの閉じ忘れ、選択肢番号や解答番号の不整合を一覧化します。データは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, issue_code: { type: "string", enum: ["missing_problem_text", "missing_body", "missing_questions", "missing_answer", "missing_translation", "missing_commentary", "missing_source", "unclosed_glossary", "unclosed_source", "unbalanced_blank", "unbalanced_choice", "non_contiguous_choices", "answer_out_of_range"] }, severity: { type: "string", enum: ["error", "warning"] }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
