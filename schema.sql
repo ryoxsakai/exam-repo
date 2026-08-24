@@ -96,6 +96,54 @@ CREATE TABLE IF NOT EXISTS user_settings (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- MCP correction audits.  An audit freezes the exact question text before a correction,
+-- expires after a short period, and can be consumed only once.  These records do not
+-- change the questions table's storage structure.
+CREATE TABLE IF NOT EXISTS mcp_question_audits (
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL,
+  question_id INTEGER NOT NULL,
+  exam_id INTEGER NOT NULL,
+  question_number INTEGER NOT NULL,
+  target_field TEXT NOT NULL,
+  storage_field TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  issue_codes TEXT NOT NULL,
+  original_target_text TEXT NOT NULL,
+  original_storage_text TEXT NOT NULL,
+  original_storage_hash TEXT NOT NULL,
+  proposed_target_text TEXT,
+  proposed_storage_text TEXT,
+  proposal_hash TEXT,
+  status TEXT NOT NULL DEFAULT 'audited',
+  expires_at INTEGER NOT NULL,
+  prepared_at INTEGER,
+  used_at INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
+);
+
+-- Applied MCP corrections.  Full before/after snapshots are retained so every write is
+-- attributable and recoverable without altering the canonical question columns.
+CREATE TABLE IF NOT EXISTS mcp_question_changes (
+  id TEXT PRIMARY KEY,
+  audit_id TEXT NOT NULL UNIQUE,
+  client_id TEXT NOT NULL,
+  question_id INTEGER NOT NULL,
+  exam_id INTEGER NOT NULL,
+  question_number INTEGER NOT NULL,
+  target_field TEXT NOT NULL,
+  storage_field TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  before_text TEXT NOT NULL,
+  after_text TEXT NOT NULL,
+  before_hash TEXT NOT NULL,
+  after_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (audit_id) REFERENCES mcp_question_audits(id),
+  FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
+);
+
 -- Indexes for performance
 -- 注: questions.problem_text（本文全文が入る最大のカラム）には索引を張らない。
 -- 検索（GET /api/search）は常に LIKE '%word%'（前後ワイルドカード）で問い合わせるため
@@ -107,6 +155,8 @@ CREATE INDEX IF NOT EXISTS idx_exams_year ON exams(year);
 CREATE INDEX IF NOT EXISTS idx_questions_exam_id ON questions(exam_id);
 CREATE INDEX IF NOT EXISTS idx_favorites_uid ON favorites(uid);
 CREATE INDEX IF NOT EXISTS idx_favorite_folders_uid ON favorite_folders(uid);
+CREATE INDEX IF NOT EXISTS idx_mcp_question_audits_question ON mcp_question_audits(question_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_mcp_question_changes_question ON mcp_question_changes(question_id, created_at);
 
 -- Trigger to update updated_at on questions update
 CREATE TRIGGER IF NOT EXISTS questions_updated_at

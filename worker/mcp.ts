@@ -5,8 +5,12 @@ export interface McpEnv {
 }
 
 const MCP_SCOPE = "exams:read";
+const MCP_WRITE_SCOPE = "exams:write";
+const MCP_DEFAULT_SCOPE = `${MCP_SCOPE} ${MCP_WRITE_SCOPE}`;
+const MCP_SUPPORTED_SCOPES = [MCP_SCOPE, MCP_WRITE_SCOPE];
 const TOKEN_AGE_MS = 60 * 60 * 1000;
 const CODE_AGE_MS = 5 * 60 * 1000;
+const AUDIT_AGE_MS = 30 * 60 * 1000;
 
 function baseUrl(url: URL) { return `${url.protocol}//${url.host}`; }
 function response(data: unknown, status = 200, extra: Record<string, string> = {}) {
@@ -40,7 +44,12 @@ async function ensureSchema(env: McpEnv) {
   await env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS mcp_oauth_clients (client_id TEXT PRIMARY KEY, redirect_uris TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS mcp_oauth_codes (code TEXT PRIMARY KEY, client_id TEXT NOT NULL, redirect_uri TEXT NOT NULL, code_challenge TEXT NOT NULL, scope TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')))"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS mcp_question_audits (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, question_id INTEGER NOT NULL, exam_id INTEGER NOT NULL, question_number INTEGER NOT NULL, target_field TEXT NOT NULL, storage_field TEXT NOT NULL, reason TEXT NOT NULL, issue_codes TEXT NOT NULL, original_target_text TEXT NOT NULL, original_storage_text TEXT NOT NULL, original_storage_hash TEXT NOT NULL, proposed_target_text TEXT, proposed_storage_text TEXT, proposal_hash TEXT, status TEXT NOT NULL DEFAULT 'audited', expires_at INTEGER NOT NULL, prepared_at INTEGER, used_at INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')))"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS mcp_question_changes (id TEXT PRIMARY KEY, audit_id TEXT NOT NULL UNIQUE, client_id TEXT NOT NULL, question_id INTEGER NOT NULL, exam_id INTEGER NOT NULL, question_number INTEGER NOT NULL, target_field TEXT NOT NULL, storage_field TEXT NOT NULL, reason TEXT NOT NULL, before_text TEXT NOT NULL, after_text TEXT NOT NULL, before_hash TEXT NOT NULL, after_hash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_mcp_question_audits_question ON mcp_question_audits(question_id, created_at)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_mcp_question_changes_question ON mcp_question_changes(question_id, created_at)"),
   ]);
+  await env.DB.prepare("DELETE FROM mcp_question_audits WHERE status != 'applied' AND expires_at < ?").bind(Date.now() - 7 * 24 * 60 * 60 * 1000).run();
 }
 
 async function registerClient(request: Request, env: McpEnv) {
@@ -60,18 +69,23 @@ function authError(message: string) {
 }
 function authForm(params: URLSearchParams) {
   const hidden = ["response_type", "client_id", "redirect_uri", "state", "code_challenge", "code_challenge_method", "scope"].map((name) => `<input type="hidden" name="${name}" value="${escapeHtml(params.get(name))}">`).join("");
-  return html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>医学部入試DBを接続</title><body style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans JP',sans-serif;max-width:560px;margin:48px auto;padding:0 20px"><h1>医学部入試DBをChatGPTに接続</h1><p>大学・試験・登録問題の読み取りを許可します。編集や削除は行いません。</p><form method="post"><label style="display:block;margin:24px 0 8px">EXAM APIキー</label><input name="api_key" type="password" required style="box-sizing:border-box;width:100%;padding:12px;font-size:16px">${hidden}<button type="submit" style="margin-top:24px;padding:12px 18px;font-size:16px">接続を許可</button></form></body></html>`);
+  const writeRequested = String(params.get("scope") || MCP_DEFAULT_SCOPE).split(" ").includes(MCP_WRITE_SCOPE);
+  const permissionText = writeRequested
+    ? "大学・試験・登録問題の読み取りと、監査・差分確認を完了した問題だけの修正を許可します。削除は行いません。"
+    : "大学・試験・登録問題の読み取りを許可します。編集や削除は行いません。";
+  return html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>医学部入試DBを接続</title><body style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans JP',sans-serif;max-width:560px;margin:48px auto;padding:0 20px"><h1>医学部入試DBをChatGPTに接続</h1><p>${permissionText}</p><form method="post"><label style="display:block;margin:24px 0 8px">EXAM APIキー</label><input name="api_key" type="password" required style="box-sizing:border-box;width:100%;padding:12px;font-size:16px">${hidden}<button type="submit" style="margin-top:24px;padding:12px 18px;font-size:16px">接続を許可</button></form></body></html>`);
 }
 async function authorize(request: Request, env: McpEnv, url: URL) {
   const p = request.method === "POST" ? new URLSearchParams(await request.text()) : url.searchParams;
-  const cid = p.get("client_id") || "", redirect = p.get("redirect_uri") || "", challenge = p.get("code_challenge") || "", scope = p.get("scope") || MCP_SCOPE;
+  const cid = p.get("client_id") || "", redirect = p.get("redirect_uri") || "", challenge = p.get("code_challenge") || "", scope = p.get("scope") || MCP_DEFAULT_SCOPE;
+  const requestedScopes = Array.from(new Set(scope.split(" ").filter(Boolean)));
   const uris = await clientUris(env, cid);
-  if (p.get("response_type") !== "code" || !uris.includes(redirect) || !challenge || p.get("code_challenge_method") !== "S256" || !scope.split(" ").includes(MCP_SCOPE)) return authError("認可リクエストが正しくありません。");
+  if (p.get("response_type") !== "code" || !uris.includes(redirect) || !challenge || p.get("code_challenge_method") !== "S256" || !requestedScopes.includes(MCP_SCOPE) || requestedScopes.some((item) => !MCP_SUPPORTED_SCOPES.includes(item))) return authError("認可リクエストが正しくありません。");
   if (request.method === "GET") return authForm(p);
   const supplied = p.get("api_key") || "";
   if (!env.EXAM_API_KEY || !supplied || !(await safeEqual(supplied, env.EXAM_API_KEY))) return authError("APIキーが正しくありません。");
   const code = crypto.randomUUID();
-  await env.DB.prepare("INSERT INTO mcp_oauth_codes (code, client_id, redirect_uri, code_challenge, scope, expires_at) VALUES (?, ?, ?, ?, ?, ?)").bind(code, cid, redirect, challenge, scope, Date.now() + CODE_AGE_MS).run();
+  await env.DB.prepare("INSERT INTO mcp_oauth_codes (code, client_id, redirect_uri, code_challenge, scope, expires_at) VALUES (?, ?, ?, ?, ?, ?)").bind(code, cid, redirect, challenge, requestedScopes.join(" "), Date.now() + CODE_AGE_MS).run();
   const dest = new URL(redirect); dest.searchParams.set("code", code); if (p.get("state")) dest.searchParams.set("state", p.get("state")!);
   return Response.redirect(dest.toString(), 302);
 }
@@ -82,14 +96,20 @@ async function token(request: Request, env: McpEnv) {
   const verifier = p.get("code_verifier") || "";
   if (!row || row.client_id !== p.get("client_id") || row.redirect_uri !== p.get("redirect_uri") || Number(row.expires_at) < Date.now() || !verifier || !(await safeEqual(await sha256(verifier), row.code_challenge))) return response({ error: "invalid_grant" }, 400);
   await env.DB.prepare("DELETE FROM mcp_oauth_codes WHERE code = ?").bind(code).run();
-  const payload = toBase64Url(new TextEncoder().encode(JSON.stringify({ aud: "medical-exam-mcp", scope: row.scope, exp: Date.now() + TOKEN_AGE_MS })));
+  const payload = toBase64Url(new TextEncoder().encode(JSON.stringify({ aud: "medical-exam-mcp", client_id: row.client_id, scope: row.scope, exp: Date.now() + TOKEN_AGE_MS })));
   return response({ access_token: `${payload}.${await sign(env, payload)}`, token_type: "Bearer", expires_in: TOKEN_AGE_MS / 1000, scope: row.scope });
 }
-async function verify(request: Request, env: McpEnv) {
-  const match = (request.headers.get("Authorization") || "").match(/^Bearer (.+)$/); if (!match) return false;
-  const [payload, sig] = match[1].split("."); if (!payload || !sig || sig !== await sign(env, payload)) return false;
-  try { const data = JSON.parse(fromBase64Url(payload)); return data.aud === "medical-exam-mcp" && data.exp >= Date.now() && String(data.scope || "").split(" ").includes(MCP_SCOPE); } catch { return false; }
+type McpAuth = { client_id: string; scope: string; exp: number };
+async function verify(request: Request, env: McpEnv): Promise<McpAuth | null> {
+  const match = (request.headers.get("Authorization") || "").match(/^Bearer (.+)$/); if (!match) return null;
+  const [payload, sig] = match[1].split("."); if (!payload || !sig || sig !== await sign(env, payload)) return null;
+  try {
+    const data = JSON.parse(fromBase64Url(payload));
+    if (data.aud !== "medical-exam-mcp" || data.exp < Date.now() || !String(data.scope || "").split(" ").includes(MCP_SCOPE)) return null;
+    return { client_id: String(data.client_id || ""), scope: String(data.scope || ""), exp: Number(data.exp) };
+  } catch { return null; }
 }
+function hasScope(auth: McpAuth | null, scope: string) { return Boolean(auth && auth.scope.split(" ").includes(scope)); }
 function limit(value: unknown, fallback = 50) { const n = Number(value); return Number.isFinite(n) ? Math.max(1, Math.min(100, Math.floor(n))) : fallback; }
 function normalizeToolName(value: unknown) {
   const name = String(value ?? "");
@@ -900,7 +920,84 @@ function validateQuestionRecord(row: Record<string, unknown>) {
   return issues;
 }
 
-async function callTool(name: string, args: Record<string, unknown>, env: McpEnv) {
+const CORRECTION_TARGET_FIELDS = ["problem_text", "answer_text", "translation_text", "commentary_text"] as const;
+type CorrectionTargetField = typeof CORRECTION_TARGET_FIELDS[number];
+
+function parseCorrectionTargetField(value: unknown): CorrectionTargetField {
+  const field = String(value || "");
+  if (!CORRECTION_TARGET_FIELDS.includes(field as CorrectionTargetField)) throw new Error("target_field is invalid");
+  return field as CorrectionTargetField;
+}
+
+function correctionStorageField(targetField: CorrectionTargetField) {
+  return targetField === "translation_text" ? "problem_text" : targetField;
+}
+
+function correctionTargetText(row: Record<string, unknown>, targetField: CorrectionTargetField) {
+  return targetField === "translation_text"
+    ? extractMarkedSection(row.problem_text, "全訳")
+    : String(row[targetField] ?? "");
+}
+
+function replaceMarkedSection(value: unknown, marker: string, replacement: string) {
+  const text = String(value ?? "");
+  const heading = `{{${marker}}}`;
+  const headingStart = text.indexOf(heading);
+  if (headingStart < 0) return `${text.trimEnd()}${text.trim() ? "\n\n" : ""}${heading}\n${replacement.trim()}`;
+
+  const contentStart = headingStart + heading.length;
+  const remainder = text.slice(contentStart);
+  const nextHeading = remainder.search(/\n\s*\{\{[^{}\n]+\}\}\s*(?:\n|$)/);
+  const contentEnd = nextHeading >= 0 ? contentStart + nextHeading : text.length;
+  const currentSection = text.slice(contentStart, contentEnd);
+  const leadingWhitespace = currentSection.match(/^\s*/)?.[0] || "";
+  const trailingWhitespace = currentSection.match(/\s*$/)?.[0] || "";
+  return text.slice(0, contentStart) + leadingWhitespace + replacement.trim() + trailingWhitespace + text.slice(contentEnd);
+}
+
+function detectCorrectionAuditIssues(text: string, targetField: CorrectionTargetField): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const add = (code: string, severity: ValidationIssue["severity"], message: string) => issues.push({ code, severity, message });
+  if (/�|Ã|Â|â€™|â€œ|â€|ï¬/u.test(text)) add("ocr_mojibake", "error", "文字化けの可能性がある文字列を検出しました。");
+  if (/[ﬁﬂﬀﬃﬄ]/u.test(text)) add("ocr_ligature", "warning", "OCR由来の可能性がある合字を検出しました。");
+  if (/[A-Za-z]{2,}-\s*\n\s*[a-z]{2,}/u.test(text)) add("ocr_split_hyphenated_word", "warning", "改行をまたいで分断されたハイフン語を検出しました。");
+  if (/\b(?:[A-Za-z]\s+){5,}[A-Za-z]\b/u.test(text)) add("ocr_split_letters", "warning", "文字単位に不自然に分離された英語を検出しました。");
+  if (markerCount(text, "[[") !== markerCount(text, "]]")) add("unbalanced_blank", "error", "空所マーカー[[ ]]の左右が一致しません。");
+  if (markerCount(text, "((") !== markerCount(text, "))")) add("unbalanced_choice", "error", "選択肢マーカー(( ))の左右が一致しません。");
+  if (markerCount(text, "##") % 2 !== 0) add("unclosed_glossary", "error", "語注マーカー##が閉じていません。");
+  if (markerCount(text, "!!!!") % 2 !== 0) add("unclosed_source", "error", "出典マーカー!!!!が閉じていません。");
+  if (!text.trim()) add(`empty_${targetField}`, "warning", "監査対象のテキストが空です。");
+  return issues;
+}
+
+function buildCorrectionDiff(original: string, replacement: string) {
+  let prefixLength = 0;
+  while (prefixLength < original.length && prefixLength < replacement.length && original[prefixLength] === replacement[prefixLength]) prefixLength += 1;
+  let suffixLength = 0;
+  while (
+    suffixLength < original.length - prefixLength
+    && suffixLength < replacement.length - prefixLength
+    && original[original.length - 1 - suffixLength] === replacement[replacement.length - 1 - suffixLength]
+  ) suffixLength += 1;
+  const contextSize = 120;
+  return {
+    original_length: original.length,
+    replacement_length: replacement.length,
+    common_prefix_length: prefixLength,
+    common_suffix_length: suffixLength,
+    before_context: original.slice(Math.max(0, prefixLength - contextSize), prefixLength),
+    removed_text: original.slice(prefixLength, original.length - suffixLength),
+    added_text: replacement.slice(prefixLength, replacement.length - suffixLength),
+    after_context: original.slice(original.length - suffixLength, Math.min(original.length, original.length - suffixLength + contextSize)),
+  };
+}
+
+function d1Changes(result: unknown) {
+  const row = result as { meta?: { changes?: number }; changes?: number };
+  return Number(row?.meta?.changes ?? row?.changes ?? 0);
+}
+
+async function callTool(name: string, args: Record<string, unknown>, env: McpEnv, auth: McpAuth | null = null) {
   if (name === "list_universities") {
     const q = String(args.query || ""); const rows = q
       ? await env.DB.prepare("SELECT id, name, reading, abbreviation FROM universities WHERE hidden = 0 AND (name LIKE ? OR reading LIKE ? OR abbreviation LIKE ?) ORDER BY name LIMIT ?").bind(`%${q}%`, `%${q}%`, `%${q}%`, limit(args.limit)).all()
@@ -1330,6 +1427,148 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
       },
     };
   }
+  if (name === "audit_question_for_correction") {
+    if (!auth?.client_id) throw new Error("Reconnect the MCP connection before creating a correction audit");
+    const examId = optionalNonNegativeInteger(args.exam_id, "exam_id");
+    const questionNumber = optionalNonNegativeInteger(args.question_number, "question_number");
+    if (!examId || !questionNumber) throw new Error("exam_id and question_number must be positive integers");
+    const targetField = parseCorrectionTargetField(args.target_field);
+    const reason = String(args.reason || "").trim();
+    if (reason.length < 5 || reason.length > 500) throw new Error("reason must be between 5 and 500 characters");
+    await ensureSchema(env);
+
+    const row = await env.DB.prepare("SELECT q.id AS question_id, q.question_number, q.label, q.category, q.problem_text, q.answer_text, q.commentary_text, e.id AS exam_id, e.year, e.schedule, u.name AS university_name FROM questions q JOIN exams e ON q.exam_id = e.id JOIN universities u ON e.university_id = u.id WHERE u.hidden = 0 AND e.id = ? AND q.question_number = ?")
+      .bind(examId, questionNumber).first<Record<string, unknown>>();
+    if (!row) throw new Error("Question not found");
+
+    const storageField = correctionStorageField(targetField);
+    const originalStorageText = String(row[storageField] ?? "");
+    const originalTargetText = correctionTargetText(row, targetField);
+    const originalStorageHash = await sha256(originalStorageText);
+    const allIssues = [...validateQuestionRecord(row), ...detectCorrectionAuditIssues(originalTargetText, targetField)];
+    const issues = Array.from(new Map(allIssues.map((issue) => [`${issue.code}:${issue.message}`, issue])).values());
+    const auditId = crypto.randomUUID();
+    const expiresAt = Date.now() + AUDIT_AGE_MS;
+    await env.DB.prepare("INSERT INTO mcp_question_audits (id, client_id, question_id, exam_id, question_number, target_field, storage_field, reason, issue_codes, original_target_text, original_storage_text, original_storage_hash, status, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'audited', ?)")
+      .bind(auditId, auth.client_id, Number(row.question_id), examId, questionNumber, targetField, storageField, reason, JSON.stringify(issues.map((issue) => issue.code)), originalTargetText, originalStorageText, originalStorageHash, expiresAt).run();
+
+    return {
+      audit_id: auditId,
+      status: "audited",
+      expires_at: new Date(expiresAt).toISOString(),
+      question: {
+        question_id: Number(row.question_id),
+        exam_id: examId,
+        question_number: questionNumber,
+        university_name: row.university_name,
+        year: row.year,
+        schedule: row.schedule,
+        label: row.label,
+        category: row.category,
+      },
+      target_field: targetField,
+      original_text: originalTargetText,
+      original_text_hash: await sha256(originalTargetText),
+      detected_issues: issues,
+      next_step: "修正内容を確定したら、同じ接続からprepare_question_correctionを呼び出して差分を確認してください。",
+    };
+  }
+  if (name === "prepare_question_correction") {
+    if (!auth?.client_id) throw new Error("Reconnect the MCP connection before preparing a correction");
+    const auditId = String(args.audit_id || "");
+    if (!auditId) throw new Error("audit_id is required");
+    if (!("replacement_text" in args)) throw new Error("replacement_text is required");
+    const replacementText = String(args.replacement_text ?? "");
+    if (!replacementText.trim()) throw new Error("replacement_text must not be empty");
+    if (replacementText.length > 500_000) throw new Error("replacement_text is too large");
+    await ensureSchema(env);
+
+    const audit = await env.DB.prepare("SELECT * FROM mcp_question_audits WHERE id = ? AND client_id = ?")
+      .bind(auditId, auth.client_id).first<Record<string, any>>();
+    if (!audit) throw new Error("Audit not found for this connection");
+    if (Number(audit.expires_at) < Date.now()) throw new Error("Audit has expired; run audit_question_for_correction again");
+    if (audit.used_at || audit.status === "applied") throw new Error("Audit has already been used");
+
+    const targetField = parseCorrectionTargetField(audit.target_field);
+    const originalTargetText = String(audit.original_target_text ?? "");
+    if (replacementText === originalTargetText) throw new Error("replacement_text is identical to the audited text");
+    const proposedStorageText = targetField === "translation_text"
+      ? replaceMarkedSection(audit.original_storage_text, "全訳", replacementText)
+      : replacementText;
+    const proposalHash = await sha256(proposedStorageText);
+    const preparedAt = Date.now();
+    const updated = await env.DB.prepare("UPDATE mcp_question_audits SET proposed_target_text = ?, proposed_storage_text = ?, proposal_hash = ?, status = 'prepared', prepared_at = ? WHERE id = ? AND client_id = ? AND used_at IS NULL AND expires_at >= ?")
+      .bind(replacementText, proposedStorageText, proposalHash, preparedAt, auditId, auth.client_id, preparedAt).run();
+    if (d1Changes(updated) !== 1) throw new Error("Audit could not be prepared");
+
+    return {
+      audit_id: auditId,
+      status: "prepared",
+      target_field: targetField,
+      proposal_hash: proposalHash,
+      expires_at: new Date(Number(audit.expires_at)).toISOString(),
+      diff: buildCorrectionDiff(originalTargetText, replacementText),
+      confirmation_required: true,
+      next_step: "差分が正しい場合だけ、audit_idとproposal_hashをapply_audited_correctionへ渡してください。",
+    };
+  }
+  if (name === "apply_audited_correction") {
+    if (!auth?.client_id) throw new Error("Reconnect the MCP connection before applying a correction");
+    const auditId = String(args.audit_id || "");
+    const proposalHash = String(args.proposal_hash || "");
+    if (!auditId || !proposalHash) throw new Error("audit_id and proposal_hash are required");
+    if (args.confirm !== true) throw new Error("confirm must be true after reviewing the prepared diff");
+    await ensureSchema(env);
+
+    const audit = await env.DB.prepare("SELECT * FROM mcp_question_audits WHERE id = ? AND client_id = ?")
+      .bind(auditId, auth.client_id).first<Record<string, any>>();
+    if (!audit) throw new Error("Audit not found for this connection");
+    if (audit.used_at) throw new Error("Audit has already been used");
+    if (audit.status !== "prepared" || !audit.proposed_storage_text) throw new Error("Correction has not been prepared");
+    if (Number(audit.expires_at) < Date.now()) throw new Error("Audit has expired; run audit_question_for_correction again");
+    if (!(await safeEqual(String(audit.proposal_hash || ""), proposalHash))) throw new Error("proposal_hash does not match the prepared correction");
+
+    const storageField = String(audit.storage_field || "");
+    if (!["problem_text", "answer_text", "commentary_text"].includes(storageField)) throw new Error("Stored correction field is invalid");
+    const current = await env.DB.prepare(`SELECT ${storageField} AS storage_text FROM questions WHERE id = ?`).bind(Number(audit.question_id)).first<{ storage_text: string }>();
+    if (!current) throw new Error("Question no longer exists");
+    const currentHash = await sha256(String(current.storage_text ?? ""));
+    if (!(await safeEqual(currentHash, String(audit.original_storage_hash)))) throw new Error("Question changed after the audit; run the audit again");
+
+    const changeId = crypto.randomUUID();
+    const now = Date.now();
+    const statements = [
+      env.DB.prepare(`UPDATE questions SET ${storageField} = ? WHERE id = ? AND ${storageField} = ?`).bind(String(audit.proposed_storage_text), Number(audit.question_id), String(audit.original_storage_text)),
+      env.DB.prepare("INSERT INTO mcp_question_changes (id, audit_id, client_id, question_id, exam_id, question_number, target_field, storage_field, reason, before_text, after_text, before_hash, after_hash) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1")
+        .bind(changeId, auditId, auth.client_id, Number(audit.question_id), Number(audit.exam_id), Number(audit.question_number), String(audit.target_field), storageField, String(audit.reason), String(audit.original_storage_text), String(audit.proposed_storage_text), String(audit.original_storage_hash), proposalHash),
+      env.DB.prepare("UPDATE mcp_question_audits SET status = 'applied', used_at = ? WHERE id = ? AND client_id = ? AND status = 'prepared' AND used_at IS NULL AND EXISTS (SELECT 1 FROM mcp_question_changes WHERE audit_id = ?)")
+        .bind(now, auditId, auth.client_id, auditId),
+    ];
+    const results = await env.DB.batch(statements);
+    if (d1Changes(results[0]) !== 1 || d1Changes(results[1]) !== 1 || d1Changes(results[2]) !== 1) throw new Error("Correction was not applied because the audited state no longer matched");
+
+    return {
+      success: true,
+      change_id: changeId,
+      audit_id: auditId,
+      exam_id: Number(audit.exam_id),
+      question_number: Number(audit.question_number),
+      target_field: audit.target_field,
+      before_hash: audit.original_storage_hash,
+      after_hash: proposalHash,
+      applied_at: new Date(now).toISOString(),
+      audit_consumed: true,
+    };
+  }
+  if (name === "get_question_correction_history") {
+    const examId = optionalNonNegativeInteger(args.exam_id, "exam_id");
+    const questionNumber = optionalNonNegativeInteger(args.question_number, "question_number");
+    if (!examId || !questionNumber) throw new Error("exam_id and question_number must be positive integers");
+    await ensureSchema(env);
+    const rows = await env.DB.prepare("SELECT id AS change_id, audit_id, client_id AS actor_client_id, target_field, reason, before_hash, after_hash, created_at FROM mcp_question_changes WHERE exam_id = ? AND question_number = ? ORDER BY created_at DESC LIMIT ?")
+      .bind(examId, questionNumber, limit(args.limit, 20)).all<Record<string, unknown>>();
+    return { exam_id: examId, question_number: questionNumber, changes: rows.results };
+  }
   if (name === "validate_questions") {
     const yearFrom = optionalNonNegativeInteger(args.year_from, "year_from");
     const yearTo = optionalNonNegativeInteger(args.year_to, "year_to");
@@ -1385,10 +1624,24 @@ const TOOLS = [
   { name: "analyze_corpus_keywords", title: "コーパス特徴語・n-gram分析", description: "対象となる長文群の2〜5語n-gram、出現回数、文書頻度を集計し、参照コーパスとの相対頻度から特徴語を抽出します。参照条件を省略すると対象以外の全長文と比較します。表層語ベースの読み取り専用分析です。", inputSchema: { type: "object", properties: { target: { type: "object", description: "分析対象の長文条件", properties: { label: { type: "string" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, exam_id: { type: "integer", minimum: 1 }, question_number: { type: "integer", minimum: 1 } }, additionalProperties: false }, reference: { type: "object", description: "任意の参照コーパス条件。省略時は対象以外の全長文", properties: { label: { type: "string" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, exam_id: { type: "integer", minimum: 1 }, question_number: { type: "integer", minimum: 1 } }, additionalProperties: false }, ngram_min: { type: "integer", minimum: 2, maximum: 5, default: 2 }, ngram_max: { type: "integer", minimum: 2, maximum: 5, default: 3 }, ngram_top_n: { type: "integer", minimum: 1, maximum: 100, default: 30 }, keyword_top_n: { type: "integer", minimum: 1, maximum: 100, default: 30 }, min_ngram_frequency: { type: "integer", minimum: 1, default: 2 }, min_keyword_frequency: { type: "integer", minimum: 1, default: 2 }, include_stopwords: { type: "boolean", default: false, description: "特徴語に機能語を含める" }, include_function_only_ngrams: { type: "boolean", default: false, description: "機能語だけで構成されるn-gramを含める" } }, required: ["target"], additionalProperties: false } },
   { name: "analyze_vocabulary_profile", title: "長文語彙プロファイル", description: "{{本文}}セクションを対象に、総語数・異語数・TTR・MATTR・平均語長・1回だけ現れる語・推定語彙密度・頻出語・文書頻度を算出します。大学・年度範囲・方式・カテゴリ・試験・大問で対象を絞り込めます。表層語ベースで、CEFR・AWL判定は含みません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, exam_id: { type: "integer", minimum: 1 }, question_number: { type: "integer", minimum: 1 }, top_n: { type: "integer", minimum: 1, maximum: 100, default: 30, description: "返却する頻出語数" }, min_frequency: { type: "integer", minimum: 1, default: 2, description: "頻出語一覧に含める最低出現回数" }, include_stopwords: { type: "boolean", default: false, description: "頻出語一覧に機能語を含める" } }, additionalProperties: false } },
   { name: "get_database_coverage", title: "データ登録率", description: "大学・年度・方式別に、問題・解答・解説・長文本文・設問・全訳・出典の期待件数、登録件数、不足件数、登録率を集計します。長文関連項目はカテゴリ名に「長文」を含む問題だけを分母にします。特定項目が不足しているグループだけを抽出できます。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, missing_field: { type: "string", enum: ["problem", "answer", "commentary", "body", "questions", "translation", "source", "strict_complete"], description: "この項目に不足があるグループだけを返す" }, only_incomplete: { type: "boolean", description: "必要項目がすべて揃っていないグループだけを返す" }, sort: { type: "string", enum: ["coverage_asc", "year_desc", "university_asc"], default: "coverage_asc" }, limit: { type: "integer", minimum: 1, maximum: 100, default: 100 } }, additionalProperties: false } },
+  { name: "audit_question_for_correction", title: "修正前監査", description: "指定した大問・フィールドを監査し、現在の原文・ハッシュ・検出事項を固定した30分有効の一回限り監査IDを発行します。問題データ自体は変更しません。修正にはこの監査を先に実行する必要があります。", inputSchema: { type: "object", properties: { exam_id: { type: "integer", minimum: 1 }, question_number: { type: "integer", minimum: 1 }, target_field: { type: "string", enum: ["problem_text", "answer_text", "translation_text", "commentary_text"] }, reason: { type: "string", minLength: 5, maxLength: 500, description: "監査・修正が必要な理由" } }, required: ["exam_id", "question_number", "target_field", "reason"], additionalProperties: false } },
+  { name: "prepare_question_correction", title: "修正差分準備", description: "有効な監査IDと修正後テキストから差分を作成し、確認用proposal_hashを発行します。この段階では問題データを変更しません。", inputSchema: { type: "object", properties: { audit_id: { type: "string" }, replacement_text: { type: "string", maxLength: 500000, description: "監査対象フィールド全体の修正後テキスト" } }, required: ["audit_id", "replacement_text"], additionalProperties: false } },
+  { name: "apply_audited_correction", title: "監査済み修正適用", description: "監査と差分確認が完了し、原文が監査時点から変わっていない場合だけ修正を一度適用します。audit_id、proposal_hash、明示的なconfirm=trueが必要で、変更履歴を保存します。", inputSchema: { type: "object", properties: { audit_id: { type: "string" }, proposal_hash: { type: "string" }, confirm: { type: "boolean", description: "準備された差分を確認して修正を実行する場合のみtrue" } }, required: ["audit_id", "proposal_hash", "confirm"], additionalProperties: false } },
+  { name: "get_question_correction_history", title: "問題修正履歴", description: "指定した大問について、監査済み修正の変更ID・対象フィールド・理由・修正前後ハッシュ・実行日時を取得します。原文の過去版は返しません。", inputSchema: { type: "object", properties: { exam_id: { type: "integer", minimum: 1 }, question_number: { type: "integer", minimum: 1 }, limit: { type: "integer", minimum: 1, maximum: 100, default: 20 } }, required: ["exam_id", "question_number"], additionalProperties: false } },
   { name: "validate_questions", title: "問題データ検査", description: "登録済み問題を読み取り専用で検査し、問題・解答・全訳・解説・出典の欠落、マークアップの閉じ忘れ、選択肢番号や解答番号の不整合を一覧化します。データは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, issue_code: { type: "string", enum: ["missing_problem_text", "missing_body", "missing_questions", "missing_answer", "missing_translation", "missing_commentary", "missing_source", "unclosed_glossary", "unclosed_source", "unbalanced_blank", "unbalanced_choice", "non_contiguous_choices", "answer_out_of_range"] }, severity: { type: "string", enum: ["error", "warning"] }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
   { name: "get_exam", title: "試験詳細", description: "exam_idを指定し、試験内の全大問・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" } }, required: ["exam_id"], additionalProperties: false } },
   { name: "get_question", title: "大問詳細", description: "exam_idと大問番号を指定し、問題・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" }, question_number: { type: "integer" } }, required: ["exam_id", "question_number"], additionalProperties: false } },
-].map((tool) => ({ ...tool, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }));
+];
+
+const MCP_WRITE_TOOL_NAMES = new Set(["audit_question_for_correction", "prepare_question_correction", "apply_audited_correction"]);
+const ANNOTATED_TOOLS = TOOLS.map((tool) => ({
+  ...tool,
+  annotations: {
+    readOnlyHint: !MCP_WRITE_TOOL_NAMES.has(tool.name),
+    destructiveHint: false,
+    openWorldHint: false,
+  },
+}));
 
 async function mcp(request: Request, env: McpEnv, url: URL) {
   if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
@@ -1398,25 +1651,31 @@ async function mcp(request: Request, env: McpEnv, url: URL) {
     capabilities: { tools: {} },
     serverInfo: { name: "medical-exam", version: "1.0.0" },
     instructions: [
-      "Use these read-only tools to search and retrieve the user's Japanese medical school entrance-exam database.",
+      "Use these tools to search, retrieve, audit, and—only after an explicit audit and diff confirmation—correct the user's Japanese medical school entrance-exam database.",
       "The problem_text, answer_text, translation_text, and commentary_text fields contain canonical database text.",
       "When the user requests database content, reproduce only the requested fields verbatim.",
       "Do not summarize, rewrite, correct, translate, or omit database text unless the user explicitly requests it.",
       "Preserve all custom markup exactly as stored.",
+      "Never call apply_audited_correction unless the user explicitly approves the exact prepared diff. A correction requires a fresh audit_id, matching proposal_hash, unchanged audited source, and confirm=true.",
     ].join(" "),
   });
   if (msg.method === "notifications/initialized") return new Response(null, { status: 202 });
-  if (msg.method === "tools/list") return rpc(msg.id, { tools: TOOLS });
+  if (msg.method === "tools/list") return rpc(msg.id, { tools: ANNOTATED_TOOLS });
   if (msg.method !== "tools/call") return rpcError(msg.id, -32601, "Method not found");
-  if (!(await verify(request, env))) return response({ error: "unauthorized" }, 401, { "WWW-Authenticate": `Bearer resource_metadata="${baseUrl(url)}/.well-known/oauth-protected-resource", scope="${MCP_SCOPE}"` });
-  try { const result = await callTool(normalizeToolName(msg.params?.name), msg.params?.arguments || {}, env); return rpc(msg.id, { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: false }); }
+  const auth = await verify(request, env);
+  if (!auth) return response({ error: "unauthorized" }, 401, { "WWW-Authenticate": `Bearer resource_metadata="${baseUrl(url)}/.well-known/oauth-protected-resource", scope="${MCP_DEFAULT_SCOPE}"` });
+  const toolName = normalizeToolName(msg.params?.name);
+  if (MCP_WRITE_TOOL_NAMES.has(toolName) && !hasScope(auth, MCP_WRITE_SCOPE)) {
+    return rpc(msg.id, { content: [{ type: "text", text: "exams:write scope is required; reconnect the MCP connection and approve audited corrections" }], isError: true });
+  }
+  try { const result = await callTool(toolName, msg.params?.arguments || {}, env, auth); return rpc(msg.id, { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: false }); }
   catch (error) { return rpc(msg.id, { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true }); }
 }
 
 export async function handleMcpRoute(request: Request, env: McpEnv): Promise<Response | null> {
   const url = new URL(request.url), path = url.pathname, root = baseUrl(url);
-  if (path === "/.well-known/oauth-protected-resource" && request.method === "GET") return response({ resource: `${root}/mcp`, authorization_servers: [root], scopes_supported: [MCP_SCOPE] });
-  if (path === "/.well-known/oauth-authorization-server" && request.method === "GET") return response({ issuer: root, authorization_endpoint: `${root}/oauth/authorize`, token_endpoint: `${root}/oauth/token`, registration_endpoint: `${root}/oauth/register`, response_types_supported: ["code"], grant_types_supported: ["authorization_code"], token_endpoint_auth_methods_supported: ["none"], code_challenge_methods_supported: ["S256"], scopes_supported: [MCP_SCOPE] });
+  if (path === "/.well-known/oauth-protected-resource" && request.method === "GET") return response({ resource: `${root}/mcp`, authorization_servers: [root], scopes_supported: MCP_SUPPORTED_SCOPES });
+  if (path === "/.well-known/oauth-authorization-server" && request.method === "GET") return response({ issuer: root, authorization_endpoint: `${root}/oauth/authorize`, token_endpoint: `${root}/oauth/token`, registration_endpoint: `${root}/oauth/register`, response_types_supported: ["code"], grant_types_supported: ["authorization_code"], token_endpoint_auth_methods_supported: ["none"], code_challenge_methods_supported: ["S256"], scopes_supported: MCP_SUPPORTED_SCOPES });
   if (path === "/oauth/register" && request.method === "POST") return registerClient(request, env);
   if (path === "/oauth/authorize" && (request.method === "GET" || request.method === "POST")) return authorize(request, env, url);
   if (path === "/oauth/token" && request.method === "POST") return token(request, env);
