@@ -96,6 +96,17 @@ function normalizeToolName(value: unknown) {
   return name.split(".").pop() || name;
 }
 
+function extractMarkedSection(value: unknown, marker: string) {
+  const text = String(value ?? "");
+  const heading = `{{${marker}}}`;
+  const start = text.indexOf(heading);
+  if (start < 0) return "";
+
+  const remainder = text.slice(start + heading.length);
+  const nextHeading = remainder.search(/\n\s*\{\{[^{}\n]+\}\}\s*(?:\n|$)/);
+  return (nextHeading >= 0 ? remainder.slice(0, nextHeading) : remainder).trim();
+}
+
 async function callTool(name: string, args: Record<string, unknown>, env: McpEnv) {
   if (name === "list_universities") {
     const q = String(args.query || ""); const rows = q
@@ -115,13 +126,23 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
     const examId = Number(args.exam_id); if (!examId) throw new Error("exam_id is required");
     const exam = await env.DB.prepare("SELECT e.id, e.year, e.schedule, u.name AS university_name FROM exams e JOIN universities u ON e.university_id = u.id WHERE e.id = ?").bind(examId).first<Record<string, unknown>>();
     if (!exam) throw new Error("Exam not found");
-    const questions = await env.DB.prepare("SELECT question_number, label, category, problem_text, answer_text, commentary_text FROM questions WHERE exam_id = ? ORDER BY question_number").bind(examId).all();
-    return { exam: { ...exam, questions: questions.results } };
+    const questions = await env.DB.prepare("SELECT question_number, label, category, problem_text, answer_text, commentary_text FROM questions WHERE exam_id = ? ORDER BY question_number").bind(examId).all<Record<string, unknown>>();
+    const enrichedQuestions = questions.results.map((question) => ({
+      ...question,
+      translation_text: extractMarkedSection(question.problem_text, "全訳"),
+    }));
+    return { exam: { ...exam, questions: enrichedQuestions } };
   }
   if (name === "get_question") {
     const examId = Number(args.exam_id), questionNumber = Number(args.question_number); if (!examId || !questionNumber) throw new Error("exam_id and question_number are required");
     const question = await env.DB.prepare("SELECT q.question_number, q.label, q.category, q.problem_text, q.answer_text, q.commentary_text, e.year, e.schedule, u.name AS university_name FROM questions q JOIN exams e ON q.exam_id = e.id JOIN universities u ON e.university_id = u.id WHERE q.exam_id = ? AND q.question_number = ?").bind(examId, questionNumber).first<Record<string, unknown>>();
-    if (!question) throw new Error("Question not found"); return { question };
+    if (!question) throw new Error("Question not found");
+    return {
+      question: {
+        ...question,
+        translation_text: extractMarkedSection(question.problem_text, "全訳"),
+      },
+    };
   }
   if (name === "search_questions") {
     let sql = "SELECT q.id AS question_id, q.question_number, q.label, q.category, e.id AS exam_id, e.year, e.schedule, u.name AS university_name FROM questions q JOIN exams e ON q.exam_id = e.id JOIN universities u ON e.university_id = u.id WHERE u.hidden = 0"; const values: (string | number)[] = [];
@@ -140,14 +161,25 @@ const TOOLS = [
   { name: "list_universities", title: "大学一覧", description: "登録されている大学を検索・一覧取得します。", inputSchema: { type: "object", properties: { query: { type: "string", description: "大学名・よみ・略称の部分一致" }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
   { name: "list_exams", title: "試験一覧", description: "大学名・年度・方式で登録済み試験を絞り込みます。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year: { type: "integer" }, schedule: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
   { name: "search_questions", title: "問題検索", description: "問題・解答・解説のキーワードと大学・年度・方式・カテゴリで大問を検索します。結果の本文が必要ならget_questionを続けて使います。", inputSchema: { type: "object", properties: { word: { type: "string" }, university_name: { type: "string" }, year: { type: "integer" }, schedule: { type: "string" }, category: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
-  { name: "get_exam", title: "試験詳細", description: "exam_idを指定し、試験内の全大問・解答・解説を取得します。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" } }, required: ["exam_id"], additionalProperties: false } },
-  { name: "get_question", title: "大問詳細", description: "exam_idと大問番号を指定し、問題・解答・解説を取得します。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" }, question_number: { type: "integer" } }, required: ["exam_id", "question_number"], additionalProperties: false } },
+  { name: "get_exam", title: "試験詳細", description: "exam_idを指定し、試験内の全大問・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" } }, required: ["exam_id"], additionalProperties: false } },
+  { name: "get_question", title: "大問詳細", description: "exam_idと大問番号を指定し、問題・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" }, question_number: { type: "integer" } }, required: ["exam_id", "question_number"], additionalProperties: false } },
 ].map((tool) => ({ ...tool, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }));
 
 async function mcp(request: Request, env: McpEnv, url: URL) {
   if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
   let msg: any; try { msg = await request.json(); } catch { return rpcError(null, -32700, "Parse error"); }
-  if (msg.method === "initialize") return rpc(msg.id, { protocolVersion: msg.params?.protocolVersion || "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "medical-exam", version: "1.0.0" }, instructions: "Use these read-only tools to search and retrieve the user's Japanese medical school entrance-exam database." });
+  if (msg.method === "initialize") return rpc(msg.id, {
+    protocolVersion: msg.params?.protocolVersion || "2025-06-18",
+    capabilities: { tools: {} },
+    serverInfo: { name: "medical-exam", version: "1.0.0" },
+    instructions: [
+      "Use these read-only tools to search and retrieve the user's Japanese medical school entrance-exam database.",
+      "The problem_text, answer_text, translation_text, and commentary_text fields contain canonical database text.",
+      "When the user requests database content, reproduce only the requested fields verbatim.",
+      "Do not summarize, rewrite, correct, translate, or omit database text unless the user explicitly requests it.",
+      "Preserve all custom markup exactly as stored.",
+    ].join(" "),
+  });
   if (msg.method === "notifications/initialized") return new Response(null, { status: 202 });
   if (msg.method === "tools/list") return rpc(msg.id, { tools: TOOLS });
   if (msg.method !== "tools/call") return rpcError(msg.id, -32601, "Method not found");
