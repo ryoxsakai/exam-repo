@@ -21,3 +21,7 @@ bucket_name = "medical-exam-images"
 [dev]
 port = 8787
 local_protocol = "http"
+
+# MCP用Secret（Cloudflareダッシュボードで設定し、ここには値を書かない）:
+#   MCP_API_KEY        … OAuth認可画面で本人確認に使う十分に長いランダム文字列
+#   MCP_SESSION_SECRET … MCPアクセストークン署名用の別のランダム文字列
