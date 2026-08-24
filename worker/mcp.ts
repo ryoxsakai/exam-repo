@@ -515,6 +515,94 @@ function buildExamTrends(rows: Record<string, unknown>[], passageOnly = false) {
   );
 }
 
+const COVERAGE_FIELD_DEFINITIONS = {
+  problem: "問題本文",
+  answer: "解答",
+  commentary: "解説",
+  body: "長文本文",
+  questions: "長文の設問",
+  translation: "全訳",
+  source: "出典",
+  strict_complete: "必要項目がすべて登録済み",
+} as const;
+
+type CoverageFieldCode = keyof typeof COVERAGE_FIELD_DEFINITIONS;
+
+function coverageMetric(presentCount: number, expectedCount: number) {
+  return {
+    expected_count: expectedCount,
+    present_count: presentCount,
+    missing_count: expectedCount - presentCount,
+    rate_percent: expectedCount ? roundMetric(presentCount / expectedCount * 100) : null,
+  };
+}
+
+function buildCoverageMetrics(rows: Record<string, unknown>[]) {
+  const passageRows = rows.filter((row) => String(row.category ?? "").includes("長文"));
+  const present = (candidates: Record<string, unknown>[], predicate: (row: Record<string, unknown>) => boolean) =>
+    candidates.filter(predicate).length;
+
+  const problemCount = present(rows, (row) => Boolean(String(row.problem_text ?? "").trim()));
+  const answerCount = present(rows, (row) => Boolean(String(row.answer_text ?? "").trim()));
+  const commentaryCount = present(rows, (row) => Boolean(String(row.commentary_text ?? "").trim()));
+  const bodyCount = present(passageRows, (row) => Boolean(extractMarkedSection(row.problem_text, "本文")));
+  const questionsCount = present(passageRows, (row) => Boolean(extractMarkedSection(row.problem_text, "設問")));
+  const translationCount = present(passageRows, (row) => Boolean(extractMarkedSection(row.problem_text, "全訳")));
+  const sourceCount = present(passageRows, (row) => extractDelimitedSections(row.problem_text, "!!!!").length > 0);
+  const strictCompleteCount = present(rows, (row) => {
+    const problemText = String(row.problem_text ?? "");
+    const baseComplete = Boolean(problemText.trim() && String(row.answer_text ?? "").trim() && String(row.commentary_text ?? "").trim());
+    if (!baseComplete) return false;
+    if (!String(row.category ?? "").includes("長文")) return true;
+    return Boolean(
+      extractMarkedSection(problemText, "本文")
+      && extractMarkedSection(problemText, "設問")
+      && extractMarkedSection(problemText, "全訳")
+      && extractDelimitedSections(problemText, "!!!!").length
+    );
+  });
+
+  const examIds = new Set(rows.map((row) => Number(row.exam_id)));
+  return {
+    exam_count: examIds.size,
+    question_count: rows.length,
+    passage_question_count: passageRows.length,
+    coverage: {
+      problem: coverageMetric(problemCount, rows.length),
+      answer: coverageMetric(answerCount, rows.length),
+      commentary: coverageMetric(commentaryCount, rows.length),
+      body: coverageMetric(bodyCount, passageRows.length),
+      questions: coverageMetric(questionsCount, passageRows.length),
+      translation: coverageMetric(translationCount, passageRows.length),
+      source: coverageMetric(sourceCount, passageRows.length),
+      strict_complete: coverageMetric(strictCompleteCount, rows.length),
+    },
+  };
+}
+
+function buildDatabaseCoverageGroups(rows: Record<string, unknown>[]) {
+  const groups = new Map<string, { university_name: string; year: number; schedule: string; rows: Record<string, unknown>[] }>();
+  for (const row of rows) {
+    const universityName = String(row.university_name ?? "");
+    const year = Number(row.year);
+    const schedule = String(row.schedule ?? "");
+    const key = JSON.stringify([universityName, year, schedule]);
+    let group = groups.get(key);
+    if (!group) {
+      group = { university_name: universityName, year, schedule, rows: [] };
+      groups.set(key, group);
+    }
+    group.rows.push(row);
+  }
+
+  return Array.from(groups.values()).map((group) => ({
+    university_name: group.university_name,
+    year: group.year,
+    schedule: group.schedule,
+    ...buildCoverageMetrics(group.rows),
+  }));
+}
+
 type ValidationIssue = {
   code: string;
   severity: "error" | "warning";
@@ -849,6 +937,60 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
       },
     };
   }
+  if (name === "get_database_coverage") {
+    const yearFrom = optionalNonNegativeInteger(args.year_from, "year_from");
+    const yearTo = optionalNonNegativeInteger(args.year_to, "year_to");
+    if (yearFrom !== null && yearTo !== null && yearFrom > yearTo) throw new Error("year_from must not exceed year_to");
+
+    const missingField = String(args.missing_field || "");
+    if (missingField && !(missingField in COVERAGE_FIELD_DEFINITIONS)) throw new Error("missing_field is invalid");
+    const sort = String(args.sort || "coverage_asc");
+    if (!["coverage_asc", "year_desc", "university_asc"].includes(sort)) throw new Error("sort is invalid");
+
+    let sql = "SELECT q.id AS question_id, q.category, q.problem_text, q.answer_text, q.commentary_text, e.id AS exam_id, e.year, e.schedule, u.name AS university_name FROM questions q JOIN exams e ON q.exam_id = e.id JOIN universities u ON e.university_id = u.id WHERE u.hidden = 0"; const values: (string | number)[] = [];
+    if (args.university_name) { sql += " AND u.name LIKE ?"; values.push(`%${String(args.university_name)}%`); }
+    if (yearFrom !== null) { sql += " AND e.year >= ?"; values.push(yearFrom); }
+    if (yearTo !== null) { sql += " AND e.year <= ?"; values.push(yearTo); }
+    if (args.schedule) { sql += " AND e.schedule = ?"; values.push(String(args.schedule)); }
+    if (args.category) { sql += " AND q.category = ?"; values.push(String(args.category)); }
+    sql += " ORDER BY u.name ASC, e.year DESC, e.schedule ASC, q.question_number";
+
+    const rows = await env.DB.prepare(sql).bind(...values).all<Record<string, unknown>>();
+    const allGroups = buildDatabaseCoverageGroups(rows.results);
+    let groups = allGroups;
+    if (missingField) {
+      groups = groups.filter((group) => group.coverage[missingField as CoverageFieldCode].missing_count > 0);
+    }
+    if (args.only_incomplete === true) {
+      groups = groups.filter((group) => group.coverage.strict_complete.missing_count > 0);
+    }
+
+    if (sort === "coverage_asc") {
+      groups.sort((a, b) =>
+        Number(a.coverage.strict_complete.rate_percent ?? -1) - Number(b.coverage.strict_complete.rate_percent ?? -1)
+        || a.university_name.localeCompare(b.university_name, "ja")
+        || b.year - a.year
+      );
+    } else if (sort === "year_desc") {
+      groups.sort((a, b) => b.year - a.year || a.university_name.localeCompare(b.university_name, "ja"));
+    } else {
+      groups.sort((a, b) => a.university_name.localeCompare(b.university_name, "ja") || b.year - a.year);
+    }
+
+    const results = groups.slice(0, limit(args.limit, 100));
+    return {
+      field_definitions: COVERAGE_FIELD_DEFINITIONS,
+      denominator_note: "問題・解答・解説・完全登録率は全大問、本文・設問・全訳・出典はカテゴリ名に「長文」を含む大問を分母にしています。",
+      overall: buildCoverageMetrics(rows.results),
+      results,
+      summary: {
+        scanned_question_count: rows.results.length,
+        scanned_group_count: allGroups.length,
+        matched_group_count: groups.length,
+        returned_group_count: results.length,
+      },
+    };
+  }
   if (name === "validate_questions") {
     const yearFrom = optionalNonNegativeInteger(args.year_from, "year_from");
     const yearTo = optionalNonNegativeInteger(args.year_to, "year_to");
@@ -901,6 +1043,7 @@ const TOOLS = [
   { name: "compare_exam_trends", title: "大学・期間別傾向比較", description: "2つの大学・期間・方式などを直接比較し、試験数・大問数・1試験当たり大問数・カテゴリ別件数・設問形式別件数・長文比率・平均語数と、その差分を返します。差分はrightからleftを引いた値です。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { left: { type: "object", properties: { label: { type: "string", description: "比較結果に表示する任意の名称" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを対象にする" } }, additionalProperties: false }, right: { type: "object", properties: { label: { type: "string", description: "比較結果に表示する任意の名称" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを対象にする" } }, additionalProperties: false } }, required: ["left", "right"], additionalProperties: false } },
   { name: "analyze_question_formats", title: "設問形式分析", description: "既存マークアップと設問文のキーワードから、長文読解・空所補充・選択式・和訳・英作文／英訳・語句整序・内容一致・要約・説明記述・題名選択を規則ベースで判定し、大学・年度・方式別に集計します。全訳は判定対象から除外します。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, format_code: { type: "string", enum: ["long_passage", "blank_fill", "multiple_choice", "japanese_translation", "english_composition", "word_order", "content_matching", "summary", "explanation", "title_selection"], description: "この形式を含む問題だけを集計" }, limit: { type: "integer", minimum: 1, maximum: 100, default: 100, description: "返却する大学・年度・方式グループ数" } }, additionalProperties: false } },
   { name: "get_exam_trends", title: "大学別・年度別傾向分析", description: "大学名・年度・方式ごとに、試験数・大問数・カテゴリ別件数・長文数・本文語数の合計／平均／最小／最大を集計します。大学名・年度範囲・方式・カテゴリ・長文限定で対象を絞り込めます。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを集計する" }, limit: { type: "integer", minimum: 1, maximum: 100, default: 100, description: "返却する大学・年度・方式グループ数" } }, additionalProperties: false } },
+  { name: "get_database_coverage", title: "データ登録率", description: "大学・年度・方式別に、問題・解答・解説・長文本文・設問・全訳・出典の期待件数、登録件数、不足件数、登録率を集計します。長文関連項目はカテゴリ名に「長文」を含む問題だけを分母にします。特定項目が不足しているグループだけを抽出できます。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, missing_field: { type: "string", enum: ["problem", "answer", "commentary", "body", "questions", "translation", "source", "strict_complete"], description: "この項目に不足があるグループだけを返す" }, only_incomplete: { type: "boolean", description: "必要項目がすべて揃っていないグループだけを返す" }, sort: { type: "string", enum: ["coverage_asc", "year_desc", "university_asc"], default: "coverage_asc" }, limit: { type: "integer", minimum: 1, maximum: 100, default: 100 } }, additionalProperties: false } },
   { name: "validate_questions", title: "問題データ検査", description: "登録済み問題を読み取り専用で検査し、問題・解答・全訳・解説・出典の欠落、マークアップの閉じ忘れ、選択肢番号や解答番号の不整合を一覧化します。データは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, issue_code: { type: "string", enum: ["missing_problem_text", "missing_body", "missing_questions", "missing_answer", "missing_translation", "missing_commentary", "missing_source", "unclosed_glossary", "unclosed_source", "unbalanced_blank", "unbalanced_choice", "non_contiguous_choices", "answer_out_of_range"] }, severity: { type: "string", enum: ["error", "warning"] }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
   { name: "get_exam", title: "試験詳細", description: "exam_idを指定し、試験内の全大問・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" } }, required: ["exam_id"], additionalProperties: false } },
   { name: "get_question", title: "大問詳細", description: "exam_idと大問番号を指定し、問題・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" }, question_number: { type: "integer" } }, required: ["exam_id", "question_number"], additionalProperties: false } },
