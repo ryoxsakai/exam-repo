@@ -112,7 +112,18 @@ async function verify(request: Request, env: McpEnv): Promise<McpAuth | null> {
 function hasScope(auth: McpAuth | null, scope: string) { return Boolean(auth && auth.scope.split(" ").includes(scope)); }
 function limit(value: unknown, fallback = 50) { const n = Number(value); return Number.isFinite(n) ? Math.max(1, Math.min(100, Math.floor(n))) : fallback; }
 function normalizeToolName(value: unknown) {
-  const name = String(value ?? "");
+  let candidate = value;
+  if (candidate && typeof candidate === "object" && "name" in candidate) {
+    candidate = (candidate as { name?: unknown }).name;
+  } else if (typeof candidate === "string" && candidate.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && "name" in parsed) candidate = parsed.name;
+    } catch {
+      // Keep a non-JSON string unchanged so the normal unknown-tool error remains useful.
+    }
+  }
+  const name = String(candidate ?? "");
   return name.split(".").pop() || name;
 }
 
