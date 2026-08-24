@@ -107,6 +107,31 @@ function extractMarkedSection(value: unknown, marker: string) {
   return (nextHeading >= 0 ? remainder.slice(0, nextHeading) : remainder).trim();
 }
 
+function optionalNonNegativeInteger(value: unknown, name: string) {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0) throw new Error(`${name} must be a non-negative integer`);
+  return number;
+}
+
+function cleanPassageText(value: unknown) {
+  return String(value ?? "")
+    .replace(/##([\s\S]*?)::[\s\S]*?##/g, "$1")
+    .replace(/!!!![\s\S]*?!!!!/g, " ")
+    .replace(/~~[\s\S]*?~~/g, " ")
+    .replace(/__([\s\S]*?)__/g, "$1")
+    .replace(/==([\s\S]*?)==(?::[A-Za-z]+)?/g, "$1")
+    .replace(/\[\[[\s\S]*?\]\]/g, " ")
+    .replace(/\(\([\s\S]*?\)\)/g, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\^\^/g, "");
+}
+
+function countEnglishWords(value: unknown) {
+  const words = cleanPassageText(value).match(/\p{Script=Latin}+(?:[’'-]\p{Script=Latin}+)*/gu);
+  return words?.length || 0;
+}
+
 async function callTool(name: string, args: Record<string, unknown>, env: McpEnv) {
   if (name === "list_universities") {
     const q = String(args.query || ""); const rows = q
@@ -154,6 +179,41 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
     sql += " ORDER BY e.year DESC, u.name ASC, q.question_number LIMIT ?"; values.push(limit(args.limit, 30));
     return { results: (await env.DB.prepare(sql).bind(...values).all()).results };
   }
+  if (name === "search_passages") {
+    const minWordCount = optionalNonNegativeInteger(args.min_word_count, "min_word_count") ?? 0;
+    const maxWordCount = optionalNonNegativeInteger(args.max_word_count, "max_word_count");
+    const yearFrom = optionalNonNegativeInteger(args.year_from, "year_from");
+    const yearTo = optionalNonNegativeInteger(args.year_to, "year_to");
+    if (maxWordCount !== null && minWordCount > maxWordCount) throw new Error("min_word_count must not exceed max_word_count");
+    if (yearFrom !== null && yearTo !== null && yearFrom > yearTo) throw new Error("year_from must not exceed year_to");
+
+    const sort = String(args.sort || "year_desc");
+    if (!["year_desc", "word_count_desc", "word_count_asc"].includes(sort)) throw new Error("sort is invalid");
+
+    let sql = "SELECT q.id AS question_id, q.question_number, q.label, q.category, q.problem_text, e.id AS exam_id, e.year, e.schedule, u.name AS university_name FROM questions q JOIN exams e ON q.exam_id = e.id JOIN universities u ON e.university_id = u.id WHERE u.hidden = 0 AND q.category LIKE ?"; const values: (string | number)[] = ["%長文%"];
+    if (args.university_name) { sql += " AND u.name LIKE ?"; values.push(`%${String(args.university_name)}%`); }
+    if (yearFrom !== null) { sql += " AND e.year >= ?"; values.push(yearFrom); }
+    if (yearTo !== null) { sql += " AND e.year <= ?"; values.push(yearTo); }
+    if (args.schedule) { sql += " AND e.schedule = ?"; values.push(String(args.schedule)); }
+    sql += " ORDER BY e.year DESC, u.name ASC, q.question_number";
+
+    const keyword = String(args.keyword || "").trim().toLocaleLowerCase("en");
+    const rows = await env.DB.prepare(sql).bind(...values).all<Record<string, unknown>>();
+    const matches = rows.results.flatMap((row) => {
+      const passageText = extractMarkedSection(row.problem_text, "本文");
+      if (!passageText) return [];
+      const searchableText = cleanPassageText(passageText);
+      if (keyword && !searchableText.toLocaleLowerCase("en").includes(keyword)) return [];
+      const wordCount = countEnglishWords(passageText);
+      if (wordCount < minWordCount || (maxWordCount !== null && wordCount > maxWordCount)) return [];
+      const { problem_text: _problemText, ...metadata } = row;
+      return [{ ...metadata, word_count: wordCount }];
+    });
+
+    if (sort === "word_count_desc") matches.sort((a, b) => Number(b.word_count) - Number(a.word_count));
+    if (sort === "word_count_asc") matches.sort((a, b) => Number(a.word_count) - Number(b.word_count));
+    return { results: matches.slice(0, limit(args.limit, 30)), matched_count: matches.length };
+  }
   throw new Error("Unknown tool");
 }
 
@@ -161,6 +221,7 @@ const TOOLS = [
   { name: "list_universities", title: "大学一覧", description: "登録されている大学を検索・一覧取得します。", inputSchema: { type: "object", properties: { query: { type: "string", description: "大学名・よみ・略称の部分一致" }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
   { name: "list_exams", title: "試験一覧", description: "大学名・年度・方式で登録済み試験を絞り込みます。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year: { type: "integer" }, schedule: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
   { name: "search_questions", title: "問題検索", description: "問題・解答・解説のキーワードと大学・年度・方式・カテゴリで大問を検索します。結果の本文が必要ならget_questionを続けて使います。", inputSchema: { type: "object", properties: { word: { type: "string" }, university_name: { type: "string" }, year: { type: "integer" }, schedule: { type: "string" }, category: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
+  { name: "search_passages", title: "長文語数検索", description: "長文問題を本文の英語語数で検索します。{{本文}}セクションのみを対象にし、設問・選択肢・解答・全訳・解説・語注の日本語部分・マークアップは語数から除外します。大学名・年度範囲・方式・本文キーワードでも絞り込めます。", inputSchema: { type: "object", properties: { min_word_count: { type: "integer", minimum: 0, description: "本文の最低語数" }, max_word_count: { type: "integer", minimum: 0, description: "本文の最大語数" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, keyword: { type: "string", description: "英語本文内の部分一致キーワード" }, sort: { type: "string", enum: ["year_desc", "word_count_desc", "word_count_asc"], default: "year_desc" }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
   { name: "get_exam", title: "試験詳細", description: "exam_idを指定し、試験内の全大問・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" } }, required: ["exam_id"], additionalProperties: false } },
   { name: "get_question", title: "大問詳細", description: "exam_idと大問番号を指定し、問題・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" }, question_number: { type: "integer" } }, required: ["exam_id", "question_number"], additionalProperties: false } },
 ].map((tool) => ({ ...tool, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }));
