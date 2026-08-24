@@ -1,4 +1,6 @@
-export interface Env {
+import { handleMcpRoute, type McpEnv } from "./mcp";
+
+export interface Env extends McpEnv {
   DB: D1Database;
   IMAGES?: R2Bucket;  // 問題画像の保存先（wrangler.toml の [[r2_buckets]] binding=IMAGES）
 }
@@ -927,6 +929,9 @@ export default {
     }
 
     try {
+      const mcpResponse = await handleMcpRoute(request, env);
+      if (mcpResponse) return mcpResponse;
+
       // ── GET /api/image/:key（R2 から画像配信。DB に触れないので最初に処理） ──
       if (path.startsWith("/api/image/") && request.method === "GET") {
         if (!env.IMAGES) return json({ error: "画像ストレージ（R2）が未設定です。" }, 503, origin);
