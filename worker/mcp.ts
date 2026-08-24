@@ -91,6 +91,10 @@ async function verify(request: Request, env: McpEnv) {
   try { const data = JSON.parse(fromBase64Url(payload)); return data.aud === "medical-exam-mcp" && data.exp >= Date.now() && String(data.scope || "").split(" ").includes(MCP_SCOPE); } catch { return false; }
 }
 function limit(value: unknown, fallback = 50) { const n = Number(value); return Number.isFinite(n) ? Math.max(1, Math.min(100, Math.floor(n))) : fallback; }
+function normalizeToolName(value: unknown) {
+  const name = String(value ?? "");
+  return name.split(".").pop() || name;
+}
 
 async function callTool(name: string, args: Record<string, unknown>, env: McpEnv) {
   if (name === "list_universities") {
@@ -148,7 +152,7 @@ async function mcp(request: Request, env: McpEnv, url: URL) {
   if (msg.method === "tools/list") return rpc(msg.id, { tools: TOOLS });
   if (msg.method !== "tools/call") return rpcError(msg.id, -32601, "Method not found");
   if (!(await verify(request, env))) return response({ error: "unauthorized" }, 401, { "WWW-Authenticate": `Bearer resource_metadata="${baseUrl(url)}/.well-known/oauth-protected-resource", scope="${MCP_SCOPE}"` });
-  try { const result = await callTool(msg.params?.name, msg.params?.arguments || {}, env); return rpc(msg.id, { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: false }); }
+  try { const result = await callTool(normalizeToolName(msg.params?.name), msg.params?.arguments || {}, env); return rpc(msg.id, { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: false }); }
   catch (error) { return rpc(msg.id, { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true }); }
 }
 
