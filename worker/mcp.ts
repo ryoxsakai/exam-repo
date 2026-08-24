@@ -218,6 +218,72 @@ function sampleRandom<T>(values: T[], count: number, random = Math.random) {
   return shuffled.slice(0, count);
 }
 
+function buildExamTrends(rows: Record<string, unknown>[], passageOnly = false) {
+  type TrendAccumulator = {
+    university_name: string;
+    year: number;
+    schedule: string;
+    exam_ids: Set<number>;
+    question_count: number;
+    category_counts: Record<string, number>;
+    passage_word_counts: number[];
+  };
+
+  const groups = new Map<string, TrendAccumulator>();
+  for (const row of rows) {
+    const passageText = extractMarkedSection(row.problem_text, "本文");
+    if (passageOnly && !passageText) continue;
+
+    const universityName = String(row.university_name ?? "");
+    const year = Number(row.year);
+    const schedule = String(row.schedule ?? "");
+    const key = JSON.stringify([universityName, year, schedule]);
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        university_name: universityName,
+        year,
+        schedule,
+        exam_ids: new Set<number>(),
+        question_count: 0,
+        category_counts: {},
+        passage_word_counts: [],
+      };
+      groups.set(key, group);
+    }
+
+    group.exam_ids.add(Number(row.exam_id));
+    group.question_count += 1;
+    const category = String(row.category || "未分類");
+    group.category_counts[category] = (group.category_counts[category] || 0) + 1;
+    if (passageText) group.passage_word_counts.push(countEnglishWords(passageText));
+  }
+
+  return Array.from(groups.values()).map((group) => {
+    const totalWordCount = group.passage_word_counts.reduce((total, count) => total + count, 0);
+    const passageCount = group.passage_word_counts.length;
+    return {
+      university_name: group.university_name,
+      year: group.year,
+      schedule: group.schedule,
+      exam_count: group.exam_ids.size,
+      question_count: group.question_count,
+      category_counts: group.category_counts,
+      passage_count: passageCount,
+      passage_word_count: passageCount ? {
+        total: totalWordCount,
+        average: roundMetric(totalWordCount / passageCount),
+        minimum: Math.min(...group.passage_word_counts),
+        maximum: Math.max(...group.passage_word_counts),
+      } : null,
+    };
+  }).sort((a, b) =>
+    a.university_name.localeCompare(b.university_name, "ja")
+    || b.year - a.year
+    || a.schedule.localeCompare(b.schedule, "ja")
+  );
+}
+
 type ValidationIssue = {
   code: string;
   severity: "error" | "warning";
@@ -463,6 +529,39 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
       },
     };
   }
+  if (name === "get_exam_trends") {
+    const yearFrom = optionalNonNegativeInteger(args.year_from, "year_from");
+    const yearTo = optionalNonNegativeInteger(args.year_to, "year_to");
+    if (yearFrom !== null && yearTo !== null && yearFrom > yearTo) throw new Error("year_from must not exceed year_to");
+
+    let sql = "SELECT q.id AS question_id, q.category, q.problem_text, e.id AS exam_id, e.year, e.schedule, u.name AS university_name FROM questions q JOIN exams e ON q.exam_id = e.id JOIN universities u ON e.university_id = u.id WHERE u.hidden = 0"; const values: (string | number)[] = [];
+    if (args.university_name) { sql += " AND u.name LIKE ?"; values.push(`%${String(args.university_name)}%`); }
+    if (yearFrom !== null) { sql += " AND e.year >= ?"; values.push(yearFrom); }
+    if (yearTo !== null) { sql += " AND e.year <= ?"; values.push(yearTo); }
+    if (args.schedule) { sql += " AND e.schedule = ?"; values.push(String(args.schedule)); }
+    if (args.category) { sql += " AND q.category = ?"; values.push(String(args.category)); }
+    sql += " ORDER BY u.name ASC, e.year DESC, e.schedule ASC, q.question_number";
+
+    const rows = await env.DB.prepare(sql).bind(...values).all<Record<string, unknown>>();
+    const eligibleRows = args.passage_only === true
+      ? rows.results.filter((row) => Boolean(extractMarkedSection(row.problem_text, "本文")))
+      : rows.results;
+    const trends = buildExamTrends(eligibleRows);
+    const results = trends.slice(0, limit(args.limit, 100));
+    const scannedExamIds = new Set(rows.results.map((row) => Number(row.exam_id)));
+    const matchedExamIds = new Set(eligibleRows.map((row) => Number(row.exam_id)));
+    return {
+      results,
+      summary: {
+        scanned_exam_count: scannedExamIds.size,
+        scanned_question_count: rows.results.length,
+        matched_exam_count: matchedExamIds.size,
+        matched_question_count: eligibleRows.length,
+        matched_group_count: trends.length,
+        returned_group_count: results.length,
+      },
+    };
+  }
   if (name === "validate_questions") {
     const yearFrom = optionalNonNegativeInteger(args.year_from, "year_from");
     const yearTo = optionalNonNegativeInteger(args.year_to, "year_to");
@@ -512,6 +611,7 @@ const TOOLS = [
   { name: "analyze_passage", title: "長文分析", description: "exam_idと大問番号を指定し、{{本文}}セクションの語数・文数・段落数・平均文長・Flesch Reading Ease・Flesch-Kincaid Gradeを算出します。可読性指標は英語の音節数を推定した参考値で、入試問題の難易度そのものではありません。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" }, question_number: { type: "integer" } }, required: ["exam_id", "question_number"], additionalProperties: false } },
   { name: "search_sources", title: "出典検索", description: "問題本文の!!!!...!!!!マーカー内に登録された出典を検索します。著者名・書名・媒体名などの部分一致に加え、大学名・年度範囲・方式・カテゴリで絞り込めます。出典文字列はデータベース内の表記のまま返します。", inputSchema: { type: "object", properties: { keyword: { type: "string", description: "出典文字列内の部分一致キーワード" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, sort: { type: "string", enum: ["year_desc", "year_asc", "source_asc"], default: "year_desc" }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
   { name: "get_random_questions", title: "条件付きランダム出題", description: "大学・年度範囲・方式・カテゴリ・長文語数などの条件に合う大問をランダムに抽出します。本文は返さず、選定結果のexam_idと大問番号などを返すため、必要な問題だけget_questionで取得できます。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを対象にする" }, min_word_count: { type: "integer", minimum: 0, description: "長文本文の最低語数。指定すると長文のみが対象" }, max_word_count: { type: "integer", minimum: 0, description: "長文本文の最大語数。指定すると長文のみが対象" }, count: { type: "integer", minimum: 1, maximum: 20, default: 5, description: "抽出件数" } }, additionalProperties: false } },
+  { name: "get_exam_trends", title: "大学別・年度別傾向分析", description: "大学名・年度・方式ごとに、試験数・大問数・カテゴリ別件数・長文数・本文語数の合計／平均／最小／最大を集計します。大学名・年度範囲・方式・カテゴリ・長文限定で対象を絞り込めます。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを集計する" }, limit: { type: "integer", minimum: 1, maximum: 100, default: 100, description: "返却する大学・年度・方式グループ数" } }, additionalProperties: false } },
   { name: "validate_questions", title: "問題データ検査", description: "登録済み問題を読み取り専用で検査し、問題・解答・全訳・解説・出典の欠落、マークアップの閉じ忘れ、選択肢番号や解答番号の不整合を一覧化します。データは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, issue_code: { type: "string", enum: ["missing_problem_text", "missing_body", "missing_questions", "missing_answer", "missing_translation", "missing_commentary", "missing_source", "unclosed_glossary", "unclosed_source", "unbalanced_blank", "unbalanced_choice", "non_contiguous_choices", "answer_out_of_range"] }, severity: { type: "string", enum: ["error", "warning"] }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
   { name: "get_exam", title: "試験詳細", description: "exam_idを指定し、試験内の全大問・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" } }, required: ["exam_id"], additionalProperties: false } },
   { name: "get_question", title: "大問詳細", description: "exam_idと大問番号を指定し、問題・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" }, question_number: { type: "integer" } }, required: ["exam_id", "question_number"], additionalProperties: false } },
