@@ -600,6 +600,156 @@ function buildVocabularyProfile(
   };
 }
 
+type CorpusCriteria = {
+  label: string;
+  university_name?: string;
+  year_from: number | null;
+  year_to: number | null;
+  schedule?: string;
+  category?: string;
+  exam_id: number | null;
+  question_number: number | null;
+};
+
+type CorpusPassage = {
+  question_id: number;
+  passage_text: string;
+};
+
+function parseCorpusCriteria(value: unknown, name: string): CorpusCriteria {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${name} criteria are required`);
+  const input = value as Record<string, unknown>;
+  const yearFrom = optionalNonNegativeInteger(input.year_from, `${name}.year_from`);
+  const yearTo = optionalNonNegativeInteger(input.year_to, `${name}.year_to`);
+  const examId = optionalNonNegativeInteger(input.exam_id, `${name}.exam_id`);
+  const questionNumber = optionalNonNegativeInteger(input.question_number, `${name}.question_number`);
+  if (yearFrom !== null && yearTo !== null && yearFrom > yearTo) throw new Error(`${name}.year_from must not exceed ${name}.year_to`);
+  if (examId === 0 || questionNumber === 0) throw new Error(`${name}.exam_id and ${name}.question_number must be positive integers`);
+  if (questionNumber !== null && examId === null) throw new Error(`${name}.exam_id is required when ${name}.question_number is specified`);
+
+  return {
+    label: String(input.label || name),
+    university_name: input.university_name ? String(input.university_name) : undefined,
+    year_from: yearFrom,
+    year_to: yearTo,
+    schedule: input.schedule ? String(input.schedule) : undefined,
+    category: input.category ? String(input.category) : undefined,
+    exam_id: examId,
+    question_number: questionNumber,
+  };
+}
+
+async function loadCorpusPassages(criteria: CorpusCriteria, env: McpEnv): Promise<CorpusPassage[]> {
+  let sql = "SELECT q.id AS question_id, q.problem_text FROM questions q JOIN exams e ON q.exam_id = e.id JOIN universities u ON e.university_id = u.id WHERE u.hidden = 0 AND q.problem_text LIKE ?"; const values: (string | number)[] = ["%{{本文}}%"];
+  if (criteria.university_name) { sql += " AND u.name LIKE ?"; values.push(`%${criteria.university_name}%`); }
+  if (criteria.year_from !== null) { sql += " AND e.year >= ?"; values.push(criteria.year_from); }
+  if (criteria.year_to !== null) { sql += " AND e.year <= ?"; values.push(criteria.year_to); }
+  if (criteria.schedule) { sql += " AND e.schedule = ?"; values.push(criteria.schedule); }
+  if (criteria.category) { sql += " AND q.category = ?"; values.push(criteria.category); }
+  if (criteria.exam_id !== null) { sql += " AND e.id = ?"; values.push(criteria.exam_id); }
+  if (criteria.question_number !== null) { sql += " AND q.question_number = ?"; values.push(criteria.question_number); }
+  sql += " ORDER BY q.id";
+
+  const rows = (await env.DB.prepare(sql).bind(...values).all<Record<string, unknown>>()).results;
+  return rows.flatMap((row) => {
+    const passageText = extractMarkedSection(row.problem_text, "本文");
+    return passageText ? [{ question_id: Number(row.question_id), passage_text: passageText }] : [];
+  });
+}
+
+function buildCorpusTokenStats(passages: CorpusPassage[]) {
+  const documents = passages.map((passage) => englishWords(passage.passage_text).map(normalizeVocabularyToken));
+  const frequencies = new Map<string, number>();
+  const documentFrequencies = new Map<string, number>();
+  for (const tokens of documents) {
+    for (const token of tokens) frequencies.set(token, (frequencies.get(token) || 0) + 1);
+    for (const token of new Set(tokens)) documentFrequencies.set(token, (documentFrequencies.get(token) || 0) + 1);
+  }
+  return {
+    documents,
+    document_count: documents.length,
+    token_count: documents.reduce((total, tokens) => total + tokens.length, 0),
+    frequencies,
+    document_frequencies: documentFrequencies,
+  };
+}
+
+function buildNgramProfile(
+  corpus: ReturnType<typeof buildCorpusTokenStats>,
+  ngramMin: number,
+  ngramMax: number,
+  topN: number,
+  minFrequency: number,
+  includeFunctionOnlyNgrams: boolean,
+) {
+  const result: Record<string, Array<Record<string, unknown>>> = {};
+  for (let size = ngramMin; size <= ngramMax; size += 1) {
+    const frequencies = new Map<string, number>();
+    const documentFrequencies = new Map<string, number>();
+    let ngramTokenCount = 0;
+    for (const tokens of corpus.documents) {
+      const documentNgrams = new Set<string>();
+      for (let start = 0; start <= tokens.length - size; start += 1) {
+        const parts = tokens.slice(start, start + size);
+        if (!includeFunctionOnlyNgrams && parts.every((token) => ENGLISH_FUNCTION_WORDS.has(token))) continue;
+        const ngram = parts.join(" ");
+        frequencies.set(ngram, (frequencies.get(ngram) || 0) + 1);
+        documentNgrams.add(ngram);
+        ngramTokenCount += 1;
+      }
+      for (const ngram of documentNgrams) documentFrequencies.set(ngram, (documentFrequencies.get(ngram) || 0) + 1);
+    }
+    result[String(size)] = Array.from(frequencies.entries())
+      .filter(([, count]) => count >= minFrequency)
+      .sort((a, b) => b[1] - a[1] || (documentFrequencies.get(b[0]) || 0) - (documentFrequencies.get(a[0]) || 0) || a[0].localeCompare(b[0], "en"))
+      .slice(0, topN)
+      .map(([ngram, count]) => ({
+        ngram,
+        count,
+        rate_per_million: ngramTokenCount ? roundMetric(count / ngramTokenCount * 1_000_000) : 0,
+        document_frequency: documentFrequencies.get(ngram) || 0,
+        document_rate_percent: corpus.document_count ? roundMetric((documentFrequencies.get(ngram) || 0) / corpus.document_count * 100) : 0,
+      }));
+  }
+  return result;
+}
+
+function buildDistinctiveKeywords(
+  target: ReturnType<typeof buildCorpusTokenStats>,
+  reference: ReturnType<typeof buildCorpusTokenStats>,
+  topN: number,
+  minFrequency: number,
+  includeStopwords: boolean,
+) {
+  if (!target.token_count || !reference.token_count) return [];
+  const vocabulary = new Set([...target.frequencies.keys(), ...reference.frequencies.keys()]);
+  const smoothing = 0.5;
+  const vocabularySize = Math.max(1, vocabulary.size);
+
+  return Array.from(target.frequencies.entries())
+    .filter(([word, count]) => count >= minFrequency && (includeStopwords || !ENGLISH_FUNCTION_WORDS.has(word)))
+    .map(([word, targetCount]) => {
+      const referenceCount = reference.frequencies.get(word) || 0;
+      const targetRate = (targetCount + smoothing) / (target.token_count + smoothing * vocabularySize);
+      const referenceRate = (referenceCount + smoothing) / (reference.token_count + smoothing * vocabularySize);
+      return {
+        word,
+        target_count: targetCount,
+        target_rate_per_million: roundMetric(targetCount / target.token_count * 1_000_000),
+        target_document_frequency: target.document_frequencies.get(word) || 0,
+        target_document_rate_percent: roundMetric((target.document_frequencies.get(word) || 0) / target.document_count * 100),
+        reference_count: referenceCount,
+        reference_rate_per_million: roundMetric(referenceCount / reference.token_count * 1_000_000),
+        reference_document_frequency: reference.document_frequencies.get(word) || 0,
+        reference_document_rate_percent: roundMetric((reference.document_frequencies.get(word) || 0) / reference.document_count * 100),
+        log2_ratio: roundMetric(Math.log2(targetRate / referenceRate)),
+      };
+    })
+    .filter((entry) => entry.log2_ratio > 0)
+    .sort((a, b) => b.log2_ratio - a.log2_ratio || b.target_count - a.target_count || a.word.localeCompare(b.word, "en"))
+    .slice(0, topN);
+}
+
 const COVERAGE_FIELD_DEFINITIONS = {
   problem: "問題本文",
   answer: "解答",
@@ -1022,6 +1172,62 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
       },
     };
   }
+  if (name === "analyze_corpus_keywords") {
+    const targetCriteria = parseCorpusCriteria(args.target, "target");
+    const hasExplicitReference = args.reference !== undefined && args.reference !== null;
+    const referenceCriteria = hasExplicitReference ? parseCorpusCriteria(args.reference, "reference") : null;
+    const ngramMin = optionalNonNegativeInteger(args.ngram_min, "ngram_min") ?? 2;
+    const ngramMax = optionalNonNegativeInteger(args.ngram_max, "ngram_max") ?? 3;
+    const minNgramFrequency = optionalNonNegativeInteger(args.min_ngram_frequency, "min_ngram_frequency") ?? 2;
+    const minKeywordFrequency = optionalNonNegativeInteger(args.min_keyword_frequency, "min_keyword_frequency") ?? 2;
+    if (ngramMin < 2 || ngramMin > 5 || ngramMax < 2 || ngramMax > 5) throw new Error("ngram_min and ngram_max must be between 2 and 5");
+    if (ngramMin > ngramMax) throw new Error("ngram_min must not exceed ngram_max");
+    if (minNgramFrequency < 1 || minKeywordFrequency < 1) throw new Error("minimum frequencies must be at least 1");
+
+    const targetPassages = await loadCorpusPassages(targetCriteria, env);
+    let referencePassages: CorpusPassage[];
+    if (referenceCriteria) {
+      referencePassages = await loadCorpusPassages(referenceCriteria, env);
+    } else {
+      const allCriteria = parseCorpusCriteria({}, "all_database_passages");
+      const targetQuestionIds = new Set(targetPassages.map((passage) => passage.question_id));
+      referencePassages = (await loadCorpusPassages(allCriteria, env)).filter((passage) => !targetQuestionIds.has(passage.question_id));
+    }
+
+    const targetCorpus = buildCorpusTokenStats(targetPassages);
+    const referenceCorpus = buildCorpusTokenStats(referencePassages);
+    const ngramTopN = Math.min(100, limit(args.ngram_top_n, 30));
+    const keywordTopN = Math.min(100, limit(args.keyword_top_n, 30));
+    const includeStopwords = args.include_stopwords === true;
+    const includeFunctionOnlyNgrams = args.include_function_only_ngrams === true;
+
+    return {
+      target: {
+        criteria: targetCriteria,
+        document_count: targetCorpus.document_count,
+        token_count: targetCorpus.token_count,
+      },
+      reference: {
+        mode: referenceCriteria ? "explicit_criteria" : "all_other_passages",
+        criteria: referenceCriteria,
+        document_count: referenceCorpus.document_count,
+        token_count: referenceCorpus.token_count,
+      },
+      options: {
+        ngram_min: ngramMin,
+        ngram_max: ngramMax,
+        ngram_top_n: ngramTopN,
+        keyword_top_n: keywordTopN,
+        min_ngram_frequency: minNgramFrequency,
+        min_keyword_frequency: minKeywordFrequency,
+        include_stopwords: includeStopwords,
+        include_function_only_ngrams: includeFunctionOnlyNgrams,
+      },
+      ngrams: buildNgramProfile(targetCorpus, ngramMin, ngramMax, ngramTopN, minNgramFrequency, includeFunctionOnlyNgrams),
+      keywords: buildDistinctiveKeywords(targetCorpus, referenceCorpus, keywordTopN, minKeywordFrequency, includeStopwords),
+      methodology_note: "{{本文}}内の英語を小文字化した表層形で集計し、見出し語化は行いません。n-gramは各本文内だけで生成し、本文境界をまたぎません。特徴語のlog2_ratioは対象・参照コーパスの相対頻度を0.5加算平滑化して比較した効果量で、統計的有意性を示す値ではありません。参照条件を省略した場合は、対象に含まれないデータベース内の全長文を参照コーパスにします。参照コーパスが空の場合、特徴語は空配列になります。",
+    };
+  }
   if (name === "analyze_vocabulary_profile") {
     const yearFrom = optionalNonNegativeInteger(args.year_from, "year_from");
     const yearTo = optionalNonNegativeInteger(args.year_to, "year_to");
@@ -1176,6 +1382,7 @@ const TOOLS = [
   { name: "compare_exam_trends", title: "大学・期間別傾向比較", description: "2つの大学・期間・方式などを直接比較し、試験数・大問数・1試験当たり大問数・カテゴリ別件数・設問形式別件数・長文比率・平均語数と、その差分を返します。差分はrightからleftを引いた値です。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { left: { type: "object", properties: { label: { type: "string", description: "比較結果に表示する任意の名称" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを対象にする" } }, additionalProperties: false }, right: { type: "object", properties: { label: { type: "string", description: "比較結果に表示する任意の名称" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを対象にする" } }, additionalProperties: false } }, required: ["left", "right"], additionalProperties: false } },
   { name: "analyze_question_formats", title: "設問形式分析", description: "既存マークアップと設問文のキーワードから、長文読解・空所補充・選択式・和訳・英作文／英訳・語句整序・内容一致・要約・説明記述・題名選択を規則ベースで判定し、大学・年度・方式別に集計します。全訳は判定対象から除外します。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, format_code: { type: "string", enum: ["long_passage", "blank_fill", "multiple_choice", "japanese_translation", "english_composition", "word_order", "content_matching", "summary", "explanation", "title_selection"], description: "この形式を含む問題だけを集計" }, limit: { type: "integer", minimum: 1, maximum: 100, default: 100, description: "返却する大学・年度・方式グループ数" } }, additionalProperties: false } },
   { name: "get_exam_trends", title: "大学別・年度別傾向分析", description: "大学名・年度・方式ごとに、試験数・大問数・カテゴリ別件数・長文数・本文語数の合計／平均／最小／最大を集計します。大学名・年度範囲・方式・カテゴリ・長文限定で対象を絞り込めます。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを集計する" }, limit: { type: "integer", minimum: 1, maximum: 100, default: 100, description: "返却する大学・年度・方式グループ数" } }, additionalProperties: false } },
+  { name: "analyze_corpus_keywords", title: "コーパス特徴語・n-gram分析", description: "対象となる長文群の2〜5語n-gram、出現回数、文書頻度を集計し、参照コーパスとの相対頻度から特徴語を抽出します。参照条件を省略すると対象以外の全長文と比較します。表層語ベースの読み取り専用分析です。", inputSchema: { type: "object", properties: { target: { type: "object", description: "分析対象の長文条件", properties: { label: { type: "string" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, exam_id: { type: "integer", minimum: 1 }, question_number: { type: "integer", minimum: 1 } }, additionalProperties: false }, reference: { type: "object", description: "任意の参照コーパス条件。省略時は対象以外の全長文", properties: { label: { type: "string" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, exam_id: { type: "integer", minimum: 1 }, question_number: { type: "integer", minimum: 1 } }, additionalProperties: false }, ngram_min: { type: "integer", minimum: 2, maximum: 5, default: 2 }, ngram_max: { type: "integer", minimum: 2, maximum: 5, default: 3 }, ngram_top_n: { type: "integer", minimum: 1, maximum: 100, default: 30 }, keyword_top_n: { type: "integer", minimum: 1, maximum: 100, default: 30 }, min_ngram_frequency: { type: "integer", minimum: 1, default: 2 }, min_keyword_frequency: { type: "integer", minimum: 1, default: 2 }, include_stopwords: { type: "boolean", default: false, description: "特徴語に機能語を含める" }, include_function_only_ngrams: { type: "boolean", default: false, description: "機能語だけで構成されるn-gramを含める" } }, required: ["target"], additionalProperties: false } },
   { name: "analyze_vocabulary_profile", title: "長文語彙プロファイル", description: "{{本文}}セクションを対象に、総語数・異語数・TTR・MATTR・平均語長・1回だけ現れる語・推定語彙密度・頻出語・文書頻度を算出します。大学・年度範囲・方式・カテゴリ・試験・大問で対象を絞り込めます。表層語ベースで、CEFR・AWL判定は含みません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, exam_id: { type: "integer", minimum: 1 }, question_number: { type: "integer", minimum: 1 }, top_n: { type: "integer", minimum: 1, maximum: 100, default: 30, description: "返却する頻出語数" }, min_frequency: { type: "integer", minimum: 1, default: 2, description: "頻出語一覧に含める最低出現回数" }, include_stopwords: { type: "boolean", default: false, description: "頻出語一覧に機能語を含める" } }, additionalProperties: false } },
   { name: "get_database_coverage", title: "データ登録率", description: "大学・年度・方式別に、問題・解答・解説・長文本文・設問・全訳・出典の期待件数、登録件数、不足件数、登録率を集計します。長文関連項目はカテゴリ名に「長文」を含む問題だけを分母にします。特定項目が不足しているグループだけを抽出できます。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, missing_field: { type: "string", enum: ["problem", "answer", "commentary", "body", "questions", "translation", "source", "strict_complete"], description: "この項目に不足があるグループだけを返す" }, only_incomplete: { type: "boolean", description: "必要項目がすべて揃っていないグループだけを返す" }, sort: { type: "string", enum: ["coverage_asc", "year_desc", "university_asc"], default: "coverage_asc" }, limit: { type: "integer", minimum: 1, maximum: 100, default: 100 } }, additionalProperties: false } },
   { name: "validate_questions", title: "問題データ検査", description: "登録済み問題を読み取り専用で検査し、問題・解答・全訳・解説・出典の欠落、マークアップの閉じ忘れ、選択肢番号や解答番号の不整合を一覧化します。データは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, issue_code: { type: "string", enum: ["missing_problem_text", "missing_body", "missing_questions", "missing_answer", "missing_translation", "missing_commentary", "missing_source", "unclosed_glossary", "unclosed_source", "unbalanced_blank", "unbalanced_choice", "non_contiguous_choices", "answer_out_of_range"] }, severity: { type: "string", enum: ["error", "warning"] }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
