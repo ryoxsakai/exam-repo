@@ -515,6 +515,91 @@ function buildExamTrends(rows: Record<string, unknown>[], passageOnly = false) {
   );
 }
 
+const ENGLISH_FUNCTION_WORDS = new Set(`
+a about above after again against all am an and any are as at
+be because been before being below between both but by
+can could did do does doing down during each few for from further
+had has have having he her here hers herself him himself his how
+i if in into is it its itself just me more most my myself
+no nor not now of off on once only or other our ours ourselves out over own
+same she should so some such than that the their theirs them themselves then
+there these they this those through to too under until up very
+was we were what when where which while who whom why will with would
+you your yours yourself yourselves
+`.trim().split(/\s+/));
+
+function normalizeVocabularyToken(value: string) {
+  return value.toLocaleLowerCase("en").replace(/’/g, "'");
+}
+
+function movingAverageTypeTokenRatio(tokens: string[], requestedWindowSize = 50) {
+  if (!tokens.length) return { value_percent: null, window_size: 0 };
+  const windowSize = Math.min(requestedWindowSize, tokens.length);
+  if (tokens.length === windowSize) {
+    return { value_percent: roundMetric(new Set(tokens).size / tokens.length * 100), window_size: windowSize };
+  }
+
+  let total = 0;
+  let windowCount = 0;
+  for (let start = 0; start <= tokens.length - windowSize; start += 1) {
+    total += new Set(tokens.slice(start, start + windowSize)).size / windowSize;
+    windowCount += 1;
+  }
+  return { value_percent: roundMetric(total / windowCount * 100), window_size: windowSize };
+}
+
+function buildVocabularyProfile(
+  passages: Array<{ passage_text: string }>,
+  topN: number,
+  minFrequency: number,
+  includeStopwords: boolean,
+) {
+  const frequencies = new Map<string, number>();
+  const documentFrequencies = new Map<string, number>();
+  const tokens: string[] = [];
+
+  for (const passage of passages) {
+    const documentTokens = englishWords(passage.passage_text).map(normalizeVocabularyToken);
+    tokens.push(...documentTokens);
+    const documentTypes = new Set(documentTokens);
+    for (const token of documentTokens) frequencies.set(token, (frequencies.get(token) || 0) + 1);
+    for (const type of documentTypes) documentFrequencies.set(type, (documentFrequencies.get(type) || 0) + 1);
+  }
+
+  const tokenCount = tokens.length;
+  const typeCount = frequencies.size;
+  const hapaxCount = Array.from(frequencies.values()).filter((count) => count === 1).length;
+  const contentTokenCount = tokens.filter((token) => !ENGLISH_FUNCTION_WORDS.has(token)).length;
+  const totalLetters = tokens.reduce((total, token) => total + token.replace(/[^\p{Script=Latin}]/gu, "").length, 0);
+  const mattr = movingAverageTypeTokenRatio(tokens);
+
+  const frequentWords = Array.from(frequencies.entries())
+    .filter(([word, count]) => count >= minFrequency && (includeStopwords || !ENGLISH_FUNCTION_WORDS.has(word)))
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "en"))
+    .slice(0, topN)
+    .map(([word, count]) => ({
+      word,
+      count,
+      rate_percent: tokenCount ? roundMetric(count / tokenCount * 100) : 0,
+      document_frequency: documentFrequencies.get(word) || 0,
+      document_rate_percent: passages.length ? roundMetric((documentFrequencies.get(word) || 0) / passages.length * 100) : 0,
+    }));
+
+  return {
+    document_count: passages.length,
+    token_count: tokenCount,
+    type_count: typeCount,
+    type_token_ratio_percent: tokenCount ? roundMetric(typeCount / tokenCount * 100) : null,
+    root_type_token_ratio: tokenCount ? roundMetric(typeCount / Math.sqrt(tokenCount)) : null,
+    moving_average_type_token_ratio: mattr,
+    hapax_legomena_count: hapaxCount,
+    hapax_type_rate_percent: typeCount ? roundMetric(hapaxCount / typeCount * 100) : null,
+    average_word_length: tokenCount ? roundMetric(totalLetters / tokenCount) : null,
+    estimated_lexical_density_percent: tokenCount ? roundMetric(contentTokenCount / tokenCount * 100) : null,
+    frequent_words: frequentWords,
+  };
+}
+
 const COVERAGE_FIELD_DEFINITIONS = {
   problem: "問題本文",
   answer: "解答",
@@ -937,6 +1022,54 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
       },
     };
   }
+  if (name === "analyze_vocabulary_profile") {
+    const yearFrom = optionalNonNegativeInteger(args.year_from, "year_from");
+    const yearTo = optionalNonNegativeInteger(args.year_to, "year_to");
+    const examId = optionalNonNegativeInteger(args.exam_id, "exam_id");
+    const questionNumber = optionalNonNegativeInteger(args.question_number, "question_number");
+    const minFrequency = optionalNonNegativeInteger(args.min_frequency, "min_frequency") ?? 2;
+    if (yearFrom !== null && yearTo !== null && yearFrom > yearTo) throw new Error("year_from must not exceed year_to");
+    if (examId === 0 || questionNumber === 0) throw new Error("exam_id and question_number must be positive integers");
+    if (questionNumber !== null && examId === null) throw new Error("exam_id is required when question_number is specified");
+    if (minFrequency < 1) throw new Error("min_frequency must be at least 1");
+
+    let sql = "SELECT q.id AS question_id, q.question_number, q.category, q.problem_text, e.id AS exam_id, e.year, e.schedule, u.name AS university_name FROM questions q JOIN exams e ON q.exam_id = e.id JOIN universities u ON e.university_id = u.id WHERE u.hidden = 0 AND q.problem_text LIKE ?"; const values: (string | number)[] = ["%{{本文}}%"];
+    if (args.university_name) { sql += " AND u.name LIKE ?"; values.push(`%${String(args.university_name)}%`); }
+    if (yearFrom !== null) { sql += " AND e.year >= ?"; values.push(yearFrom); }
+    if (yearTo !== null) { sql += " AND e.year <= ?"; values.push(yearTo); }
+    if (args.schedule) { sql += " AND e.schedule = ?"; values.push(String(args.schedule)); }
+    if (args.category) { sql += " AND q.category = ?"; values.push(String(args.category)); }
+    if (examId !== null) { sql += " AND e.id = ?"; values.push(examId); }
+    if (questionNumber !== null) { sql += " AND q.question_number = ?"; values.push(questionNumber); }
+    sql += " ORDER BY u.name ASC, e.year DESC, e.schedule ASC, q.question_number";
+
+    const rows = await env.DB.prepare(sql).bind(...values).all<Record<string, unknown>>();
+    const passages = rows.results.flatMap((row) => {
+      const passageText = extractMarkedSection(row.problem_text, "本文");
+      return passageText ? [{ passage_text: passageText }] : [];
+    });
+    const topN = Math.min(100, limit(args.top_n, 30));
+    const profile = buildVocabularyProfile(passages, topN, minFrequency, args.include_stopwords === true);
+
+    return {
+      scope: {
+        university_name: args.university_name ? String(args.university_name) : null,
+        year_from: yearFrom,
+        year_to: yearTo,
+        schedule: args.schedule ? String(args.schedule) : null,
+        category: args.category ? String(args.category) : null,
+        exam_id: examId,
+        question_number: questionNumber,
+      },
+      methodology_note: "語は小文字化した表層形で集計し、活用形・派生形の見出し語化は行いません。語彙密度は内蔵の英語機能語リストに含まれない語の割合による推定値です。CEFR・AWL判定は語彙リスト未登録のため含みません。",
+      options: {
+        top_n: topN,
+        min_frequency: minFrequency,
+        include_stopwords: args.include_stopwords === true,
+      },
+      profile,
+    };
+  }
   if (name === "get_database_coverage") {
     const yearFrom = optionalNonNegativeInteger(args.year_from, "year_from");
     const yearTo = optionalNonNegativeInteger(args.year_to, "year_to");
@@ -1043,6 +1176,7 @@ const TOOLS = [
   { name: "compare_exam_trends", title: "大学・期間別傾向比較", description: "2つの大学・期間・方式などを直接比較し、試験数・大問数・1試験当たり大問数・カテゴリ別件数・設問形式別件数・長文比率・平均語数と、その差分を返します。差分はrightからleftを引いた値です。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { left: { type: "object", properties: { label: { type: "string", description: "比較結果に表示する任意の名称" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを対象にする" } }, additionalProperties: false }, right: { type: "object", properties: { label: { type: "string", description: "比較結果に表示する任意の名称" }, university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを対象にする" } }, additionalProperties: false } }, required: ["left", "right"], additionalProperties: false } },
   { name: "analyze_question_formats", title: "設問形式分析", description: "既存マークアップと設問文のキーワードから、長文読解・空所補充・選択式・和訳・英作文／英訳・語句整序・内容一致・要約・説明記述・題名選択を規則ベースで判定し、大学・年度・方式別に集計します。全訳は判定対象から除外します。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, format_code: { type: "string", enum: ["long_passage", "blank_fill", "multiple_choice", "japanese_translation", "english_composition", "word_order", "content_matching", "summary", "explanation", "title_selection"], description: "この形式を含む問題だけを集計" }, limit: { type: "integer", minimum: 1, maximum: 100, default: 100, description: "返却する大学・年度・方式グループ数" } }, additionalProperties: false } },
   { name: "get_exam_trends", title: "大学別・年度別傾向分析", description: "大学名・年度・方式ごとに、試験数・大問数・カテゴリ別件数・長文数・本文語数の合計／平均／最小／最大を集計します。大学名・年度範囲・方式・カテゴリ・長文限定で対象を絞り込めます。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, passage_only: { type: "boolean", description: "{{本文}}セクションがある問題だけを集計する" }, limit: { type: "integer", minimum: 1, maximum: 100, default: 100, description: "返却する大学・年度・方式グループ数" } }, additionalProperties: false } },
+  { name: "analyze_vocabulary_profile", title: "長文語彙プロファイル", description: "{{本文}}セクションを対象に、総語数・異語数・TTR・MATTR・平均語長・1回だけ現れる語・推定語彙密度・頻出語・文書頻度を算出します。大学・年度範囲・方式・カテゴリ・試験・大問で対象を絞り込めます。表層語ベースで、CEFR・AWL判定は含みません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, exam_id: { type: "integer", minimum: 1 }, question_number: { type: "integer", minimum: 1 }, top_n: { type: "integer", minimum: 1, maximum: 100, default: 30, description: "返却する頻出語数" }, min_frequency: { type: "integer", minimum: 1, default: 2, description: "頻出語一覧に含める最低出現回数" }, include_stopwords: { type: "boolean", default: false, description: "頻出語一覧に機能語を含める" } }, additionalProperties: false } },
   { name: "get_database_coverage", title: "データ登録率", description: "大学・年度・方式別に、問題・解答・解説・長文本文・設問・全訳・出典の期待件数、登録件数、不足件数、登録率を集計します。長文関連項目はカテゴリ名に「長文」を含む問題だけを分母にします。特定項目が不足しているグループだけを抽出できます。読み取り専用でデータは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, missing_field: { type: "string", enum: ["problem", "answer", "commentary", "body", "questions", "translation", "source", "strict_complete"], description: "この項目に不足があるグループだけを返す" }, only_incomplete: { type: "boolean", description: "必要項目がすべて揃っていないグループだけを返す" }, sort: { type: "string", enum: ["coverage_asc", "year_desc", "university_asc"], default: "coverage_asc" }, limit: { type: "integer", minimum: 1, maximum: 100, default: 100 } }, additionalProperties: false } },
   { name: "validate_questions", title: "問題データ検査", description: "登録済み問題を読み取り専用で検査し、問題・解答・全訳・解説・出典の欠落、マークアップの閉じ忘れ、選択肢番号や解答番号の不整合を一覧化します。データは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, issue_code: { type: "string", enum: ["missing_problem_text", "missing_body", "missing_questions", "missing_answer", "missing_translation", "missing_commentary", "missing_source", "unclosed_glossary", "unclosed_source", "unbalanced_blank", "unbalanced_choice", "non_contiguous_choices", "answer_out_of_range"] }, severity: { type: "string", enum: ["error", "warning"] }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
   { name: "get_exam", title: "試験詳細", description: "exam_idを指定し、試験内の全大問・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" } }, required: ["exam_id"], additionalProperties: false } },
