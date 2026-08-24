@@ -1,7 +1,7 @@
 export interface McpEnv {
   DB: D1Database;
-  MCP_API_KEY?: string;
-  MCP_SESSION_SECRET?: string;
+  EXAM_API_KEY?: string;
+  EXAM_SESSION_SECRET?: string;
 }
 
 const MCP_SCOPE = "exams:read";
@@ -26,8 +26,8 @@ function toBase64Url(bytes: Uint8Array) {
 }
 function fromBase64Url(value: string) { return atob(value.replace(/-/g, "+").replace(/_/g, "/")); }
 async function sign(env: McpEnv, value: string) {
-  if (!env.MCP_SESSION_SECRET) throw new Error("MCP_SESSION_SECRET is not configured");
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(env.MCP_SESSION_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  if (!env.EXAM_SESSION_SECRET) throw new Error("EXAM_SESSION_SECRET is not configured");
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(env.EXAM_SESSION_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return toBase64Url(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value))));
 }
 async function safeEqual(left: string, right: string) {
@@ -60,7 +60,7 @@ function authError(message: string) {
 }
 function authForm(params: URLSearchParams) {
   const hidden = ["response_type", "client_id", "redirect_uri", "state", "code_challenge", "code_challenge_method", "scope"].map((name) => `<input type="hidden" name="${name}" value="${escapeHtml(params.get(name))}">`).join("");
-  return html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>医学部入試DBを接続</title><body style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans JP',sans-serif;max-width:560px;margin:48px auto;padding:0 20px"><h1>医学部入試DBをChatGPTに接続</h1><p>大学・試験・登録問題の読み取りを許可します。編集や削除は行いません。</p><form method="post"><label style="display:block;margin:24px 0 8px">MCP APIキー</label><input name="api_key" type="password" required style="box-sizing:border-box;width:100%;padding:12px;font-size:16px">${hidden}<button type="submit" style="margin-top:24px;padding:12px 18px;font-size:16px">接続を許可</button></form></body></html>`);
+  return html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>医学部入試DBを接続</title><body style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans JP',sans-serif;max-width:560px;margin:48px auto;padding:0 20px"><h1>医学部入試DBをChatGPTに接続</h1><p>大学・試験・登録問題の読み取りを許可します。編集や削除は行いません。</p><form method="post"><label style="display:block;margin:24px 0 8px">EXAM APIキー</label><input name="api_key" type="password" required style="box-sizing:border-box;width:100%;padding:12px;font-size:16px">${hidden}<button type="submit" style="margin-top:24px;padding:12px 18px;font-size:16px">接続を許可</button></form></body></html>`);
 }
 async function authorize(request: Request, env: McpEnv, url: URL) {
   const p = request.method === "POST" ? new URLSearchParams(await request.text()) : url.searchParams;
@@ -69,7 +69,7 @@ async function authorize(request: Request, env: McpEnv, url: URL) {
   if (p.get("response_type") !== "code" || !uris.includes(redirect) || !challenge || p.get("code_challenge_method") !== "S256" || !scope.split(" ").includes(MCP_SCOPE)) return authError("認可リクエストが正しくありません。");
   if (request.method === "GET") return authForm(p);
   const supplied = p.get("api_key") || "";
-  if (!env.MCP_API_KEY || !supplied || !(await safeEqual(supplied, env.MCP_API_KEY))) return authError("APIキーが正しくありません。");
+  if (!env.EXAM_API_KEY || !supplied || !(await safeEqual(supplied, env.EXAM_API_KEY))) return authError("APIキーが正しくありません。");
   const code = crypto.randomUUID();
   await env.DB.prepare("INSERT INTO mcp_oauth_codes (code, client_id, redirect_uri, code_challenge, scope, expires_at) VALUES (?, ?, ?, ?, ?, ?)").bind(code, cid, redirect, challenge, scope, Date.now() + CODE_AGE_MS).run();
   const dest = new URL(redirect); dest.searchParams.set("code", code); if (p.get("state")) dest.searchParams.set("state", p.get("state")!);
