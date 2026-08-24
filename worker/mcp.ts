@@ -1643,6 +1643,13 @@ const ANNOTATED_TOOLS = TOOLS.map((tool) => ({
   },
 }));
 
+// Keep the canonical bare names for direct MCP clients while also advertising
+// the namespaced aliases cached by ChatGPT custom connectors.
+const DISCOVERABLE_TOOLS = ANNOTATED_TOOLS.flatMap((tool) => [
+  tool,
+  { ...tool, name: `exam.${tool.name}` },
+]);
+
 async function mcp(request: Request, env: McpEnv, url: URL) {
   if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
   let msg: any; try { msg = await request.json(); } catch { return rpcError(null, -32700, "Parse error"); }
@@ -1660,7 +1667,7 @@ async function mcp(request: Request, env: McpEnv, url: URL) {
     ].join(" "),
   });
   if (msg.method === "notifications/initialized") return new Response(null, { status: 202 });
-  if (msg.method === "tools/list") return rpc(msg.id, { tools: ANNOTATED_TOOLS });
+  if (msg.method === "tools/list") return rpc(msg.id, { tools: DISCOVERABLE_TOOLS });
   if (msg.method !== "tools/call") return rpcError(msg.id, -32601, "Method not found");
   const auth = await verify(request, env);
   if (!auth) return response({ error: "unauthorized" }, 401, { "WWW-Authenticate": `Bearer resource_metadata="${baseUrl(url)}/.well-known/oauth-protected-resource", scope="${MCP_DEFAULT_SCOPE}"` });
