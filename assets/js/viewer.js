@@ -191,6 +191,16 @@
     el("exam-show-all").addEventListener("click", function () {
       if (state.nav.examId != null) openExam(state.nav.examId, null);
     });
+    // WebMCP の exam_open_question から、既存の閲覧処理をそのまま呼び出す。
+    // イベント経由にすることで WebMCP 側へ画面内部の関数を公開しない。
+    window.addEventListener("exam:webmcp-open-question", function (event) {
+      var detail = event && event.detail ? event.detail : {};
+      var examId = Number(detail.examId);
+      var questionNumber = Number(detail.questionNumber);
+      if (Number.isInteger(examId) && examId > 0 && Number.isInteger(questionNumber) && questionNumber > 0) {
+        openExam(examId, questionNumber);
+      }
+    });
 
     // Googleログイン（Firebase Auth）
     wireAuth();
