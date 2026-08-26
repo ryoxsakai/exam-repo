@@ -1,5 +1,6 @@
 export interface McpEnv {
   DB: D1Database;
+  IMAGES?: R2Bucket;
   EXAM_API_KEY?: string;
   EXAM_SESSION_SECRET?: string;
 }
@@ -11,6 +12,17 @@ const MCP_SUPPORTED_SCOPES = [MCP_SCOPE, MCP_WRITE_SCOPE];
 const TOKEN_AGE_MS = 60 * 60 * 1000;
 const CODE_AGE_MS = 5 * 60 * 1000;
 const AUDIT_AGE_MS = 30 * 60 * 1000;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGE_BASE64_LENGTH = 14_100_000;
+const IMAGE_MEDIA_TYPES = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+} as const;
+
+type SupportedImageMediaType = keyof typeof IMAGE_MEDIA_TYPES;
+type ImagePlacement = "append" | "prepend" | "before_anchor" | "after_anchor";
 
 function baseUrl(url: URL) { return `${url.protocol}//${url.host}`; }
 function response(data: unknown, status = 200, extra: Record<string, string> = {}) {
@@ -71,7 +83,7 @@ function authForm(params: URLSearchParams) {
   const hidden = ["response_type", "client_id", "redirect_uri", "state", "code_challenge", "code_challenge_method", "scope"].map((name) => `<input type="hidden" name="${name}" value="${escapeHtml(params.get(name))}">`).join("");
   const writeRequested = String(params.get("scope") || MCP_DEFAULT_SCOPE).split(" ").includes(MCP_WRITE_SCOPE);
   const permissionText = writeRequested
-    ? "大学・試験・登録問題の読み取りと、監査・差分確認を完了した問題だけの修正を許可します。削除は行いません。"
+    ? "大学・試験・登録問題の読み取りと、監査・確認を完了した問題への画像追加、および監査・差分確認を完了した問題だけの修正を許可します。削除は行いません。"
     : "大学・試験・登録問題の読み取りを許可します。編集や削除は行いません。";
   return html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>医学部入試DBを接続</title><body style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans JP',sans-serif;max-width:560px;margin:48px auto;padding:0 20px"><h1>医学部入試DBをChatGPTに接続</h1><p>${permissionText}</p><form method="post"><label style="display:block;margin:24px 0 8px">EXAM APIキー</label><input name="api_key" type="password" required style="box-sizing:border-box;width:100%;padding:12px;font-size:16px">${hidden}<button type="submit" style="margin-top:24px;padding:12px 18px;font-size:16px">接続を許可</button></form></body></html>`);
 }
@@ -1008,6 +1020,171 @@ function d1Changes(result: unknown) {
   return Number(row?.meta?.changes ?? row?.changes ?? 0);
 }
 
+function supportedImageMediaType(value: unknown): SupportedImageMediaType | null {
+  const mediaType = String(value ?? "").split(";", 1)[0].trim().toLocaleLowerCase("en");
+  return mediaType in IMAGE_MEDIA_TYPES ? mediaType as SupportedImageMediaType : null;
+}
+
+function detectedImageMediaType(bytes: Uint8Array): SupportedImageMediaType | null {
+  if (bytes.length >= 8
+    && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+    && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) return "image/png";
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.length >= 6) {
+    const signature = String.fromCharCode(...bytes.slice(0, 6));
+    if (signature === "GIF87a" || signature === "GIF89a") return "image/gif";
+  }
+  if (bytes.length >= 12
+    && String.fromCharCode(...bytes.slice(0, 4)) === "RIFF"
+    && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") return "image/webp";
+  return null;
+}
+
+function decodeBase64Image(value: unknown, declaredMediaType: unknown) {
+  let encoded = String(value ?? "").trim();
+  let mediaType = supportedImageMediaType(declaredMediaType);
+  const dataUrl = encoded.match(/^data:([^;,]+);base64,([\s\S]+)$/i);
+  if (dataUrl) {
+    const dataUrlMediaType = supportedImageMediaType(dataUrl[1]);
+    if (!dataUrlMediaType) throw new Error("image_base64 data URL must use PNG, JPEG, GIF, or WebP");
+    if (mediaType && mediaType !== dataUrlMediaType) throw new Error("media_type does not match the image_base64 data URL");
+    mediaType = dataUrlMediaType;
+    encoded = dataUrl[2];
+  }
+  if (!mediaType) throw new Error("media_type is required with image_base64 and must be PNG, JPEG, GIF, or WebP");
+  encoded = encoded.replace(/\s+/g, "");
+  if (!encoded || encoded.length > MAX_IMAGE_BASE64_LENGTH || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) {
+    throw new Error("image_base64 is empty, invalid, or too large");
+  }
+  let decoded: string;
+  try { decoded = atob(encoded); } catch { throw new Error("image_base64 is not valid base64"); }
+  if (!decoded.length || decoded.length > MAX_IMAGE_BYTES) throw new Error("Image must be between 1 byte and 10 MB");
+  const bytes = new Uint8Array(decoded.length);
+  for (let index = 0; index < decoded.length; index += 1) bytes[index] = decoded.charCodeAt(index);
+  const detected = detectedImageMediaType(bytes);
+  if (!detected || detected !== mediaType) throw new Error("Image bytes do not match media_type");
+  return { bytes, mediaType: detected, sourceKind: "base64" as const };
+}
+
+function forbiddenRemoteImageHost(hostname: string) {
+  const host = hostname.toLocaleLowerCase("en").replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) return true;
+  if (host.includes(":")) {
+    return host === "::" || host === "::1" || /^f[cd]/.test(host) || /^fe[89ab]/.test(host) || /^::ffff:(?:127\.|10\.|169\.254\.|192\.168\.)/.test(host);
+  }
+  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return false;
+  const parts = host.split(".").map(Number);
+  if (parts.some((part) => part < 0 || part > 255)) return true;
+  return parts[0] === 0 || parts[0] === 10 || parts[0] === 127 || parts[0] >= 224
+    || (parts[0] === 169 && parts[1] === 254)
+    || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
+    || (parts[0] === 192 && parts[1] === 168)
+    || (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127);
+}
+
+function validatedRemoteImageUrl(value: unknown, base?: URL) {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw.length > 2048) throw new Error("image_url is required and must be at most 2048 characters");
+  let url: URL;
+  try { url = base ? new URL(raw, base) : new URL(raw); } catch { throw new Error("image_url is invalid"); }
+  if (url.protocol !== "https:" || url.username || url.password || forbiddenRemoteImageHost(url.hostname)) {
+    throw new Error("image_url must be a public HTTPS URL without credentials");
+  }
+  url.hash = "";
+  return url;
+}
+
+async function readImageBody(responseValue: Response) {
+  const lengthHeader = responseValue.headers.get("Content-Length");
+  if (lengthHeader && Number(lengthHeader) > MAX_IMAGE_BYTES) throw new Error("Remote image exceeds the 10 MB limit");
+  if (!responseValue.body) throw new Error("Remote image response has no body");
+
+  const reader = responseValue.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > MAX_IMAGE_BYTES) {
+      await reader.cancel("Image exceeds size limit");
+      throw new Error("Remote image exceeds the 10 MB limit");
+    }
+    chunks.push(value);
+  }
+  if (!total) throw new Error("Remote image is empty");
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return bytes;
+}
+
+async function fetchRemoteImage(value: unknown) {
+  let url = validatedRemoteImageUrl(value);
+  for (let redirects = 0; redirects <= 3; redirects += 1) {
+    const fetched = await fetch(url, {
+      redirect: "manual",
+      headers: { "Accept": "image/png,image/jpeg,image/gif,image/webp", "User-Agent": "medical-exam-mcp/1.1" },
+    });
+    if (fetched.status >= 300 && fetched.status < 400) {
+      const location = fetched.headers.get("Location");
+      if (!location || redirects === 3) throw new Error("Remote image redirected too many times or without a valid Location header");
+      url = validatedRemoteImageUrl(location, url);
+      continue;
+    }
+    if (!fetched.ok) throw new Error(`Remote image request failed with HTTP ${fetched.status}`);
+    const declaredMediaType = fetched.headers.get("Content-Type");
+    const declared = declaredMediaType ? supportedImageMediaType(declaredMediaType) : null;
+    if (declaredMediaType && !declared && !/^application\/octet-stream(?:;|$)/i.test(declaredMediaType)) {
+      throw new Error("Remote URL did not return PNG, JPEG, GIF, or WebP");
+    }
+    const bytes = await readImageBody(fetched);
+    const detected = detectedImageMediaType(bytes);
+    if (!detected || (declared && declared !== detected)) throw new Error("Remote image bytes do not match a supported image type");
+    return { bytes, mediaType: detected, sourceKind: "url" as const };
+  }
+  throw new Error("Remote image could not be loaded");
+}
+
+async function loadImageInput(args: Record<string, unknown>) {
+  const hasUrl = Boolean(String(args.image_url ?? "").trim());
+  const hasBase64 = Boolean(String(args.image_base64 ?? "").trim());
+  if (hasUrl === hasBase64) throw new Error("Provide exactly one of image_url or image_base64");
+  return hasUrl ? fetchRemoteImage(args.image_url) : decodeBase64Image(args.image_base64, args.media_type);
+}
+
+function imagePlacement(value: unknown): ImagePlacement {
+  const placement = String(value ?? "");
+  if (!["append", "prepend", "before_anchor", "after_anchor"].includes(placement)) throw new Error("placement is invalid");
+  return placement as ImagePlacement;
+}
+
+function markdownAltText(value: unknown) {
+  const text = String(value ?? "図").replace(/[\r\n\t]+/g, " ").trim() || "図";
+  if (text.length > 200) throw new Error("alt_text must be at most 200 characters");
+  return text.replace(/\\/g, "\\\\").replace(/\[/g, "\\[").replace(/\]/g, "\\]");
+}
+
+function insertImageMarkup(text: string, markup: string, placement: ImagePlacement, anchorValue: unknown) {
+  if (placement === "append") {
+    if (!text) return markup;
+    return `${text}${text.endsWith("\n\n") ? "" : text.endsWith("\n") ? "\n" : "\n\n"}${markup}`;
+  }
+  if (placement === "prepend") {
+    if (!text) return markup;
+    return `${markup}${text.startsWith("\n\n") ? "" : text.startsWith("\n") ? "\n" : "\n\n"}${text}`;
+  }
+  const anchor = String(anchorValue ?? "");
+  if (!anchor || anchor.length > 2_000) throw new Error("anchor_text is required for anchor placement and must be at most 2000 characters");
+  const index = text.indexOf(anchor);
+  if (index < 0) throw new Error("anchor_text was not found in the audited field");
+  if (text.indexOf(anchor, index + anchor.length) >= 0) throw new Error("anchor_text must occur exactly once in the audited field");
+  if (placement === "before_anchor") return `${text.slice(0, index)}${markup}\n\n${text.slice(index)}`;
+  const insertionIndex = index + anchor.length;
+  return `${text.slice(0, insertionIndex)}\n\n${markup}${text.slice(insertionIndex)}`;
+}
+
 async function callTool(name: string, args: Record<string, unknown>, env: McpEnv, auth: McpAuth | null = null) {
   if (name === "list_universities") {
     const q = String(args.query || ""); const rows = q
@@ -1481,7 +1658,7 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
       original_text: originalTargetText,
       original_text_hash: await sha256(originalTargetText),
       detected_issues: issues,
-      next_step: "修正内容を確定したら、同じ接続からprepare_question_correctionを呼び出して差分を確認してください。",
+      next_step: "テキスト修正はprepare_question_correction、画像追加は画像と挿入位置を確認してadd_question_imageを呼び出してください。",
     };
   }
   if (name === "prepare_question_correction") {
@@ -1571,6 +1748,112 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
       audit_consumed: true,
     };
   }
+  if (name === "add_question_image") {
+    if (!auth?.client_id) throw new Error("Reconnect the MCP connection before adding an image");
+    if (!env.IMAGES) throw new Error("Image storage is not configured");
+    if (args.confirm !== true) throw new Error("confirm must be true after reviewing the target question, placement, and image");
+    const auditId = String(args.audit_id || "");
+    if (!auditId) throw new Error("audit_id is required");
+    const placement = imagePlacement(args.placement);
+    const altText = markdownAltText(args.alt_text);
+    await ensureSchema(env);
+
+    const audit = await env.DB.prepare("SELECT * FROM mcp_question_audits WHERE id = ? AND client_id = ?")
+      .bind(auditId, auth.client_id).first<Record<string, any>>();
+    if (!audit) throw new Error("Audit not found for this connection");
+    if (audit.used_at) throw new Error("Audit has already been used");
+    if (audit.status !== "audited") throw new Error("Image addition requires a fresh, unprepared audit");
+    if (Number(audit.expires_at) < Date.now()) throw new Error("Audit has expired; run audit_question_for_correction again");
+
+    const targetField = parseCorrectionTargetField(audit.target_field);
+    const storageField = String(audit.storage_field || "");
+    if (!["problem_text", "answer_text", "commentary_text"].includes(storageField)) throw new Error("Stored correction field is invalid");
+    const originalTargetText = String(audit.original_target_text ?? "");
+    const image = await loadImageInput(args);
+    const extension = IMAGE_MEDIA_TYPES[image.mediaType];
+    const imageKey = `img/mcp/${Number(audit.exam_id)}/${Number(audit.question_number)}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+    const imagePath = `/api/image/${imageKey}`;
+    const markup = `![${altText}](${imagePath})`;
+    const proposedTargetText = insertImageMarkup(originalTargetText, markup, placement, args.anchor_text);
+    const proposedStorageText = targetField === "translation_text"
+      ? replaceMarkedSection(audit.original_storage_text, "全訳", proposedTargetText)
+      : proposedTargetText;
+    if (proposedStorageText.length > 500_000) throw new Error("Resulting question text is too large");
+
+    const current = await env.DB.prepare(`SELECT ${storageField} AS storage_text FROM questions WHERE id = ?`)
+      .bind(Number(audit.question_id)).first<{ storage_text: string }>();
+    if (!current) throw new Error("Question no longer exists");
+    const currentHash = await sha256(String(current.storage_text ?? ""));
+    if (!(await safeEqual(currentHash, String(audit.original_storage_hash)))) throw new Error("Question changed after the audit; run the audit again");
+
+    const afterHash = await sha256(proposedStorageText);
+    const changeId = crypto.randomUUID();
+    const now = Date.now();
+    await env.IMAGES.put(imageKey, image.bytes, {
+      httpMetadata: { contentType: image.mediaType },
+      customMetadata: {
+        source: "mcp",
+        exam_id: String(audit.exam_id),
+        question_number: String(audit.question_number),
+        target_field: targetField,
+      },
+    });
+
+    try {
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE questions SET ${storageField} = ?, updated_at = datetime('now') WHERE id = ? AND ${storageField} = ?`)
+          .bind(proposedStorageText, Number(audit.question_id), String(audit.original_storage_text)),
+        env.DB.prepare("INSERT INTO mcp_question_changes (id, audit_id, client_id, question_id, exam_id, question_number, target_field, storage_field, reason, before_text, after_text, before_hash, after_hash) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1")
+          .bind(changeId, auditId, auth.client_id, Number(audit.question_id), Number(audit.exam_id), Number(audit.question_number), targetField, storageField, String(audit.reason), String(audit.original_storage_text), proposedStorageText, String(audit.original_storage_hash), afterHash),
+        env.DB.prepare("UPDATE mcp_question_audits SET proposed_target_text = ?, proposed_storage_text = ?, proposal_hash = ?, status = 'applied', prepared_at = ?, used_at = ? WHERE id = ? AND client_id = ? AND status = 'audited' AND used_at IS NULL AND EXISTS (SELECT 1 FROM mcp_question_changes WHERE audit_id = ?)")
+          .bind(proposedTargetText, proposedStorageText, afterHash, now, now, auditId, auth.client_id, auditId),
+      ]);
+    } catch (error) {
+      try { await env.IMAGES.delete(imageKey); } catch { throw new Error("Image addition failed and the unused R2 object could not be removed"); }
+      throw error;
+    }
+
+    let applied: Record<string, unknown> | null;
+    try {
+      applied = await env.DB.prepare(`SELECT q.${storageField} AS storage_text, a.status, a.used_at, a.proposal_hash, c.id AS change_id, c.after_hash FROM questions q JOIN mcp_question_audits a ON a.question_id = q.id LEFT JOIN mcp_question_changes c ON c.audit_id = a.id WHERE q.id = ? AND a.id = ? AND a.client_id = ?`)
+        .bind(Number(audit.question_id), auditId, auth.client_id).first<Record<string, unknown>>();
+    } catch {
+      throw new Error("Image write may have completed, but its database state could not be verified; inspect the question before retrying");
+    }
+    const fullyApplied = Boolean(applied
+      && applied.storage_text === proposedStorageText
+      && applied.status === "applied"
+      && applied.used_at
+      && applied.proposal_hash === afterHash
+      && applied.change_id === changeId
+      && applied.after_hash === afterHash);
+    if (!fullyApplied) {
+      try { await env.IMAGES.delete(imageKey); } catch { throw new Error("Image was not attached and the unused R2 object could not be removed"); }
+      throw new Error("Image was not attached because the audited state no longer matched");
+    }
+
+    return {
+      success: true,
+      change_id: changeId,
+      audit_id: auditId,
+      exam_id: Number(audit.exam_id),
+      question_number: Number(audit.question_number),
+      target_field: targetField,
+      placement,
+      image: {
+        key: imageKey,
+        path: imagePath,
+        markdown: markup,
+        media_type: image.mediaType,
+        byte_size: image.bytes.byteLength,
+        source_kind: image.sourceKind,
+      },
+      before_hash: audit.original_storage_hash,
+      after_hash: afterHash,
+      applied_at: new Date(now).toISOString(),
+      audit_consumed: true,
+    };
+  }
   if (name === "get_question_correction_history") {
     const examId = optionalNonNegativeInteger(args.exam_id, "exam_id");
     const questionNumber = optionalNonNegativeInteger(args.question_number, "question_number");
@@ -1638,19 +1921,21 @@ const TOOLS = [
   { name: "audit_question_for_correction", title: "修正前監査", description: "指定した大問・フィールドを監査し、現在の原文・ハッシュ・検出事項を固定した30分有効の一回限り監査IDを発行します。問題データ自体は変更しません。修正にはこの監査を先に実行する必要があります。", inputSchema: { type: "object", properties: { exam_id: { type: "integer", minimum: 1 }, question_number: { type: "integer", minimum: 1 }, target_field: { type: "string", enum: ["problem_text", "answer_text", "translation_text", "commentary_text"] }, reason: { type: "string", minLength: 5, maxLength: 500, description: "監査・修正が必要な理由" } }, required: ["exam_id", "question_number", "target_field", "reason"], additionalProperties: false } },
   { name: "prepare_question_correction", title: "修正差分準備", description: "有効な監査IDと修正後テキストから差分を作成し、確認用proposal_hashを発行します。この段階では問題データを変更しません。", inputSchema: { type: "object", properties: { audit_id: { type: "string" }, replacement_text: { type: "string", maxLength: 500000, description: "監査対象フィールド全体の修正後テキスト" } }, required: ["audit_id", "replacement_text"], additionalProperties: false } },
   { name: "apply_audited_correction", title: "監査済み修正適用", description: "監査と差分確認が完了し、原文が監査時点から変わっていない場合だけ修正を一度適用します。audit_id、proposal_hash、明示的なconfirm=trueが必要で、変更履歴を保存します。", inputSchema: { type: "object", properties: { audit_id: { type: "string" }, proposal_hash: { type: "string" }, confirm: { type: "boolean", description: "準備された差分を確認して修正を実行する場合のみtrue" } }, required: ["audit_id", "proposal_hash", "confirm"], additionalProperties: false } },
+  { name: "add_question_image", title: "問題画像を追加", description: "audit_question_for_correctionで対象フィールドを監査し、画像・挿入位置・対象問題についてユーザーの確認を得た後に使います。PNG・JPEG・GIF・WebP（10MB以下）をR2へ保存し、監査時点から問題が変わっていない場合だけMarkdown画像を挿入して変更履歴を残します。画像は公開HTTPS URLまたはbase64のどちらか一方で指定し、confirm=trueが必要です。", inputSchema: { type: "object", properties: { audit_id: { type: "string", description: "audit_question_for_correctionで発行された未使用の監査ID" }, image_url: { type: "string", format: "uri", maxLength: 2048, description: "取得可能な公開HTTPS画像URL。image_base64とは同時指定不可" }, image_base64: { type: "string", maxLength: 14100000, description: "画像のbase64またはdata URL。image_urlとは同時指定不可" }, media_type: { type: "string", enum: ["image/png", "image/jpeg", "image/gif", "image/webp"], description: "image_base64がdata URLでない場合に必須" }, alt_text: { type: "string", maxLength: 200, default: "図", description: "Markdown画像の代替テキスト" }, placement: { type: "string", enum: ["append", "prepend", "before_anchor", "after_anchor"], description: "監査対象フィールド内の挿入位置" }, anchor_text: { type: "string", maxLength: 2000, description: "before_anchor/after_anchorの場合に必須。監査対象内で一度だけ出現する完全一致文字列" }, confirm: { type: "boolean", description: "対象問題・画像・挿入位置を確認して追加する場合のみtrue" } }, required: ["audit_id", "placement", "confirm"], additionalProperties: false } },
   { name: "get_question_correction_history", title: "問題修正履歴", description: "指定した大問について、監査済み修正の変更ID・対象フィールド・理由・修正前後ハッシュ・実行日時を取得します。原文の過去版は返しません。", inputSchema: { type: "object", properties: { exam_id: { type: "integer", minimum: 1 }, question_number: { type: "integer", minimum: 1 }, limit: { type: "integer", minimum: 1, maximum: 100, default: 20 } }, required: ["exam_id", "question_number"], additionalProperties: false } },
   { name: "validate_questions", title: "問題データ検査", description: "登録済み問題を読み取り専用で検査し、問題・解答・全訳・解説・出典の欠落、マークアップの閉じ忘れ、選択肢番号や解答番号の不整合を一覧化します。データは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, issue_code: { type: "string", enum: ["missing_problem_text", "missing_body", "missing_questions", "missing_answer", "missing_translation", "missing_commentary", "missing_source", "unclosed_glossary", "unclosed_source", "unbalanced_blank", "unbalanced_choice", "non_contiguous_choices", "answer_out_of_range"] }, severity: { type: "string", enum: ["error", "warning"] }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
   { name: "get_exam", title: "試験詳細", description: "exam_idを指定し、試験内の全大問・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" } }, required: ["exam_id"], additionalProperties: false } },
   { name: "get_question", title: "大問詳細", description: "exam_idと大問番号を指定し、問題・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" }, question_number: { type: "integer" } }, required: ["exam_id", "question_number"], additionalProperties: false } },
 ];
 
-const MCP_WRITE_TOOL_NAMES = new Set(["audit_question_for_correction", "prepare_question_correction", "apply_audited_correction"]);
+const MCP_WRITE_TOOL_NAMES = new Set(["audit_question_for_correction", "prepare_question_correction", "apply_audited_correction", "add_question_image"]);
+const MCP_OPEN_WORLD_TOOL_NAMES = new Set(["add_question_image"]);
 const ANNOTATED_TOOLS = TOOLS.map((tool) => ({
   ...tool,
   annotations: {
     readOnlyHint: !MCP_WRITE_TOOL_NAMES.has(tool.name),
     destructiveHint: false,
-    openWorldHint: false,
+    openWorldHint: MCP_OPEN_WORLD_TOOL_NAMES.has(tool.name),
   },
 }));
 
@@ -1667,14 +1952,15 @@ async function mcp(request: Request, env: McpEnv, url: URL) {
   if (msg.method === "initialize") return rpc(msg.id, {
     protocolVersion: msg.params?.protocolVersion || "2025-06-18",
     capabilities: { tools: {} },
-    serverInfo: { name: "medical-exam", version: "1.0.0" },
+    serverInfo: { name: "medical-exam", version: "1.1.0" },
     instructions: [
-      "Use these tools to search, retrieve, audit, and—only after an explicit audit and diff confirmation—correct the user's Japanese medical school entrance-exam database.",
+      "Use these tools to search, retrieve, audit, add explicitly confirmed images, and—only after an explicit audit and diff confirmation—correct the user's Japanese medical school entrance-exam database.",
       "The problem_text, answer_text, translation_text, and commentary_text fields contain canonical database text.",
       "When the user requests database content, reproduce only the requested fields verbatim.",
       "Do not summarize, rewrite, correct, translate, or omit database text unless the user explicitly requests it.",
       "Preserve all custom markup exactly as stored.",
       "Never call apply_audited_correction unless the user explicitly approves the exact prepared diff. A correction requires a fresh audit_id, matching proposal_hash, unchanged audited source, and confirm=true.",
+      "Before adding an image, create a fresh audit for the exact target field, review the image and insertion position with the user, and call add_question_image only with confirm=true. The image tool consumes the audit and records the text change.",
     ].join(" "),
   });
   if (msg.method === "notifications/initialized") return new Response(null, { status: 202 });
@@ -1684,7 +1970,7 @@ async function mcp(request: Request, env: McpEnv, url: URL) {
   if (!auth) return response({ error: "unauthorized" }, 401, { "WWW-Authenticate": `Bearer resource_metadata="${baseUrl(url)}/.well-known/oauth-protected-resource", scope="${MCP_DEFAULT_SCOPE}"` });
   const toolName = normalizeToolName(msg.params?.name);
   if (MCP_WRITE_TOOL_NAMES.has(toolName) && !hasScope(auth, MCP_WRITE_SCOPE)) {
-    return rpc(msg.id, { content: [{ type: "text", text: "exams:write scope is required; reconnect the MCP connection and approve audited corrections" }], isError: true });
+    return rpc(msg.id, { content: [{ type: "text", text: "exams:write scope is required; reconnect the MCP connection and approve audited image additions and corrections" }], isError: true });
   }
   try { const result = await callTool(toolName, msg.params?.arguments || {}, env, auth); return rpc(msg.id, { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: false }); }
   catch (error) { return rpc(msg.id, { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true }); }
