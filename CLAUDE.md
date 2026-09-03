@@ -65,10 +65,11 @@
 | `GET /api/corpus` | **全大問の英文テキスト一括取得**（クライアント側コーパス分析用） |
 | `POST /api/upload` / `GET /api/image/:key` | 問題画像を R2 へ保存 / 配信（`wrangler.toml` の `[[r2_buckets]] binding=IMAGES`） |
 | `GET/POST /api/favorites` `DELETE /api/favorites/:examId/:questionNumber` | ログインユーザーの大問お気に入り（要 `Authorization: Bearer <Firebase IDトークン>`）。GET は `favorites` に加え `folders`（フォルダ一覧）・`sections`（セクション見出し一覧）も返す |
+| `POST /api/favorite-copies` `DELETE /api/favorite-copies/:id` | 同じお気に入り大問を別フォルダにも配置／そのコピーだけを削除（要ログイン）。元のお気に入りを外すと関連コピーもすべて削除する |
 | `POST /api/favorite-folders` `PUT/DELETE /api/favorite-folders/:id` `POST /api/favorite-folders/reorder` | お気に入りフォルダ／セクションの作成・改名・削除・並べ替え（要ログイン）。POST の `kind`（`"folder"`/`"section"`）で種別を指定し、改名・削除・並べ替えは両者で共通 |
 | `GET/PUT /api/user-settings` | ログインユーザーごとの端末をまたぐ設定（要ログイン。`tab_order_main`/`tab_order_setting`=タブ並び順、`print_titles`=お気に入りフォルダ印刷の表紙タイトル `{フォルダid:{top,mid,bottom}}`）。PUT は渡されたキーだけを部分更新する |
 
-データモデル: `universities`(name, reading=よみがな, abbreviation=略称表示用) 1—N `exams`(year, schedule) 1—N `questions`(question_number, label, problem_text, answer_text, commentary_text)。`label` は大問の表示ラベル（任意。例「1A」。空なら「大問」+`question_number` を表示する表示専用の上書き。並び順・識別は常に整数 `question_number` を使用）。`favorites`(uid, exam_id, question_number) は `questions.id` ではなく他APIと同じ `(exam_id, question_number)` で大問を識別する。`favorite_folders`(uid, name, parent_id, sort_order, kind) は自己参照の `parent_id`（NULL=ルート直下）で階層化し、`favorites` にも同じ意味の `folder_id`/`sort_order` を持たせて、フォルダとお気に入りをまとめて1つの表示順（コンテナ=uid+parent_id/folder_id 内の `sort_order`）で並べる。`kind` は `'folder'`（中に要素を入れられる）と `'section'`（中身を持たない見出し）の別で、セクションも「コンテナ内の名前つき1要素」という点はフォルダと同じなのでテーブル・並べ替え・改名・削除の仕組みを共有し、この列だけで振る舞いを分ける（既存行はすべて `'folder'`）。`user_settings`(uid PRIMARY KEY, tab_order_main, tab_order_setting, print_titles) はログインユーザー1人につき1行で、`tab_order_*` はタブid配列、`print_titles` は `{フォルダid:{top,mid,bottom}}` のJSON文字列（値が文字列なら中央行のみの旧形式）（いずれも未設定は空文字列）。
+データモデル: `universities`(name, reading=よみがな, abbreviation=略称表示用) 1—N `exams`(year, schedule) 1—N `questions`(question_number, label, problem_text, answer_text, commentary_text)。`label` は大問の表示ラベル（任意。例「1A」。空なら「大問」+`question_number` を表示する表示専用の上書き。並び順・識別は常に整数 `question_number` を使用）。`favorites`(uid, exam_id, question_number) は `questions.id` ではなく他APIと同じ `(exam_id, question_number)` で大問を識別し、星のON/OFFを1大問1行で管理する。`favorite_copies`(uid, favorite_id, folder_id, sort_order) は同じ大問を2か所目以降のフォルダにも置く追加の配置行で、元の `favorites` が消えれば関連コピーも削除する。`favorite_folders`(uid, name, parent_id, sort_order, kind) は自己参照の `parent_id`（NULL=ルート直下）で階層化し、`favorites` / `favorite_copies` にも同じ意味の `folder_id`/`sort_order` を持たせて、フォルダとお気に入りをまとめて1つの表示順（コンテナ=uid+parent_id/folder_id 内の `sort_order`）で並べる。`kind` は `'folder'`（中に要素を入れられる）と `'section'`（中身を持たない見出し）の別で、セクションも「コンテナ内の名前つき1要素」という点はフォルダと同じなのでテーブル・並べ替え・改名・削除の仕組みを共有し、この列だけで振る舞いを分ける（既存行はすべて `'folder'`）。`user_settings`(uid PRIMARY KEY, tab_order_main, tab_order_setting, print_titles) はログインユーザー1人につき1行で、`tab_order_*` はタブid配列、`print_titles` は `{フォルダid:{top,mid,bottom}}` のJSON文字列（値が文字列なら中央行のみの旧形式）（いずれも未設定は空文字列）。
 
 ### 認証（Firebase Auth / Googleログイン）
 
@@ -78,7 +79,8 @@
 
 ### お気に入りのフォルダ分け・並べ替え（`assets/js/viewer.js`）
 
-- お気に入りタブはフォルダ・セクション・大問を1本の木構造（`#favorites-area` 内 `.fav-tree`）として描画する。並び順・所属フォルダは `favorites.sort_order`/`folder_id` と `favorite_folders.sort_order`/`parent_id` で管理し、3種をまとめて1つの表示順にする（`favChildrenOf`）。
+- お気に入りタブはフォルダ・セクション・大問を1本の木構造（`#favorites-area` 内 `.fav-tree`）として描画する。並び順・所属フォルダは `favorites` / `favorite_copies` の `sort_order`/`folder_id` と `favorite_folders.sort_order`/`parent_id` で管理し、3種をまとめて1つの表示順にする（`favChildrenOf`）。
+- 各大問行のコピーボタンから、同じ問題をまだ置いていない別フォルダを選んで追加配置できる。コピー行も通常の大問と同様に並べ替え・印刷でき、「コピー」表示とゴミ箱ボタンでその配置だけを削除する。元行の星を外した場合はコピーもすべて削除する。
 - 並べ替え・フォルダ間移動・階層化（フォルダをフォルダへドロップ）は PC はネイティブ Drag and Drop API、スマホはタップ長押し（`touchstart`から一定時間後にドラッグ開始、閾値以上動いたらスクロールとみなし中止）で行い、いずれも `POST /api/favorite-folders/reorder` で確定する（ドロップ先コンテナの子要素を渡した順序で `sort_order`/`folder_id`(`parent_id`) に一括反映。移動元に残る要素の番号は詰め直さない）。
 - スマホの長押しドラッグ中だけ `body.fav-dragging-touch` を付与し、CSS側でその間だけテキスト選択・長押しコールアウトを禁止する（常時ではなく JS がドラッグ中と判定した時だけ適用）。
 - フォルダ削除時、配下のフォルダ・お気に入りは削除せず削除フォルダの親へ繰り上げる（`fixOrphanedRecords` でも念のため参照切れの `folder_id`/`parent_id` をルートへ戻す）。

@@ -234,7 +234,7 @@ function extractZenyakuTitle(problemText: string): string {
   return "";
 }
 
-// 孤立レコードの自動削除: 親が存在しない questions / exams / favorites を除去する。
+// 孤立レコードの自動削除: 親が存在しない questions / exams / favorites / favorite_copies を除去する。
 // D1(SQLite) は既定では外部キー制約を強制しないため、過去に大学・試験を
 // 削除した際 ON DELETE CASCADE が効かず子レコードが残っている場合がある。
 // 参照先が無い行の削除のみ行う（曖昧な判断を伴わない安全な処理）。
@@ -248,11 +248,17 @@ async function fixOrphanedRecords(env: Env) {
   await env.DB.prepare(
     "DELETE FROM favorites WHERE exam_id NOT IN (SELECT id FROM exams)"
   ).run().catch(() => { /* favorites テーブル未作成の初回は無視 */ });
+  await env.DB.prepare(
+    "DELETE FROM favorite_copies WHERE favorite_id NOT IN (SELECT id FROM favorites)"
+  ).run().catch(() => { /* favorite_copies テーブル未作成の初回は無視 */ });
   // フォルダ削除API（DELETE /api/favorite-folders/:id）は常に配下を親へ繰り上げてから削除するため
   // 通常は発生しないが、念のため参照先が無い folder_id / parent_id をルート直下に戻す。
   await env.DB.prepare(
     "UPDATE favorites SET folder_id = NULL WHERE folder_id IS NOT NULL AND folder_id NOT IN (SELECT id FROM favorite_folders)"
   ).run().catch(() => { /* favorites/favorite_folders テーブル未作成の初回は無視 */ });
+  await env.DB.prepare(
+    "UPDATE favorite_copies SET folder_id = NULL WHERE folder_id IS NOT NULL AND folder_id NOT IN (SELECT id FROM favorite_folders)"
+  ).run().catch(() => { /* favorite_copies/favorite_folders テーブル未作成の初回は無視 */ });
   await env.DB.prepare(
     "UPDATE favorite_folders SET parent_id = NULL WHERE parent_id IS NOT NULL AND parent_id NOT IN (SELECT id FROM favorite_folders)"
   ).run().catch(() => { /* favorite_folders テーブル未作成の初回は無視 */ });
@@ -260,6 +266,9 @@ async function fixOrphanedRecords(env: Env) {
   // API 側でも親指定を kind='folder' に限っているが、念のためルート直下へ戻す。
   await env.DB.prepare(
     "UPDATE favorites SET folder_id = NULL WHERE folder_id IS NOT NULL AND folder_id IN (SELECT id FROM favorite_folders WHERE kind = 'section')"
+  ).run().catch(() => { /* kind 列がまだ無い場合は無視 */ });
+  await env.DB.prepare(
+    "UPDATE favorite_copies SET folder_id = NULL WHERE folder_id IS NOT NULL AND folder_id IN (SELECT id FROM favorite_folders WHERE kind = 'section')"
   ).run().catch(() => { /* kind 列がまだ無い場合は無視 */ });
   await env.DB.prepare(
     "UPDATE favorite_folders SET parent_id = NULL WHERE parent_id IS NOT NULL AND parent_id IN (SELECT id FROM favorite_folders WHERE kind = 'section')"
@@ -347,6 +356,19 @@ async function ensureFavoritesTable(env: Env) {
   );
 }
 
+// 同じお気に入り大問を複数フォルダへ配置するための追加行。
+// favorites 自体の一意制約は残し、星のON/OFFとキャッシュ判定は従来どおり1大問1行で管理する。
+async function ensureFavoriteCopiesTable(env: Env) {
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS favorite_copies (id INTEGER PRIMARY KEY AUTOINCREMENT, uid TEXT NOT NULL, favorite_id INTEGER NOT NULL, folder_id INTEGER, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')))"
+  );
+  await env.DB.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_favorite_copies_location ON favorite_copies(uid, favorite_id, IFNULL(folder_id, -1))"
+  );
+  await env.DB.exec("CREATE INDEX IF NOT EXISTS idx_favorite_copies_uid ON favorite_copies(uid)");
+  await env.DB.exec("CREATE INDEX IF NOT EXISTS idx_favorite_copies_favorite ON favorite_copies(favorite_id)");
+}
+
 // お気に入りフォルダ（階層化・並べ替え可能）テーブルの後方互換マイグレーション。
 // parent_id は同じ favorite_folders.id を指す自己参照（NULL = ルート直下）。
 // sort_order はコンテナ（uid + parent_id）内での表示順（フォルダ・お気に入り共通の並び）。
@@ -423,6 +445,7 @@ async function ensureMigrations(env: Env) {
   await ensureUniversityAbbreviationColumn(env);
   await ensureUniversityHiddenColumn(env);
   await ensureFavoritesTable(env);
+  await ensureFavoriteCopiesTable(env);
   await ensureFavoriteFoldersTable(env);
   await ensureFavoriteFolderKindColumn(env);
   await ensureFavoriteFolderColumns(env);
@@ -450,7 +473,7 @@ async function isFavoriteFolder(env: Env, uid: string, id: number): Promise<bool
   return !!row;
 }
 
-// 指定コンテナ（uid + parentId）内の末尾に新規追加する際の sort_order（フォルダ・お気に入り件数の合計）
+// 指定コンテナ（uid + parentId）内の末尾に新規追加する際の sort_order（フォルダ・お気に入り・コピー件数の合計）
 // （セクションは favorite_folders の行なのでフォルダ側の件数に含まれる）
 async function nextFavoriteSortOrder(env: Env, uid: string, parentId: number | null): Promise<number> {
   const folderCount = await env.DB.prepare(
@@ -463,7 +486,43 @@ async function nextFavoriteSortOrder(env: Env, uid: string, parentId: number | n
       ? "SELECT COUNT(*) AS n FROM favorites WHERE uid = ? AND folder_id IS NULL"
       : "SELECT COUNT(*) AS n FROM favorites WHERE uid = ? AND folder_id = ?"
   ).bind(...(parentId == null ? [uid] : [uid, parentId])).first<{ n: number }>();
-  return (folderCount?.n || 0) + (favCount?.n || 0);
+  const copyCount = await env.DB.prepare(
+    parentId == null
+      ? "SELECT COUNT(*) AS n FROM favorite_copies WHERE uid = ? AND folder_id IS NULL"
+      : "SELECT COUNT(*) AS n FROM favorite_copies WHERE uid = ? AND folder_id = ?"
+  ).bind(...(parentId == null ? [uid] : [uid, parentId])).first<{ n: number }>();
+  return (folderCount?.n || 0) + (favCount?.n || 0) + (copyCount?.n || 0);
+}
+
+type ResolvedFavoriteEntry = { kind: "base" | "copy"; id: number; favoriteId: number };
+
+// 新クライアントは entryId（base:<id> / copy:<id>）で配置行を一意に指定する。
+// 旧クライアントの examId + questionNumber も、元のお気に入り行として引き続き受け付ける。
+async function resolveFavoriteEntry(
+  env: Env,
+  uid: string,
+  item: { entryId?: string; examId?: number; questionNumber?: number }
+): Promise<ResolvedFavoriteEntry | null> {
+  const match = String(item.entryId || "").match(/^(base|copy):(\d+)$/);
+  if (match) {
+    const id = Number(match[2]);
+    if (match[1] === "base") {
+      const row = await env.DB.prepare("SELECT id FROM favorites WHERE id = ? AND uid = ?")
+        .bind(id, uid).first<{ id: number }>();
+      return row ? { kind: "base", id: row.id, favoriteId: row.id } : null;
+    }
+    const row = await env.DB.prepare(
+      "SELECT c.id, c.favorite_id FROM favorite_copies c JOIN favorites f ON f.id = c.favorite_id AND f.uid = c.uid WHERE c.id = ? AND c.uid = ?"
+    ).bind(id, uid).first<{ id: number; favorite_id: number }>();
+    return row ? { kind: "copy", id: row.id, favoriteId: row.favorite_id } : null;
+  }
+  const examId = Number(item.examId);
+  const questionNumber = Number(item.questionNumber);
+  if (!Number.isInteger(examId) || examId <= 0 || !Number.isInteger(questionNumber) || questionNumber <= 0) return null;
+  const row = await env.DB.prepare(
+    "SELECT id FROM favorites WHERE uid = ? AND exam_id = ? AND question_number = ?"
+  ).bind(uid, examId, questionNumber).first<{ id: number }>();
+  return row ? { kind: "base", id: row.id, favoriteId: row.id } : null;
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -1537,16 +1596,30 @@ export default {
         // GET /api/favorites（自分のお気に入り一覧 + フォルダ一覧。表示用に試験・大学情報を結合して返す）
         if (path === "/api/favorites" && request.method === "GET") {
           const { results: favorites } = await env.DB.prepare(`
-            SELECT f.exam_id, f.question_number, f.folder_id, f.sort_order, f.created_at,
-                   e.year, e.schedule, u.name AS university_name,
-                   q.category, q.label
-            FROM favorites f
-            JOIN exams e ON f.exam_id = e.id
-            JOIN universities u ON e.university_id = u.id
-            LEFT JOIN questions q ON q.exam_id = f.exam_id AND q.question_number = f.question_number
-            WHERE f.uid = ?
-            ORDER BY f.sort_order ASC, f.created_at DESC
-          `).bind(uid).all();
+            SELECT * FROM (
+              SELECT 'base:' || f.id AS entry_id, f.id AS favorite_id, 0 AS is_copy,
+                     f.exam_id, f.question_number, f.folder_id, f.sort_order, f.created_at,
+                     e.year, e.schedule, u.name AS university_name,
+                     q.category, q.label
+              FROM favorites f
+              JOIN exams e ON f.exam_id = e.id
+              JOIN universities u ON e.university_id = u.id
+              LEFT JOIN questions q ON q.exam_id = f.exam_id AND q.question_number = f.question_number
+              WHERE f.uid = ?
+              UNION ALL
+              SELECT 'copy:' || c.id AS entry_id, f.id AS favorite_id, 1 AS is_copy,
+                     f.exam_id, f.question_number, c.folder_id, c.sort_order, c.created_at,
+                     e.year, e.schedule, u.name AS university_name,
+                     q.category, q.label
+              FROM favorite_copies c
+              JOIN favorites f ON f.id = c.favorite_id AND f.uid = c.uid
+              JOIN exams e ON f.exam_id = e.id
+              JOIN universities u ON e.university_id = u.id
+              LEFT JOIN questions q ON q.exam_id = f.exam_id AND q.question_number = f.question_number
+              WHERE c.uid = ?
+            )
+            ORDER BY sort_order ASC, created_at DESC
+          `).bind(uid, uid).all();
           // フォルダ（中に要素を入れられる）とセクション（中身を持たない見出し）は同じテーブルに
           // 入っているが、クライアント側の扱いが別なのでレスポンスでは分けて返す。
           type FavNode = { id: number; name: string; parent_id: number | null; sort_order: number; kind: string };
@@ -1579,9 +1652,64 @@ export default {
         // DELETE /api/favorites/:examId/:questionNumber
         const favMatch = path.match(/^\/api\/favorites\/(\d+)\/(\d+)$/);
         if (favMatch && request.method === "DELETE") {
-          await env.DB.prepare(
-            "DELETE FROM favorites WHERE uid = ? AND exam_id = ? AND question_number = ?"
-          ).bind(uid, Number(favMatch[1]), Number(favMatch[2])).run();
+          const examId = Number(favMatch[1]);
+          const questionNumber = Number(favMatch[2]);
+          await env.DB.batch([
+            env.DB.prepare(
+              "DELETE FROM favorite_copies WHERE uid = ? AND favorite_id IN (SELECT id FROM favorites WHERE uid = ? AND exam_id = ? AND question_number = ?)"
+            ).bind(uid, uid, examId, questionNumber),
+            env.DB.prepare(
+              "DELETE FROM favorites WHERE uid = ? AND exam_id = ? AND question_number = ?"
+            ).bind(uid, examId, questionNumber),
+          ]);
+          return json({ success: true }, 200, origin);
+        }
+      }
+
+      // ── /api/favorite-copies（同じお気に入り大問を別フォルダにも配置） ──
+      if (path === "/api/favorite-copies" || /^\/api\/favorite-copies\/\d+$/.test(path)) {
+        const uid = await getAuthUid(request);
+        if (!uid) return json({ error: "ログインが必要です。" }, 401, origin);
+
+        // POST /api/favorite-copies  body: { examId, questionNumber, folderId }
+        if (path === "/api/favorite-copies" && request.method === "POST") {
+          type Body = { examId?: number; questionNumber?: number; folderId?: number };
+          const body = await request.json<Body>().catch(() => ({}) as Body);
+          const examId = Number(body.examId);
+          const questionNumber = Number(body.questionNumber);
+          const folderId = Number(body.folderId);
+          if (!Number.isInteger(examId) || examId <= 0 || !Number.isInteger(questionNumber) || questionNumber <= 0 || !Number.isInteger(folderId) || folderId <= 0) {
+            return json({ error: "examId、questionNumber、folderId が必要です。" }, 400, origin);
+          }
+          if (!(await isFavoriteFolder(env, uid, folderId))) {
+            return json({ error: "コピー先フォルダが見つかりません。" }, 404, origin);
+          }
+          const favorite = await env.DB.prepare(
+            "SELECT id FROM favorites WHERE uid = ? AND exam_id = ? AND question_number = ?"
+          ).bind(uid, examId, questionNumber).first<{ id: number }>();
+          if (!favorite) return json({ error: "対象のお気に入りが見つかりません。" }, 404, origin);
+
+          const occupied = await env.DB.prepare(`
+            SELECT 1 AS present FROM favorites WHERE id = ? AND uid = ? AND folder_id = ?
+            UNION ALL
+            SELECT 1 AS present FROM favorite_copies WHERE uid = ? AND favorite_id = ? AND folder_id = ?
+            LIMIT 1
+          `).bind(favorite.id, uid, folderId, uid, favorite.id, folderId).first();
+          if (occupied) return json({ error: "この問題はコピー先フォルダに既に入っています。" }, 409, origin);
+
+          const sortOrder = await nextFavoriteSortOrder(env, uid, folderId);
+          const created = await env.DB.prepare(
+            "INSERT INTO favorite_copies (uid, favorite_id, folder_id, sort_order) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id"
+          ).bind(uid, favorite.id, folderId, sortOrder).first<{ id: number }>();
+          if (!created) return json({ error: "この問題はコピー先フォルダに既に入っています。" }, 409, origin);
+          return json({ success: true, entryId: `copy:${created.id}` }, 201, origin);
+        }
+
+        // DELETE /api/favorite-copies/:id（元のお気に入りは残し、この配置だけ削除）
+        const copyMatch = path.match(/^\/api\/favorite-copies\/(\d+)$/);
+        if (copyMatch && request.method === "DELETE") {
+          await env.DB.prepare("DELETE FROM favorite_copies WHERE id = ? AND uid = ?")
+            .bind(Number(copyMatch[1]), uid).run();
           return json({ success: true }, 200, origin);
         }
       }
@@ -1643,26 +1771,56 @@ export default {
           ).bind(id, uid).first<{ id: number; parent_id: number | null }>();
           if (!folder) return json({ error: "フォルダが見つかりません。" }, 404, origin);
           const parentId = folder.parent_id;
+          // 削除フォルダ内の元行を親へ繰り上げたとき、親に同じ大問のコピーが既にあれば
+          // そのコピーを先に削除する（元行を残すことで星の一意な管理を維持する）。
+          const targetCopyCleanup = parentId == null
+            ? env.DB.prepare(
+                "DELETE FROM favorite_copies WHERE uid = ? AND folder_id IS NULL AND favorite_id IN (SELECT id FROM favorites WHERE uid = ? AND folder_id = ?)"
+              ).bind(uid, uid, id)
+            : env.DB.prepare(
+                "DELETE FROM favorite_copies WHERE uid = ? AND folder_id = ? AND favorite_id IN (SELECT id FROM favorites WHERE uid = ? AND folder_id = ?)"
+              ).bind(uid, parentId, uid, id);
+          const copyMoveStatements = parentId == null
+            ? [
+                env.DB.prepare(
+                  "DELETE FROM favorite_copies WHERE uid = ? AND folder_id = ? AND favorite_id IN (SELECT id FROM favorites WHERE uid = ? AND folder_id IS NULL)"
+                ).bind(uid, id, uid),
+                env.DB.prepare(
+                  "DELETE FROM favorite_copies WHERE uid = ? AND folder_id = ? AND EXISTS (SELECT 1 FROM favorite_copies dst WHERE dst.uid = favorite_copies.uid AND dst.favorite_id = favorite_copies.favorite_id AND dst.id != favorite_copies.id AND dst.folder_id IS NULL)"
+                ).bind(uid, id),
+                env.DB.prepare("UPDATE favorite_copies SET folder_id = NULL WHERE folder_id = ? AND uid = ?").bind(id, uid),
+              ]
+            : [
+                env.DB.prepare(
+                  "DELETE FROM favorite_copies WHERE uid = ? AND folder_id = ? AND favorite_id IN (SELECT id FROM favorites WHERE uid = ? AND folder_id = ?)"
+                ).bind(uid, id, uid, parentId),
+                env.DB.prepare(
+                  "DELETE FROM favorite_copies WHERE uid = ? AND folder_id = ? AND EXISTS (SELECT 1 FROM favorite_copies dst WHERE dst.uid = favorite_copies.uid AND dst.favorite_id = favorite_copies.favorite_id AND dst.id != favorite_copies.id AND dst.folder_id = ?)"
+                ).bind(uid, id, parentId),
+                env.DB.prepare("UPDATE favorite_copies SET folder_id = ? WHERE folder_id = ? AND uid = ?").bind(parentId, id, uid),
+              ];
           await env.DB.batch([
             parentId == null
               ? env.DB.prepare("UPDATE favorite_folders SET parent_id = NULL WHERE parent_id = ? AND uid = ?").bind(id, uid)
               : env.DB.prepare("UPDATE favorite_folders SET parent_id = ? WHERE parent_id = ? AND uid = ?").bind(parentId, id, uid),
+            targetCopyCleanup,
             parentId == null
               ? env.DB.prepare("UPDATE favorites SET folder_id = NULL WHERE folder_id = ? AND uid = ?").bind(id, uid)
               : env.DB.prepare("UPDATE favorites SET folder_id = ? WHERE folder_id = ? AND uid = ?").bind(parentId, id, uid),
+            ...copyMoveStatements,
             env.DB.prepare("DELETE FROM favorite_folders WHERE id = ? AND uid = ?").bind(id, uid),
           ]);
           return json({ success: true }, 200, origin);
         }
 
         // POST /api/favorite-folders/reorder
-        //   body: { parentId: number|null, items: [{type:"folder"|"section",id} | {type:"favorite",examId,questionNumber}] }
+        //   body: { parentId: number|null, items: [{type:"folder"|"section",id} | {type:"favorite",entryId}] }
         //   指定コンテナ（parentId）の子要素を、渡された順序で並べ替える（フォルダ・セクション・
         //   お気に入りをまとめた1つの表示順）。セクションはフォルダと同じテーブルの行なので
         //   更新文も共通で、違いは循環参照チェックの対象外という点だけ（配下を持てないため）。
         //   移動元コンテナ側に残る要素の sort_order は詰め直さない（歯抜けでも ORDER BY sort_order には影響しない）。
         if (path === "/api/favorite-folders/reorder" && request.method === "POST") {
-          type Item = { type: "folder" | "section" | "favorite"; id?: number; examId?: number; questionNumber?: number };
+          type Item = { type: "folder" | "section" | "favorite"; id?: number; entryId?: string; examId?: number; questionNumber?: number };
           type Body = { parentId?: number | null; items?: Item[] };
           const body = await request.json<Body>().catch(() => ({}) as Body);
           const parentId = body.parentId != null ? Number(body.parentId) : null;
@@ -1690,15 +1848,37 @@ export default {
             }
           }
 
+          // 同じ大問の元行とコピー行を同じフォルダへ重ねない。通常クライアントは移動先の
+          // 全要素を送るため、ここでコピー同士も含めて衝突を検出できる。
+          const resolvedFavorites = new Map<number, ResolvedFavoriteEntry>();
+          const favoriteIds = new Set<number>();
+          for (let idx = 0; idx < items.length; idx++) {
+            const item = items[idx];
+            if (item.type !== "favorite") continue;
+            const resolved = await resolveFavoriteEntry(env, uid, item);
+            if (!resolved) return json({ error: "移動するお気に入りが見つかりません。" }, 404, origin);
+            if (favoriteIds.has(resolved.favoriteId)) {
+              return json({ error: "同じ問題を1つのフォルダに重ねて配置することはできません。" }, 409, origin);
+            }
+            favoriteIds.add(resolved.favoriteId);
+            resolvedFavorites.set(idx, resolved);
+          }
+
           const stmts = items.map((it, idx) => {
             if (it.type === "folder" || it.type === "section") {
               return env.DB.prepare(
                 "UPDATE favorite_folders SET parent_id = ?, sort_order = ? WHERE id = ? AND uid = ?"
               ).bind(parentId, idx, Number(it.id), uid);
             }
+            const resolved = resolvedFavorites.get(idx);
+            if (!resolved || resolved.kind === "base") {
+              return env.DB.prepare(
+                "UPDATE favorites SET folder_id = ?, sort_order = ? WHERE id = ? AND uid = ?"
+              ).bind(parentId, idx, resolved ? resolved.id : 0, uid);
+            }
             return env.DB.prepare(
-              "UPDATE favorites SET folder_id = ?, sort_order = ? WHERE uid = ? AND exam_id = ? AND question_number = ?"
-            ).bind(parentId, idx, uid, Number(it.examId), Number(it.questionNumber));
+              "UPDATE favorite_copies SET folder_id = ?, sort_order = ? WHERE id = ? AND uid = ?"
+            ).bind(parentId, idx, resolved.id, uid);
           });
           if (stmts.length) await env.DB.batch(stmts);
           return json({ success: true }, 200, origin);

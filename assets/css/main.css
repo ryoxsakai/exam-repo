@@ -187,6 +187,10 @@ a { color: var(--blue); text-decoration: none; }
 .fav-count { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
 .fav-uni { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 100%; }
 .fav-sched, .fav-qnum, .fav-cat { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.fav-copy-tag {
+  padding: 1px 6px; border-radius: 999px; background: var(--sky-soft);
+  color: var(--blue); font-size: 10px; font-weight: 700; white-space: nowrap;
+}
 .fav-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; margin-left: auto; }
 .fav-meta .pill { padding: 1px 7px; font-size: 11px; }
 .fav-drop-hint { margin: 2px 0 4px 22px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); font-size: 12px; }

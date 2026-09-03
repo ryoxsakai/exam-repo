@@ -169,6 +169,23 @@
         headers: { "Authorization": "Bearer " + token }
       });
     },
+    copyFavorite:     async function (examId, questionNumber, folderId) {
+      var token = await Auth.getIdToken();
+      if (!token) throw new Error("ログインが必要です。");
+      return call("/api/favorite-copies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+        body: JSON.stringify({ examId: examId, questionNumber: questionNumber, folderId: folderId })
+      });
+    },
+    removeFavoriteCopy: async function (copyId) {
+      var token = await Auth.getIdToken();
+      if (!token) throw new Error("ログインが必要です。");
+      return call("/api/favorite-copies/" + copyId, {
+        method: "DELETE",
+        headers: { "Authorization": "Bearer " + token }
+      });
+    },
     // お気に入りフォルダ／セクション（フォルダ分け・階層化・並べ替え）。
     // kind: "folder"（既定。中に要素を入れられる）/ "section"（中身を持たない見出し）。
     // 改名・削除・並べ替えはどちらも同じエンドポイントを共有する。
@@ -202,7 +219,7 @@
         headers: { "Authorization": "Bearer " + token }
       });
     },
-    // items: [{type:"folder"|"section", id} | {type:"favorite", examId, questionNumber}]（並べ替え後の順序）
+    // items: [{type:"folder"|"section", id} | {type:"favorite", entryId}]（並べ替え後の順序）
     reorderFavorites: async function (parentId, items) {
       var token = await Auth.getIdToken();
       if (!token) throw new Error("ログインが必要です。");

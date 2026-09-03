@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+JP:wght@400;500;600;700;800&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="assets/css/main.css?v=20260822b" />
+  <link rel="stylesheet" href="assets/css/main.css?v=20260903a" />
 </head>
 <body>
   <!-- ===== Topbar ===== -->
@@ -73,7 +73,7 @@
     <!-- ===== タブ: お気に入り ===== -->
     <section data-panel="favorites" class="panel">
       <div class="toolbar">
-        <span class="hint"><i class="fa-solid fa-star"></i> 問題閲覧モーダルの星アイコンでお気に入り登録した大問がここに並びます（Googleログインが必要）。フォルダ・セクションやドラッグ＆ドロップ（スマホは長押し）で並べ替えできます。</span>
+        <span class="hint"><i class="fa-solid fa-star"></i> 問題閲覧モーダルの星アイコンでお気に入り登録した大問がここに並びます（Googleログインが必要）。フォルダ分け・並べ替えに加え、同じ問題を別フォルダへコピーできます。</span>
         <span class="spacer"></span>
         <button class="icon-btn" id="btn-favorites-new-folder" title="新規フォルダ"><i class="fa-solid fa-folder-plus"></i></button>
         <button class="icon-btn" id="btn-favorites-new-section" title="セクションを挿入（印刷時の見出しになります）"><i class="fa-solid fa-bookmark"></i></button>
@@ -288,6 +288,29 @@
     </div>
   </div>
 
+  <!-- ===== お気に入り: 別フォルダへコピーモーダル ===== -->
+  <div class="modal-overlay" id="favorite-copy-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <i class="fa-solid fa-copy ic"></i>
+        <h3>別フォルダにコピー</h3>
+        <span class="spacer"></span>
+        <button class="icon-btn" data-close title="閉じる"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <p class="hint" id="fav-copy-summary" style="margin-bottom:12px"></p>
+        <label class="field"><span class="field-label">コピー先フォルダ</span>
+          <select id="fav-copy-folder"></select>
+        </label>
+        <p class="hint" id="fav-copy-status" style="margin-top:8px"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-close>キャンセル</button>
+        <button class="btn primary" id="fav-copy-save"><i class="fa-solid fa-copy"></i> コピー</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== コーパス対象絞り込みモーダル ===== -->
   <div class="modal-overlay" id="corpus-filter-modal">
     <div class="modal">
@@ -353,13 +376,13 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="assets/js/store.js?v=20260822b"></script>
   <script src="assets/js/auth.js?v=20260706a"></script>
-  <script src="assets/js/api.js?v=20260801a"></script>
+  <script src="assets/js/api.js?v=20260903a"></script>
   <script src="assets/js/ui.js?v=20260726a"></script>
   <script src="assets/js/markup.js?v=20260721c"></script>
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260701h"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/viewer.js?v=20260826a"></script>
+  <script src="assets/js/viewer.js?v=20260903a"></script>
   <script src="assets/js/webmcp.js?v=20260826a"></script>
 </body>
 </html>
