@@ -83,6 +83,22 @@ CREATE TABLE IF NOT EXISTS favorites (
   UNIQUE(uid, exam_id, question_number)
 );
 
+-- Favorite copies table (同じお気に入り大問を別フォルダにも配置する追加の表示行)
+--   favorites は従来どおり「その大問がお気に入りか」を一意に管理し、このテーブルは2か所目以降の
+--   フォルダ配置だけを保持する。元のお気に入りを外したときは関連コピーも削除する。
+CREATE TABLE IF NOT EXISTS favorite_copies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uid TEXT NOT NULL,
+  favorite_id INTEGER NOT NULL,
+  folder_id INTEGER,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- NULL（ルート直下）も同じ配置先として一意判定できるよう、式インデックスで -1 に寄せる。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_favorite_copies_location
+  ON favorite_copies(uid, favorite_id, IFNULL(folder_id, -1));
+
 -- User settings table (Googleログイン(Firebase Auth)したユーザーごとに端末をまたいで同期する設定。
 -- 現状はタブ並び順のみ)
 --   uid: Firebase Auth の ID トークンの sub クレーム
@@ -154,6 +170,8 @@ CREATE INDEX IF NOT EXISTS idx_exams_university_id ON exams(university_id);
 CREATE INDEX IF NOT EXISTS idx_exams_year ON exams(year);
 CREATE INDEX IF NOT EXISTS idx_questions_exam_id ON questions(exam_id);
 CREATE INDEX IF NOT EXISTS idx_favorites_uid ON favorites(uid);
+CREATE INDEX IF NOT EXISTS idx_favorite_copies_uid ON favorite_copies(uid);
+CREATE INDEX IF NOT EXISTS idx_favorite_copies_favorite ON favorite_copies(favorite_id);
 CREATE INDEX IF NOT EXISTS idx_favorite_folders_uid ON favorite_folders(uid);
 CREATE INDEX IF NOT EXISTS idx_mcp_question_audits_question ON mcp_question_audits(question_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_mcp_question_changes_question ON mcp_question_changes(question_id, created_at);
