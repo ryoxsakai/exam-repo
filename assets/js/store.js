@@ -33,6 +33,8 @@
     printSBreakQ:  "exam_print_sbreak_q",    // 問題面でセクションごとに改ページする
     printSBreakA:  "exam_print_sbreak_a",    // 解答・解説面でセクションごとに改ページする
     printQSubtitle: "exam_print_qsubtitle",  // 大問見出しを「1. 2018 ○○ 前期 大問3」形式にする
+    printWritingLines: "exam_print_writing_lines",
+    printWritingSpace: "exam_print_writing_space",
     printLineNumbers: "exam_print_linenum",  // 印刷時、本文セクションに5行ごとの行番号を付ける
     printGrayscale: "exam_print_grayscale",  // 印刷時、バッジ・ハイライト・画像などをグレースケールにする
     printFolderTitles: "exam_print_folder_titles", // お気に入りフォルダ印刷の表紙タイトル {folderId: title}
@@ -342,6 +344,17 @@
     setPrintQSubtitle: function (on) { write(KEYS.printQSubtitle, !!on); },
 
     /* 問題印刷タブ: 本文セクションに5行ごとの行番号を付ける（既定はオフ） */
+    getPrintWritingLines: function () {
+      var n = Number(read(KEYS.printWritingLines, 10));
+      return [5, 10, 15, 20, 25].indexOf(n) >= 0 ? n : 10;
+    },
+    setPrintWritingLines: function (n) {
+      n = Number(n);
+      write(KEYS.printWritingLines, [5, 10, 15, 20, 25].indexOf(n) >= 0 ? n : 10);
+    },
+    getPrintWritingSpace: function () { return read(KEYS.printWritingSpace, false) === true; },
+    setPrintWritingSpace: function (on) { write(KEYS.printWritingSpace, !!on); },
+
     getPrintLineNumbers: function () { return read(KEYS.printLineNumbers, false) === true; },
     setPrintLineNumbers: function (on) { write(KEYS.printLineNumbers, !!on); },
 

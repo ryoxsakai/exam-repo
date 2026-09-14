@@ -278,6 +278,20 @@
         renderPrintPreview();
       });
     }
+    if (el("pr-writing-space")) {
+      el("pr-writing-space").checked = Store.getPrintWritingSpace();
+      el("pr-writing-space").addEventListener("change", function () {
+        Store.setPrintWritingSpace(el("pr-writing-space").checked);
+        renderPrintPreview();
+      });
+    }
+    if (el("pr-writing-lines")) {
+      el("pr-writing-lines").value = String(Store.getPrintWritingLines());
+      el("pr-writing-lines").addEventListener("change", function () {
+        Store.setPrintWritingLines(el("pr-writing-lines").value);
+        renderPrintPreview();
+      });
+    }
     if (el("pr-grayscale")) {
       el("pr-grayscale").checked = Store.getPrintGrayscale();
       el("pr-grayscale").addEventListener("change", function () {
@@ -1893,6 +1907,12 @@
         }
         inner += '<div class="print-q"><div class="print-q-head">' + esc(printQHeading(q, seqOf[printQKey(q)], opts)) + "</div>";
         secs.forEach(function (s) { inner += printField(s.type, s.text, opts); });
+        if (!answerSide && opts.writingSpace && q.category === "英作文") {
+          var lines = [5, 10, 15, 20, 25].indexOf(Number(opts.writingLines)) >= 0 ? Number(opts.writingLines) : 10;
+          inner += '<div class="print-writing-space" role="img" aria-label="英作文の解答欄（' + lines + '行）">';
+          for (var line = 0; line < lines; line++) inner += '<div class="print-writing-line"></div>';
+          inner += '</div>';
+        }
         inner += "</div>";
       });
       if (!inner) return "";
@@ -1918,6 +1938,8 @@
       hideHeadA: el("pr-hide-head-a") ? el("pr-hide-head-a").checked : false,
       qSubtitle: el("pr-qsubtitle") ? el("pr-qsubtitle").checked : false,
       lineNumbers: el("pr-linenum") ? el("pr-linenum").checked : false,
+      writingLines: Store.getPrintWritingLines(),
+      writingSpace: el("pr-writing-space") ? el("pr-writing-space").checked : false,
       grayscale: el("pr-grayscale") ? el("pr-grayscale").checked : false
     };
   }
