@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+JP:wght@400;500;600;700;800&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="assets/css/main.css?v=20260903a" />
+  <link rel="stylesheet" href="assets/css/main.css?v=20260914a" />
 </head>
 <body>
   <!-- ===== Topbar ===== -->
@@ -146,6 +146,17 @@
             <input type="checkbox" id="pr-qsubtitle"> <span>大問見出しに通し番号・試験情報を入れる</span></label>
           <label class="check-inline" title="本文セクションの左側に5行ごとの行番号を付けます（大問ごとに1から数え直します）">
             <input type="checkbox" id="pr-linenum"> <span>本文に5行ごとの行番号をつける</span></label>
+          <label class="check-inline" title="英作文カテゴリの各大問の末尾に、四角で囲んだ罫線付きの解答スペースをつけます">
+            <input type="checkbox" id="pr-writing-space"> <span>英作文に解答欄をつける</span></label>
+          <label class="check-inline"><span>英作文の解答欄の行数</span>
+            <select id="pr-writing-lines" style="width:auto;min-width:96px">
+              <option value="5">5行</option>
+              <option value="10" selected>10行</option>
+              <option value="15">15行</option>
+              <option value="20">20行</option>
+              <option value="25">25行</option>
+            </select>
+          </label>
           <label class="check-inline" title="バッジ・ハイライト・画像などの色をグレースケールに変換して印刷します">
             <input type="checkbox" id="pr-grayscale"> <span>グレースケール印刷</span></label>
           <label class="check-inline"><span><i class="fa-solid fa-text-height"></i> 文字サイズ（表紙以外）</span>
@@ -374,7 +385,7 @@
   <!-- Firebase Authentication（Googleログイン用。Firestore等は未使用） -->
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="assets/js/store.js?v=20260822b"></script>
+  <script src="assets/js/store.js?v=20260914a"></script>
   <script src="assets/js/auth.js?v=20260706a"></script>
   <script src="assets/js/api.js?v=20260903a"></script>
   <script src="assets/js/ui.js?v=20260726a"></script>
@@ -382,7 +393,7 @@
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260701h"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/viewer.js?v=20260903a"></script>
+  <script src="assets/js/viewer.js?v=20260914a"></script>
   <script src="assets/js/webmcp.js?v=20260826a"></script>
 </body>
 </html>
