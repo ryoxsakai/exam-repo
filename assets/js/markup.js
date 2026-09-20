@@ -161,7 +161,7 @@
       }
       // ((A)) 選択肢ラベル（行中・インライン。丸囲みラベルのみ表示）
       if ((m = rem.match(/^\(\(([^)]+)\)\)/))) {
-        out += '<span class="choice-inline">' + esc(m[1]) + "</span>";
+        out += '<span class="choice-inline' + (String(m[1]).length >= 2 ? ' choice-label-compact' : '') + '"><span class="choice-label-text">' + esc(m[1]) + "</span></span>";
         rem = rem.slice(m[0].length); continue;
       }
 
@@ -290,8 +290,8 @@
       var cm = line.match(/^\s*\(\(([^)]+)\)\)\s*([\s\S]*)/);
       var choiceCount = (line.match(/\(\([^)]+\)\)/g) || []).length;
       if (cm && choiceCount === 1) {
-        html += '<div class="answer-choice"><span class="answer-choice-label">' + esc(cm[1]) +
-                '</span><span class="answer-choice-text">' +
+        html += '<div class="answer-choice"><span class="answer-choice-label' + (String(cm[1]).length >= 2 ? ' choice-label-compact' : '') + '"><span class="choice-label-text">' + esc(cm[1]) + '</span></span>' +
+                '<span class="answer-choice-text">' +
                 (cm[2] ? inline(cm[2], footnotes) : "") + "</span></div>";
         paraStart = true;
         continue;

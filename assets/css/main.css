@@ -811,6 +811,8 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
   font-family: var(--sans); font-size: .65em; font-weight: 700; color: var(--muted);
   vertical-align: .08em; margin: 0 .12em; line-height: 1; text-indent: 0;
 }
+.choice-label-compact { letter-spacing: 0; }
+.choice-label-compact .choice-label-text { display: inline-block; transform: scaleX(.82); }
 .footnote-section { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); font-size: .82em; color: var(--muted); font-family: var(--sans); }
 .footnote-section ol { list-style: none; padding: 0; margin: 0; }
 .footnote-section li { display: flex; gap: 8px; margin-bottom: 4px; line-height: 1.5; }
