@@ -723,7 +723,7 @@ body.sortlist-dragging-touch .sort-item * {
   width: 4em; box-sizing: border-box; padding: calc(.2em + 1px) 0; margin: 0;
   /* 中身が空（[[]] [[----]] 等）でも縦につぶれないよう最小高を確保 */
   min-height: 2em;
-  background: #fff; color: #000; border: 1.5px solid #000; border-radius: 3px;
+  background: #fff; color: #000; border: 1.5px solid #000; border-radius: 1.5px;
   font-size: .82em; font-family: var(--sans); font-weight: 600; vertical-align: .04em; line-height: 1;
   text-indent: 0; overflow: hidden;
 }
@@ -783,7 +783,7 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
   display: flex; align-items: baseline; gap: .5em; margin: .3em 0; padding-left: .25em;
 }
 .answer-choice-label {
-  flex: 0 0 auto; min-width: 1.5em; height: 1.5em; border: 1.5px solid var(--muted);
+  flex: 0 0 1.5em; width: 1.5em; min-width: 1.5em; height: 1.5em; box-sizing: border-box; padding: 0; overflow: hidden; border: 1.5px solid var(--muted);
   border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
   font-family: var(--sans); font-size: .65em; font-weight: 700; color: var(--muted);
   /* 折り返し時もラベルは1行目に固定しつつ、1行目と縦中央で揃える。
@@ -806,13 +806,13 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
 /* インラインの ((A)) — 文中に丸囲みラベルとして表示（行頭選択肢ラベルと同色・同サイズ） */
 .choice-inline {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 1.5em; height: 1.5em; padding: 0 .1em;
+  width: 1.5em; min-width: 1.5em; height: 1.5em; box-sizing: border-box; padding: 0; overflow: hidden;
   border: 1.5px solid var(--muted); border-radius: 50%;
   font-family: var(--sans); font-size: .65em; font-weight: 700; color: var(--muted);
   vertical-align: .08em; margin: 0 .12em; line-height: 1; text-indent: 0;
 }
 .choice-label-compact { letter-spacing: 0; }
-.choice-label-compact .choice-label-text { display: inline-block; transform: scaleX(.82); }
+.choice-label-compact .choice-label-text { display: inline-block; min-width: 0; transform: scaleX(.72); }
 .footnote-section { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); font-size: .82em; color: var(--muted); font-family: var(--sans); }
 .footnote-section ol { list-style: none; padding: 0; margin: 0; }
 .footnote-section li { display: flex; gap: 8px; margin-bottom: 4px; line-height: 1.5; }
@@ -1198,4 +1198,3 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
     break-inside: avoid; page-break-inside: avoid;
   }
   @page { margin: 15mm 18mm; size: A4; }
-}
