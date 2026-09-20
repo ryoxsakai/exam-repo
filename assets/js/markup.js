@@ -91,7 +91,8 @@
       // [N] 段落番号バッジ（行中。空所 [[ ]] とは別の単角括弧。[[ は上で処理済み）
       // 中身が3文字以上のときはバッジ化せずリテラル [..] として出力
       if ((m = rem.match(/^\[([^\[\]]+)\]/))) {
-        if (m[1].length >= 3) { out += esc("[" + m[1] + "]"); rem = rem.slice(m[0].length); continue; }
+        // [ ] は選択肢群を示す通常の角括弧として使うため、段落番号バッジにはしない。
+        if (/^\s*$/.test(m[1]) || m[1].length >= 3) { out += esc("[" + m[1] + "]"); rem = rem.slice(m[0].length); continue; }
         out += '<span class="para-badge para-badge-inline">' + esc(m[1]) + "</span>";
         rem = rem.slice(m[0].length); continue;
       }
