@@ -303,7 +303,7 @@
       var badgeNum = "";
       if (paraStart) {
         var pm = trimmed.match(/^\[([^\[\]]+)\]\s?/);
-        if (pm && pm[1].length < 3) {
+        if (pm && pm[1].length < 3 && !/^\s*$/.test(pm[1])) {
           badgeNum = pm[1];
           line = line.replace(/^\s*\[[^\[\]]+\]\s?/, "");
           trimmed = line.trim();
