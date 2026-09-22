@@ -462,8 +462,9 @@
   function difficultyWeights() { return Difficulty.weights(); }
   // 本文セクションの生テキスト → { score, band }（帯は取得済み四分位、無ければ絶対フォールバック）
   function sectionDifficulty(rawText) {
-    var score = Difficulty.scoreForText(rawText);
-    return { score: score, band: Difficulty.band(score, state.longLevel ? state.longLevel.cutoffs : null) };
+    var d = Difficulty.detailForText(rawText);
+    return { score: d.score, band: Difficulty.band(d.score, state.longLevel ? state.longLevel.cutoffs : null),
+      fk: d.fk, words: d.words };
   }
   // 登録済み「長文」大問のレベル分布（四分位境界つき）を state.corpus 単位でキャッシュ。
   function ensureLongLevels() {
@@ -517,6 +518,7 @@
           r.level = e ? e.score : 0;
           r.levelVocab = e ? e.vocab : 0;
           r.levelAsl = e ? e.asl : 0;
+          r.fk = e ? e.fk : null;
           r.levelBand = Difficulty.band(r.level, ll.cutoffs);
         });
         var mn = state.filter.wordsMin !== "" ? Number(state.filter.wordsMin) : null;
@@ -612,7 +614,8 @@
         '<td data-label="大問">' + esc(qLabel(r)) + "</td>" +
         '<td data-label="種別">' + (r.category ? esc(r.category) : '<span class="hint">—</span>') + "</td>" +
         (showWords ? '<td data-label="語数"><span class="pill">' + esc(r.words != null ? r.words : 0) + "</span></td>" : "") +
-        (showWords ? '<td data-label="レベル">' + (r.level ? '<span class="pill" title="合成 ' + esc(r.level.toFixed(2)) + '（語彙 ' + esc((r.levelVocab || 0).toFixed(2)) + ' ・ 平均文長 ' + esc(Math.round(r.levelAsl || 0)) + '語）／' + esc(LEVEL_BAND_LABEL[r.levelBand] || "") + '">' + esc(r.level.toFixed(1)) + " " + esc(r.levelBand) + "</span>" : '<span class="hint">—</span>') + "</td>" : "") +
+        (showWords ? '<td data-label="レベル">' + (r.level ? '<span class="pill" title="本文の相対難易度：合成 ' + esc(r.level.toFixed(2)) + '（語彙 ' + esc((r.levelVocab || 0).toFixed(2)) + ' ・ 平均文長 ' + esc(Math.round(r.levelAsl || 0)) + '語）／' + esc(LEVEL_BAND_LABEL[r.levelBand] || "") + '">' + esc(r.level.toFixed(1)) + " " + esc(r.levelBand) + "</span>" : '<span class="hint">—</span>') +
+          (r.fk !== null && r.fk !== undefined ? '<small class="fk-reference" title="Flesch–Kincaid Grade：本文の読みやすさの参考値。設問の難易度は含みません">FK ' + esc(r.fk.toFixed(1)) + '</small>' : '') + "</td>" : "") +
         (showOcc ? '<td data-label="出現回数"><span class="pill">' + esc(r.occurrences) + "</span></td>" : "") +
         '<td class="row-actions"><button class="icon-btn sm" data-view="' + r.exam_id + ":" + r.question_number + '" title="表示"><i class="fa-solid fa-file-lines"></i></button></td>' +
         "</tr>";
@@ -1791,8 +1794,9 @@
     var wc = "";
     if (label === "本文") {
       var d = sectionDifficulty(text);
-      wc = '<div class="word-count">(' + wordCount(text) + " words)" +
-        (d.score ? ' <span class="level-inline" title="難易度（合成スコア）">' + esc(d.score.toFixed(1)) + " " + esc(d.band) + "</span>" : "") +
+      wc = '<div class="word-count">(' + d.words + " words)" +
+        (d.score ? ' <span class="level-inline" title="本文の相対難易度（合成スコア）">' + esc(d.score.toFixed(1)) + " " + esc(d.band) + "</span>" : "") +
+        (d.fk !== null ? ' <span class="fk-inline" title="Flesch–Kincaid Grade：本文の読みやすさの参考値。設問の難易度は含みません">FK ' + esc(d.fk.toFixed(1)) + '</span>' : '') +
         "</div>";
     }
     return '<div class="exam-field" data-sectype="' + esc(label) + '" style="margin-bottom:14px">' +

@@ -176,33 +176,46 @@ function optionalNonNegativeInteger(value: unknown, name: string) {
   return number;
 }
 
-function cleanPassageText(value: unknown) {
+export function cleanPassageText(value: unknown) {
   return String(value ?? "")
-    .replace(/!\[([^\]]*)\]\(([^)\s]+)\)(?:\{((?:size=(?:large|medium|small|full)|align=(?:left|right|center)|caption="(?:\\.|[^"\\\r\n])*")(?:\s+(?:size=(?:large|medium|small|full)|align=(?:left|right|center)|caption="(?:\\.|[^"\\\r\n])*"))*)\})?/g, " ")
-    .replace(/##([\s\S]*?)::[\s\S]*?##/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)\s]+\)(?:\{[^}\n]*\})?/g, " ")
+    .replace(/\{\{[^}]*\}\}/g, " ")
+    .replace(/^\s*\[[^\[\]]+\]\s?/gm, "")
+    .replace(/##([^:#]+)::[^#]+##/g, (_match, word: string) => word.replace(/\^/g, ""))
     .replace(/!!!![\s\S]*?!!!!/g, " ")
-    .replace(/~~[\s\S]*?~~/g, " ")
+    .replace(/\|\|\|\|([\s\S]+?)\|\|\|\|/g, "$1")
+    .replace(/^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/gm, " ")
+    .replace(/\|/g, " ")
+    .replace(/~~([^~]+)~~/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/__([\s\S]*?)__/g, "$1")
     .replace(/==([\s\S]*?)==(?::[A-Za-z]+)?/g, "$1")
     .replace(/\[\[[\s\S]*?\]\]/g, " ")
     .replace(/\(\([\s\S]*?\)\)/g, " ")
     .replace(/<[^>]*>/g, " ")
-    .replace(/\^\^/g, "");
+    .replace(/\^\^([^^]+)\^\^/g, "$1")
+    .replace(/^@@\s?/gm, "")
+    .replace(/----/g, " ");
 }
 
 function englishWords(value: unknown) {
-  return cleanPassageText(value).match(/\p{Script=Latin}+(?:[’'-]\p{Script=Latin}+)*/gu) || [];
+  return cleanPassageText(value).toLowerCase().match(/[a-z][a-z'’]*[a-z]|[a-z]/g) || [];
 }
 
-function countEnglishWords(value: unknown) {
+export function countEnglishWords(value: unknown) {
   return englishWords(value).length;
 }
 
-function countEnglishSentences(value: unknown) {
-  const text = cleanPassageText(value).replace(/\s+/g, " ").trim();
+export function countEnglishSentences(value: unknown) {
+  let text = cleanPassageText(value).trim();
   if (!text) return 0;
-  const segments = text.match(/[^.!?]+(?:[.!?]+(?=\s|$)|$)/g) || [];
-  return segments.filter((segment) => countEnglishWords(segment) > 0).length;
+  text = text.replace(/(\d)[.,](\d)/g, "$1$2")
+    .replace(/\.\.\.+|…/g, " ")
+    .replace(/\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Mt|vs|etc|No|Vol|Fig|cf|ca|pp|Inc|Ltd|Co|Corp|Ave|Rd|Gen|Sen|Rev|Gov|Capt|Sgt|Lt|Col|Univ|approx)\b\./gi, " ")
+    .replace(/\b(?:e\.g|i\.e|a\.m|p\.m)\.?/gi, " ")
+    .replace(/\b([A-Za-z])\./g, "$1");
+  const count = (text.match(/[.!?]+["'”’）)\]」』]*(?=\s|$)/g) || []).length;
+  return count || 1;
 }
 
 function countEnglishParagraphs(value: unknown) {
@@ -229,7 +242,7 @@ function roundMetric(value: number) {
   return Math.round(value * 10) / 10;
 }
 
-function analyzePassageText(value: unknown) {
+export function analyzePassageText(value: unknown) {
   const words = englishWords(value);
   const wordCount = words.length;
   const sentenceCount = countEnglishSentences(value);

@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+JP:wght@400;500;600;700;800&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="assets/css/main-20260922k.css" />
+  <link rel="stylesheet" href="assets/css/main-20260922k.css?v=20260923a" />
 </head>
 <body>
   <!-- ===== Topbar ===== -->
@@ -223,7 +223,7 @@
             <p class="hint" style="margin-top:6px"><i class="fa-solid fa-circle-info"></i> 結果に本文の語数を表示し、指定範囲で絞り込みます（空欄なら無制限）。</p>
           </div>
           <div id="sm-level-row" class="field" style="display:none;margin-top:10px">
-            <span class="field-label">難易度（語彙レベル＋文長の合成）</span>
+            <span class="field-label">本文の相対難易度（語彙レベル＋文長の合成）</span>
             <div class="inline-add" style="gap:8px;align-items:center">
               <select id="sm-level" style="flex:1">
                 <option value="">指定なし</option>
@@ -234,7 +234,7 @@
               </select>
               <button type="button" class="btn ghost sm" id="sm-level-weight" title="語彙と文長の重みを設定（この端末に保存）"><i class="fa-solid fa-sliders"></i> 重み設定</button>
             </div>
-            <p class="hint" style="margin-top:6px"><i class="fa-solid fa-circle-info"></i> 本文の語彙レベル（Oxford5000 の加重平均。機能語・固有名詞を除外、リスト外は最難相当）と平均文長を重み付きで合成し、登録済み長文の分布を四分位で区切った相対難易度帯で絞り込みます。結果に合成スコアと難易度を表示します。</p>
+            <p class="hint" style="margin-top:6px"><i class="fa-solid fa-circle-info"></i> 本文の語彙レベル（Oxford5000 の加重平均。機能語・固有名詞を除外、リスト外は最難相当）と平均文長を重み付きで合成し、登録済み長文の分布を四分位で区切った相対難易度帯で絞り込みます。結果にはFK（Flesch–Kincaid Grade）も参考値として表示します。どちらも設問の負荷は含みません。</p>
           </div>
         </div>
 
@@ -412,11 +412,11 @@
   <script src="assets/js/auth.js?v=20260706a"></script>
   <script src="assets/js/api.js?v=20260922a"></script>
   <script src="assets/js/ui.js?v=20260726a"></script>
-  <script src="assets/js/markup.js?v=20260922a"></script>
+  <script src="assets/js/markup.js?v=20260923a"></script>
   <script src="assets/js/corpus.js?v=20260613j"></script>
-  <script src="assets/js/difficulty.js?v=20260701h"></script>
+  <script src="assets/js/difficulty.js?v=20260923a"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/viewer.js?v=20260922a"></script>
+  <script src="assets/js/viewer.js?v=20260923a"></script>
   <script src="assets/js/webmcp.js?v=20260826a"></script>
 </body>
 </html>
