@@ -61,19 +61,6 @@
     return b + (u.charAt(0) === "/" ? u : "/" + u);       // 相対は imageBase を前置
   }
 
-  // Optional image attributes are stored verbatim with the image in the DB.
-  var IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)\s]+)\)(?:\{((?:size=(?:large|medium|small|full)|align=(?:left|right|center)|caption="(?:\\.|[^"\\\r\n])*")(?:\s+(?:size=(?:large|medium|small|full)|align=(?:left|right|center)|caption="(?:\\.|[^"\\\r\n])*"))*)\})?/;
-  var IMAGE_START_PATTERN = new RegExp("^" + IMAGE_PATTERN.source);
-  function imageAttributes(raw) {
-    var attrs = {}, token;
-    var re = /(size|align)=(\w+)|caption="((?:\\.|[^"\\\r\n])*)"/g;
-    while ((token = re.exec(raw || ""))) {
-      if (token[1]) attrs[token[1]] = token[2];
-      else attrs.caption = token[3].replace(/\\(["\\])/g, "$1");
-    }
-    return attrs;
-  }
-
   // 「. 」の後を広げない略語（+ 単独の大文字イニシャル: J. K. Rowling など）
   var ABBREV = /^(?:Mr|Mrs|Ms|Dr|Prof|St|Mt|Jr|Sr|vs|etc|No|Vol|Fig|cf|ca|pp|[A-Z])$/;
 
@@ -130,7 +117,12 @@
       // 中身が3文字以上のときはバッジ化せずリテラル [..] として出力
       if ((m = rem.match(/^\[([^\[\]]+)\]/))) {
         // [ ] は選択肢群を示す通常の角括弧として使うため、段落番号バッジにはしない。
-        if (/^\s*$/.test(m[1]) || m[1].length >= 3) { out += esc("[" + m[1] + "]"); rem = rem.slice(m[0].length); continue; }
+        // 選択肢群などの単一角括弧は記号そのものを残す。ただし中に ((a)) 等の
+        // インライン記法が含まれる場合は、角括弧内でも通常どおり表示変換する。
+        if (/^\s*$/.test(m[1]) || m[1].length >= 3) {
+          out += "[" + inline(m[1], footnotes) + "]";
+          rem = rem.slice(m[0].length); continue;
+        }
         out += '<span class="para-badge para-badge-inline">' + esc(m[1]) + "</span>";
         rem = rem.slice(m[0].length); continue;
       }
@@ -146,17 +138,10 @@
                '<sup class="footnote-number">*' + idx + "</sup></span>";
         rem = rem.slice(m[0].length); continue;
       }
-      // ![説明](URL){size=medium align=right caption="図1"}
-      if ((m = rem.match(IMAGE_START_PATTERN))) {
-        var attrs = imageAttributes(m[3]);
-        var img = '<img class="exam-img" src="' + esc(resolveImg(m[2])) + '" alt="' + esc(m[1]) +
-                  '"' + (m[1] ? ' title="' + esc(m[1]) + '"' : "") + ">";
-        if (m[3]) {
-          var size = attrs.size || (attrs.align === 'left' || attrs.align === 'right' ? 'medium' : 'auto');
-          out += '<span role="figure" class="exam-figure exam-figure-' + size + ' exam-figure-' +
-                 (attrs.align || 'center') + '">' + img +
-                 (attrs.caption ? '<span class="exam-caption">' + esc(attrs.caption) + '</span>' : '') + '</span>';
-        } else out += img;
+      // ![説明](URL) 画像（Markdown記法）
+      if ((m = rem.match(/^!\[([^\]]*)\]\(([^)\s]+)\)/))) {
+        out += '<img class="exam-img" src="' + esc(resolveImg(m[2])) + '" alt="' + esc(m[1]) +
+               '"' + (m[1] ? ' title="' + esc(m[1]) + '"' : "") + ">";
         rem = rem.slice(m[0].length); continue;
       }
       // !!!!出典!!!!（右寄せ・グレー・小）
@@ -387,11 +372,11 @@
   // 英文抽出用: 記法を取り除いてプレーン英文テキストにする（コーパス分析の前処理）
   function strip(text) {
     var t = String(text == null ? "" : text);
-    t = t.replace(new RegExp(IMAGE_PATTERN.source, "g"), " "); // Exclude images, attributes and captions from passage counts.
     t = t.replace(/\{\{[^}]*\}\}/g, " ");           // 問見出し
     t = t.replace(/\[\[[^\]]*\]\]/g, " ");          // 空所
     t = t.replace(/^\s*\[[^\[\]]+\]\s?/gm, "");     // 段落番号 [1]（行頭・単角括弧）
     t = t.replace(/##([^:#]+)::[^#]+##/g, function (_, w) { return w.replace(/\^/g, ""); }); // 脚注 → 語のみ残す（^マーカー除去）
+    t = t.replace(/!\[[^\]]*\]\([^)\s]+\)/g, " ");   // 画像 → 除去
     t = t.replace(/!!!!([\s\S]+?)!!!!/g, " ");      // 出典 → 除去
     t = t.replace(/\|\|\|\|([\s\S]+?)\|\|\|\|/g, "$1"); // 斜字 → テキスト残す
     t = t.replace(/^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/gm, " "); // 表の区切り行
