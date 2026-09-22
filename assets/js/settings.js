@@ -14,7 +14,14 @@
   // 一括アップロード等で保存前に統合されていないデータが残っていても、プレビュー表示では
   // 必ず統合された状態で見せる（登録フォームの編集用パース＝生データのままにしたい箇所には使わない）。
   function examSections(problemText) {
-    return Markup.mergeLeadSections(Markup.parseSections(problemText || ""));
+    var raw = Markup.parseSections(problemText || "");
+    var merged = Markup.mergeLeadSections(raw);
+    var bodyTexts = raw.filter(function (sec) { return sec.type === "本文"; }).map(function (sec) { return sec.text; });
+    var bodyIndex = 0;
+    merged.forEach(function (sec) {
+      if (sec.type === "本文") sec.metricText = bodyTexts[bodyIndex++];
+    });
+    return merged;
   }
 
   var SET_TABS = {
@@ -1391,7 +1398,7 @@
           var hasAnswer = sections.some(function (s) { return s.type === "解答"; });
           var hasCommentary = sections.some(function (s) { return s.type === "解説"; });
           sections.forEach(function (sec) {
-            if (sec.text.trim()) fields.push(field(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text));
+            if (sec.text.trim()) fields.push(field(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text, sec.metricText));
           });
           if (q.answer_text && q.answer_text.trim() && !hasAnswer) fields.push(field("解答", "fa-circle-check", q.answer_text));
           if (q.commentary_text && q.commentary_text.trim() && !hasCommentary) fields.push(field("解説", "fa-comment-dots", q.commentary_text));
@@ -1512,11 +1519,11 @@
     var body = isBodySection(label);
     return { paraNum: body, zenyaku: label === "全訳" };
   }
-  function field(label, icon, text) {
+  function field(label, icon, text, metricText) {
     var body = isBodySection(label);
     var wc = "";
     if (label === "本文") {
-      var d = Difficulty.detailForText(text);
+      var d = Difficulty.detailForText(metricText === undefined ? text : metricText);
       var band = Difficulty.band(d.score, state.longLevel ? state.longLevel.cutoffs : null);
       wc = '<div class="word-count">(' + d.words + " words)" +
         (d.score ? ' <span class="level-inline" title="本文の相対難易度（合成スコア）">' + esc(d.score.toFixed(1)) + " " + esc(band) + "</span>" : "") +
