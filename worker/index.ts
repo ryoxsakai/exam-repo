@@ -1631,21 +1631,25 @@ export default {
           return json({ favorites, folders, sections }, 200, origin);
         }
 
-        // POST /api/favorites  body: { examId, questionNumber }
+        // POST /api/favorites  body: { examId, questionNumber, folderId? }
         if (path === "/api/favorites" && request.method === "POST") {
-          type Body = { examId?: number; questionNumber?: number };
+          type Body = { examId?: number; questionNumber?: number; folderId?: number | null };
           const body = await request.json<Body>().catch(() => ({}) as Body);
           const examId = Number(body.examId);
           const questionNumber = Number(body.questionNumber);
           if (!examId || !questionNumber) {
             return json({ error: "examId と questionNumber が必要です。" }, 400, origin);
           }
+          var folderId = body.folderId == null ? null : Number(body.folderId);
+          if (folderId != null && (!Number.isInteger(folderId) || folderId <= 0 || !(await isFavoriteFolder(env, uid, folderId)))) {
+            return json({ error: "追加先フォルダが見つかりません。" }, 404, origin);
+          }
           const exam = await env.DB.prepare("SELECT id FROM exams WHERE id = ?").bind(examId).first();
           if (!exam) return json({ error: "対象の試験が見つかりません。" }, 404, origin);
-          const sortOrder = await nextFavoriteSortOrder(env, uid, null);
+          const sortOrder = await nextFavoriteSortOrder(env, uid, folderId);
           await env.DB.prepare(
-            "INSERT INTO favorites (uid, exam_id, question_number, folder_id, sort_order) VALUES (?, ?, ?, NULL, ?) ON CONFLICT(uid, exam_id, question_number) DO NOTHING"
-          ).bind(uid, examId, questionNumber, sortOrder).run();
+            "INSERT INTO favorites (uid, exam_id, question_number, folder_id, sort_order) VALUES (?, ?, ?, ?, ?) ON CONFLICT(uid, exam_id, question_number) DO NOTHING"
+          ).bind(uid, examId, questionNumber, folderId, sortOrder).run();
           return json({ success: true }, 201, origin);
         }
 

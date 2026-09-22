@@ -152,13 +152,13 @@
       if (!token) throw new Error("ログインが必要です。");
       return call("/api/favorites", { headers: { "Authorization": "Bearer " + token } });
     },
-    addFavorite:      async function (examId, questionNumber) {
+    addFavorite:      async function (examId, questionNumber, folderId) {
       var token = await Auth.getIdToken();
       if (!token) throw new Error("ログインが必要です。");
       return call("/api/favorites", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
-        body: JSON.stringify({ examId: examId, questionNumber: questionNumber })
+        body: JSON.stringify({ examId: examId, questionNumber: questionNumber, folderId: folderId })
       });
     },
     removeFavorite:   async function (examId, questionNumber) {

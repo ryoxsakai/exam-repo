@@ -299,6 +299,29 @@
     </div>
   </div>
 
+  <!-- ===== お気に入り: フォルダを選んで追加するモーダル ===== -->
+  <div class="modal-overlay" id="favorite-add-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <i class="fa-regular fa-star ic"></i>
+        <h3>お気に入りに追加</h3>
+        <span class="spacer"></span>
+        <button class="icon-btn" data-close title="閉じる"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <p class="hint" id="fav-add-summary" style="margin-bottom:12px"></p>
+        <label class="field"><span class="field-label">追加先フォルダ</span>
+          <select id="fav-add-folder"></select>
+        </label>
+        <p class="hint" id="fav-add-status" style="margin-top:8px"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-close>キャンセル</button>
+        <button class="btn primary" id="fav-add-save"><i class="fa-regular fa-star"></i> 追加</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== お気に入り: 別フォルダへコピーモーダル ===== -->
   <div class="modal-overlay" id="favorite-copy-modal">
     <div class="modal">
@@ -387,13 +410,13 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="assets/js/store.js?v=20260914a"></script>
   <script src="assets/js/auth.js?v=20260706a"></script>
-  <script src="assets/js/api.js?v=20260903a"></script>
+  <script src="assets/js/api.js?v=20260922a"></script>
   <script src="assets/js/ui.js?v=20260726a"></script>
-  <script src="assets/js/markup.js?v=20260721c"></script>
+  <script src="assets/js/markup.js?v=20260922a"></script>
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260701h"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/viewer.js?v=20260914a"></script>
+  <script src="assets/js/viewer.js?v=20260922a"></script>
   <script src="assets/js/webmcp.js?v=20260826a"></script>
 </body>
 </html>

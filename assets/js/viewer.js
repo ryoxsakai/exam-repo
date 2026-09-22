@@ -205,7 +205,7 @@
     // Googleログイン（Firebase Auth）
     wireAuth();
     var favBtn = el("exam-favorite");
-    if (favBtn) favBtn.addEventListener("click", toggleFavoriteCurrent);
+    if (favBtn) favBtn.addEventListener("click", openFavoriteAddModal);
     var favRefresh = el("btn-favorites-refresh");
     if (favRefresh) favRefresh.addEventListener("click", function () { loadFavorites(true); });
     if (el("favorite-folder-modal")) {
@@ -219,6 +219,10 @@
     if (el("favorite-copy-modal")) {
       UI.wireModal(el("favorite-copy-modal"));
       if (el("fav-copy-save")) el("fav-copy-save").addEventListener("click", saveFavoriteCopyModal);
+    }
+    if (el("favorite-add-modal")) {
+      UI.wireModal(el("favorite-add-modal"));
+      if (el("fav-add-save")) el("fav-add-save").addEventListener("click", saveFavoriteAddModal);
     }
     initFavoritesArea();
 
@@ -723,33 +727,19 @@
     });
   }
 
-  // 表示モーダルの星ボタンの表示・状態を更新（qnum が特定の大問を指しているときのみ表示）
+  // 表示モーダルの星ボタンを更新（qnum が特定の大問を指しているときのみ表示）。
+  // 同じ問題を複数フォルダへ追加できるため、保存済みでも常に「追加」の空星で表示する。
   function updateExamFavoriteButton(examId, qnum) {
     var btn = el("exam-favorite");
     if (!btn) return;
     if (qnum == null || !window.Auth || !Auth.getCurrentUser()) { btn.hidden = true; return; }
     btn.hidden = false;
-    ensureFavoritesLoaded().then(function (set) {
+    ensureFavoritesLoaded().then(function () {
       // 表示中に大問が変わっていたら反映しない（非同期の描画競合を避ける）
       if (state.nav.examId !== examId || state.nav.qnum !== qnum) return;
-      var isFav = set.has(examId + ":" + qnum);
-      btn.classList.toggle("is-fav", isFav);
-      btn.title = isFav ? "お気に入りから外す" : "お気に入りに追加";
-      btn.innerHTML = isFav ? '<i class="fa-solid fa-star"></i>' : '<i class="fa-regular fa-star"></i>';
-    });
-  }
-  function toggleFavoriteCurrent() {
-    var examId = state.nav.examId, qnum = state.nav.qnum;
-    if (examId == null || qnum == null) return;
-    if (!window.Auth || !Auth.getCurrentUser()) { UI.toast("ログインが必要です", "err"); return; }
-    var key = examId + ":" + qnum;
-    var isFav = state.favSet && state.favSet.has(key);
-    var p = isFav ? Api.removeFavorite(examId, qnum) : Api.addFavorite(examId, qnum);
-    p.then(function () {
-      ensureFavoritesLoaded(true).then(function () { updateExamFavoriteButton(examId, qnum); });
-      UI.toast(isFav ? "お気に入りから外しました" : "お気に入りに追加しました", "ok");
-    }).catch(function (e) {
-      UI.toast(e.message || "操作に失敗しました", "err");
+      btn.classList.remove("is-fav");
+      btn.title = "お気に入りに追加";
+      btn.innerHTML = '<i class="fa-regular fa-star"></i>';
     });
   }
 
@@ -1272,6 +1262,71 @@
       });
     })(null, 0);
     return targets;
+  }
+
+  // 初回追加は選択フォルダへ直接保存し、すでに登録済みならそのフォルダへ配置を追加する。
+  // コピー用モーダルと同じフォルダ候補・階層表示を用いる。
+  function openFavoriteAddModal() {
+    var examId = state.nav.examId, qnum = state.nav.qnum;
+    if (examId == null || qnum == null) return;
+    if (!window.Auth || !Auth.getCurrentUser()) { UI.toast("ログインが必要です", "err"); return; }
+    ensureFavoritesLoaded().then(function () {
+      var modal = el("favorite-add-modal"), select = el("fav-add-folder"), save = el("fav-add-save");
+      if (!modal || !select || !save) return;
+      var row = { exam_id: examId, question_number: qnum };
+      var existing = (state.favRows || []).some(function (f) {
+        return Number(f.exam_id) === Number(examId) && Number(f.question_number) === Number(qnum);
+      });
+      var targets = existing ? favoriteCopyTargets(row) : favoriteAddTargets();
+      select.innerHTML = "";
+      targets.forEach(function (target) {
+        var option = document.createElement("option");
+        option.value = String(target.folder.id);
+        option.textContent = new Array(target.depth + 1).join("　") + target.folder.name;
+        select.appendChild(option);
+      });
+      el("fav-add-summary").textContent = "大問" + qnum;
+      save.disabled = !targets.length;
+      el("fav-add-status").textContent = targets.length
+        ? (existing ? "選んだフォルダにも同じ問題を追加します。" : "選んだフォルダに問題を追加します。")
+        : (existing ? "追加できる別フォルダがありません。先に新しいフォルダを作成してください。" : "追加先フォルダがありません。先に新しいフォルダを作成してください。");
+      modal.dataset.examId = String(examId);
+      modal.dataset.questionNumber = String(qnum);
+      modal.dataset.existing = existing ? "1" : "0";
+      UI.openModal(modal);
+    });
+  }
+
+  function favoriteAddTargets() {
+    var targets = [];
+    (function walk(parentId, depth) {
+      favChildrenOf(parentId).forEach(function (it) {
+        if (it.kind !== "folder") return;
+        targets.push({ folder: it.folder, depth: depth });
+        walk(Number(it.folder.id), depth + 1);
+      });
+    })(null, 0);
+    return targets;
+  }
+
+  function saveFavoriteAddModal() {
+    var modal = el("favorite-add-modal"), select = el("fav-add-folder"), save = el("fav-add-save");
+    if (!modal || !select || !select.value || !save) return;
+    var examId = Number(modal.dataset.examId), qnum = Number(modal.dataset.questionNumber);
+    if (!examId || !qnum) return;
+    save.disabled = true;
+    var action = modal.dataset.existing === "1"
+      ? Api.copyFavorite(examId, qnum, Number(select.value))
+      : Api.addFavorite(examId, qnum, Number(select.value));
+    action.then(function () { return ensureFavoritesLoaded(true); }).then(function () {
+      UI.closeModal(modal);
+      renderFavorites();
+      updateExamFavoriteButton(examId, qnum);
+      UI.toast("お気に入りに追加しました", "ok");
+    }).catch(function (e) {
+      save.disabled = false;
+      UI.toast(e.message || "追加に失敗しました", "err");
+    });
   }
 
   function openFavoriteCopyModal(row) {

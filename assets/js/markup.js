@@ -27,6 +27,31 @@
 
   var VALID_COLORS = ["yellow", "blue", "red", "purple", "pink", "green", "aqua"];
 
+  // 選択肢ラベルの表示用丸囲み文字。データは常に ((1)) / ((a)) / ((ア)) の
+  // 記法を保持し、対応するUnicode文字がある場合だけ表示時に置き換える。
+  // ひらがな・51以上・拗音などはUnicodeにないため、従来のCSS丸枠へフォールバックする。
+  var CIRCLED_KATAKANA = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヰヱヲ";
+  function circledChoiceLabel(label) {
+    var s = String(label);
+    if (/^(?:[1-9]|[1-4]\d|50)$/.test(s)) {
+      var n = Number(s);
+      if (n <= 20) return String.fromCodePoint(0x2460 + n - 1); // ①〜⑳
+      if (n <= 35) return String.fromCodePoint(0x3251 + n - 21); // ㉑〜㉟
+      return String.fromCodePoint(0x32B1 + n - 36); // ㊱〜㊿
+    }
+    if (/^[a-z]$/.test(s)) return String.fromCodePoint(0x24D0 + s.charCodeAt(0) - 97); // ⓐ〜ⓩ
+    if (/^[A-Z]$/.test(s)) return String.fromCodePoint(0x24B6 + s.charCodeAt(0) - 65); // Ⓐ〜Ⓩ
+    var kanaIndex = CIRCLED_KATAKANA.indexOf(s);
+    return kanaIndex >= 0 ? String.fromCodePoint(0x32D0 + kanaIndex) : ""; // ㋐〜㋾
+  }
+  function choiceLabelHtml(label, baseClass) {
+    var unicode = circledChoiceLabel(label);
+    var classes = baseClass + (unicode ? " choice-label-unicode" : "") +
+      (!unicode && String(label).length >= 2 ? " choice-label-compact" : "");
+    return '<span class="' + classes + '"><span class="choice-label-text">' +
+      esc(unicode || label) + "</span></span>";
+  }
+
   // 画像URLの基準（Worker のベースURL）。![alt](/api/image/KEY) のような相対参照を解決する。
   var imageBase = "";
   function resolveImg(u) {
@@ -162,7 +187,7 @@
       }
       // ((A)) 選択肢ラベル（行中・インライン。丸囲みラベルのみ表示）
       if ((m = rem.match(/^\(\(([^)]+)\)\)/))) {
-        out += '<span class="choice-inline' + (String(m[1]).length >= 2 ? ' choice-label-compact' : '') + '"><span class="choice-label-text">' + esc(m[1]) + "</span></span>";
+        out += choiceLabelHtml(m[1], "choice-inline");
         rem = rem.slice(m[0].length); continue;
       }
 
@@ -291,7 +316,7 @@
       var cm = line.match(/^\s*\(\(([^)]+)\)\)\s*([\s\S]*)/);
       var choiceCount = (line.match(/\(\([^)]+\)\)/g) || []).length;
       if (cm && choiceCount === 1) {
-        html += '<div class="answer-choice"><span class="answer-choice-label' + (String(cm[1]).length >= 2 ? ' choice-label-compact' : '') + '"><span class="choice-label-text">' + esc(cm[1]) + '</span></span>' +
+        html += '<div class="answer-choice">' + choiceLabelHtml(cm[1], "answer-choice-label") +
                 '<span class="answer-choice-text">' +
                 (cm[2] ? inline(cm[2], footnotes) : "") + "</span></div>";
         paraStart = true;
