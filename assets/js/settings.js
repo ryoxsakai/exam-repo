@@ -1758,7 +1758,7 @@
     { code: "----", desc: "区切り線" },
     { code: "@@The quick brown fox jumps.", desc: "@@ — 行頭に付けると段落インデントを抑制" },
     { code: "| 語 | 意味 |\n| --- | --- |\n| apple | りんご |\n| orange | オレンジ |", desc: "表（Markdown記法。1行目=見出し、2行目=区切り |---|、以降が中身。:--- 左 / :--: 中央 / ---: 右寄せ）" },
-    { code: "![図](/api/image/sample.png)", desc: "画像（写真・グラフ）。記法ボタンの「画像」からアップロードすると自動挿入。外部URLも可: ![説明](https://...)" }
+    { code: '![図](/api/image/sample.png){size=medium align=right caption="図1 年齢別の割合"}', desc: "画像（写真・グラフ）。末尾のタグに size=large/medium/small/full、align=left/right/center、caption=説明 を指定（各項目省略可）。左右回り込みはモバイルで全幅表示。記法ボタンの「画像」からアップロードすると自動挿入。外部URLも可: ![説明](https://...)" }
   ];
   function openSyntaxModal() {
     var h = "";

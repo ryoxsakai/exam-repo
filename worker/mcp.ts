@@ -178,6 +178,7 @@ function optionalNonNegativeInteger(value: unknown, name: string) {
 
 function cleanPassageText(value: unknown) {
   return String(value ?? "")
+    .replace(/!\[([^\]]*)\]\(([^)\s]+)\)(?:\{((?:size=(?:large|medium|small|full)|align=(?:left|right|center)|caption="(?:\\.|[^"\\\r\n])*")(?:\s+(?:size=(?:large|medium|small|full)|align=(?:left|right|center)|caption="(?:\\.|[^"\\\r\n])*"))*)\})?/g, " ")
     .replace(/##([\s\S]*?)::[\s\S]*?##/g, "$1")
     .replace(/!!!![\s\S]*?!!!!/g, " ")
     .replace(/~~[\s\S]*?~~/g, " ")

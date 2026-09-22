@@ -1,0 +1,17 @@
+/* DB image attributes: shared by the viewer, editor preview and print. */
+.exam-doc { display: flow-root; }
+.exam-doc .exam-figure { display: block; max-width: 100%; margin: 12px auto; text-indent: 0; break-inside: avoid; page-break-inside: avoid; }
+.exam-doc .exam-figure-auto { width: fit-content; }
+.exam-doc .exam-figure-full { width: 100%; }
+.exam-doc .exam-figure-large { width: 75%; }
+.exam-doc .exam-figure-medium { width: 50%; }
+.exam-doc .exam-figure-small { width: 25%; }
+.exam-doc .exam-figure-left { float: left; margin: .3em 1em .6em 0; }
+.exam-doc .exam-figure-right { float: right; margin: .3em 0 .6em 1em; }
+.exam-doc .exam-figure-center { float: none; clear: both; }
+.exam-doc .exam-figure .exam-img { width: 100%; height: auto; box-sizing: border-box; margin: 0; }
+.exam-doc .exam-caption { display: block; margin-top: .4em; text-align: center; font-size: .85em; line-height: 1.5; overflow-wrap: anywhere; color: var(--ink-soft, #475569); }
+.exam-doc .question-block-header, .exam-doc .exam-hr, .exam-doc .footnote-section { clear: both; }
+@media screen and (max-width: 768px) {
+  .exam-doc .exam-figure-left, .exam-doc .exam-figure-right { float: none; width: 100%; margin: 12px auto; }
+}
