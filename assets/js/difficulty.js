@@ -41,6 +41,30 @@
     return m ? m.length : 0;
   }
 
+  // MCP の analyze_passage と同じ本文前処理・語数・文分割・音節推定を使用。
+  // FK は米国学年相当の可読性指標であり、設問の難易度を含まない。
+  function syllablesInWord(value) {
+    return value.split(/[’'-]+/).reduce(function (total, part) {
+      var word = part.toLowerCase().replace(/[^a-z]/g, "");
+      if (!word) return total;
+      if (word.length <= 3) return total + 1;
+      var n = (word.match(/[aeiouy]+/g) || []).length;
+      if (word.endsWith("e") && !/[aeiouy]le$/.test(word)) n -= 1;
+      if (/(?:es|ed)$/.test(word) && !/(?:ted|ded|ses|zes|ches|shes)$/.test(word)) n -= 1;
+      return total + Math.max(1, n);
+    }, 0);
+  }
+  function passageMetrics(rawText) {
+    var text = Markup.strip(rawText);
+    var words = Corpus.tokenize(text);
+    var sentences = sentenceCount(text);
+    var syllables = words.reduce(function (total, word) { return total + syllablesInWord(word); }, 0);
+    var fk = words.length && sentences
+      ? 0.39 * words.length / sentences + 11.8 * syllables / words.length - 15.59 : null;
+    return { words: words.length, sentences: sentences, asl: sentences ? words.length / sentences : 0,
+      fk: fk === null ? null : Math.round(fk * 10) / 10 };
+  }
+
   // 原文で「常に大文字始まり」かつ Oxford5000 外の語を固有名詞候補として集める
   function properNounSet(text, levelMap) {
     var seenLower = Object.create(null), capOnly = Object.create(null);
@@ -87,13 +111,6 @@
     var n = m ? m.length : 0;
     return n > 0 ? n : 1;
   }
-  // 記法除去済みテキストの平均文長（1文あたりの語数）
-  function strippedAsl(text) {
-    var words = Corpus.tokenize(text).length;
-    if (!words) return 0;
-    var sents = sentenceCount(text);
-    return sents ? words / sents : 0;
-  }
   // 平均文長 → CEFR と同じ 1〜6 スケールへ
   function slToLevel(asl) {
     if (!asl) return 0;
@@ -113,9 +130,10 @@
     var stripped = Markup.strip(rawText);
     var L = lists();
     var vocab = strippedLevelAvg(stripped, L.levelMap, L.stopSet);
-    var asl = strippedAsl(stripped);
+    var metrics = passageMetrics(rawText);
+    var asl = metrics.asl;
     var score = compositeScore(vocab, asl, w || weights());
-    return { score: score, vocab: vocab, asl: asl };
+    return { score: score, vocab: vocab, asl: asl, fk: metrics.fk, words: metrics.words };
   }
   function scoreForText(rawText, w) { return detailForText(rawText, w).score; }
 
@@ -161,6 +179,7 @@
   global.Difficulty = {
     weights: weights,
     wordCount: wordCount,
+    passageMetrics: passageMetrics,
     bodyText: bodyText,
     scoreForText: scoreForText,
     detailForText: detailForText,

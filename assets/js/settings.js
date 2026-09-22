@@ -1516,10 +1516,11 @@
     var body = isBodySection(label);
     var wc = "";
     if (label === "本文") {
-      var score = Difficulty.scoreForText(text);
-      var band = Difficulty.band(score, state.longLevel ? state.longLevel.cutoffs : null);
-      wc = '<div class="word-count">(' + wordCount(text) + " words)" +
-        (score ? ' <span class="level-inline" title="難易度（合成スコア）">' + esc(score.toFixed(1)) + " " + esc(band) + "</span>" : "") +
+      var d = Difficulty.detailForText(text);
+      var band = Difficulty.band(d.score, state.longLevel ? state.longLevel.cutoffs : null);
+      wc = '<div class="word-count">(' + d.words + " words)" +
+        (d.score ? ' <span class="level-inline" title="本文の相対難易度（合成スコア）">' + esc(d.score.toFixed(1)) + " " + esc(band) + "</span>" : "") +
+        (d.fk !== null ? ' <span class="fk-inline" title="Flesch–Kincaid Grade：本文の読みやすさの参考値。設問の難易度は含みません">FK ' + esc(d.fk.toFixed(1)) + '</span>' : '') +
         "</div>";
     }
     return '<div style="margin-bottom:14px"><div class="exam-section-title">' + esc(label) +
