@@ -818,6 +818,20 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
   display: inline-block; min-width: 0;
   transform: translateX(-.055em) scaleX(.72);
 }
+/* Unicodeの丸囲み文字（①・ⓐ・㋐など）は文字そのものが円を持つ。
+   従来のCSS丸枠を重ねると二重丸になるため、この場合だけ枠・固定寸法を外す。 */
+.choice-label-unicode {
+  width: auto; min-width: 0; height: auto; overflow: visible;
+  border: 0; border-radius: 0;
+  font-size: 1em; line-height: inherit;
+}
+.answer-choice-label.choice-label-unicode {
+  flex: 0 0 auto; align-self: baseline; margin-top: 0;
+}
+.choice-inline.choice-label-unicode {
+  display: inline; vertical-align: baseline;
+}
+.choice-label-unicode .choice-label-text { transform: none; }
 .footnote-section { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); font-size: .82em; color: var(--muted); font-family: var(--sans); }
 .footnote-section ol { list-style: none; padding: 0; margin: 0; }
 .footnote-section li { display: flex; gap: 8px; margin-bottom: 4px; line-height: 1.5; }
