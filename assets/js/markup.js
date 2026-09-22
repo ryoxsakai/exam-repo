@@ -61,6 +61,19 @@
     return b + (u.charAt(0) === "/" ? u : "/" + u);       // 相対は imageBase を前置
   }
 
+  // Optional image attributes are stored verbatim with the image in the DB.
+  var IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)\s]+)\)(?:\{((?:size=(?:large|medium|small|full)|align=(?:left|right|center)|caption="(?:\\.|[^"\\\r\n])*")(?:\s+(?:size=(?:large|medium|small|full)|align=(?:left|right|center)|caption="(?:\\.|[^"\\\r\n])*"))*)\})?/;
+  var IMAGE_START_PATTERN = new RegExp("^" + IMAGE_PATTERN.source);
+  function imageAttributes(raw) {
+    var attrs = {}, token;
+    var re = /(size|align)=(\w+)|caption="((?:\\.|[^"\\\r\n])*)"/g;
+    while ((token = re.exec(raw || ""))) {
+      if (token[1]) attrs[token[1]] = token[2];
+      else attrs.caption = token[3].replace(/\\(["\\])/g, "$1");
+    }
+    return attrs;
+  }
+
   // 「. 」の後を広げない略語（+ 単独の大文字イニシャル: J. K. Rowling など）
   var ABBREV = /^(?:Mr|Mrs|Ms|Dr|Prof|St|Mt|Jr|Sr|vs|etc|No|Vol|Fig|cf|ca|pp|[A-Z])$/;
 
@@ -133,10 +146,17 @@
                '<sup class="footnote-number">*' + idx + "</sup></span>";
         rem = rem.slice(m[0].length); continue;
       }
-      // ![説明](URL) 画像（Markdown記法）
-      if ((m = rem.match(/^!\[([^\]]*)\]\(([^)\s]+)\)/))) {
-        out += '<img class="exam-img" src="' + esc(resolveImg(m[2])) + '" alt="' + esc(m[1]) +
-               '"' + (m[1] ? ' title="' + esc(m[1]) + '"' : "") + ">";
+      // ![説明](URL){size=medium align=right caption="図1"}
+      if ((m = rem.match(IMAGE_START_PATTERN))) {
+        var attrs = imageAttributes(m[3]);
+        var img = '<img class="exam-img" src="' + esc(resolveImg(m[2])) + '" alt="' + esc(m[1]) +
+                  '"' + (m[1] ? ' title="' + esc(m[1]) + '"' : "") + ">";
+        if (m[3]) {
+          var size = attrs.size || (attrs.align === 'left' || attrs.align === 'right' ? 'medium' : 'auto');
+          out += '<span role="figure" class="exam-figure exam-figure-' + size + ' exam-figure-' +
+                 (attrs.align || 'center') + '">' + img +
+                 (attrs.caption ? '<span class="exam-caption">' + esc(attrs.caption) + '</span>' : '') + '</span>';
+        } else out += img;
         rem = rem.slice(m[0].length); continue;
       }
       // !!!!出典!!!!（右寄せ・グレー・小）
@@ -367,11 +387,11 @@
   // 英文抽出用: 記法を取り除いてプレーン英文テキストにする（コーパス分析の前処理）
   function strip(text) {
     var t = String(text == null ? "" : text);
+    t = t.replace(new RegExp(IMAGE_PATTERN.source, "g"), " "); // Exclude images, attributes and captions from passage counts.
     t = t.replace(/\{\{[^}]*\}\}/g, " ");           // 問見出し
     t = t.replace(/\[\[[^\]]*\]\]/g, " ");          // 空所
     t = t.replace(/^\s*\[[^\[\]]+\]\s?/gm, "");     // 段落番号 [1]（行頭・単角括弧）
     t = t.replace(/##([^:#]+)::[^#]+##/g, function (_, w) { return w.replace(/\^/g, ""); }); // 脚注 → 語のみ残す（^マーカー除去）
-    t = t.replace(/!\[[^\]]*\]\([^)\s]+\)/g, " ");   // 画像 → 除去
     t = t.replace(/!!!!([\s\S]+?)!!!!/g, " ");      // 出典 → 除去
     t = t.replace(/\|\|\|\|([\s\S]+?)\|\|\|\|/g, "$1"); // 斜字 → テキスト残す
     t = t.replace(/^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/gm, " "); // 表の区切り行

@@ -2023,7 +2023,7 @@
   var PRINT_LH = { "1": 1.3, "2": 1.6, "3": 1.9, "4": 2.3, "5": 2.8 }; // #print-area.lh-* .exam-doc と同じ値
 
   // 本文として数えないもの（語注一覧・語数表示・行番号ラベル自身）
-  var LINENUM_SKIP = ".footnote-section, .word-count, .print-linenum";
+  var LINENUM_SKIP = ".footnote-section, .word-count, .print-linenum, .exam-figure";
 
   // リード文（「以下の英文を読み、問いに答えよ。」等の指示文）は英文本体の行では
   // ないため、行番号の対象から外す。Markup.mergeLeadSections がセクション種別
