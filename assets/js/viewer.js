@@ -16,7 +16,14 @@
   // 登録・取り込み保存時（settings.js）は保存時点で統合されるが、一括アップロード等で保存前に
   // 統合されていないデータが残っていても、表示側でも必ず統合されるようここで一元的に処理する。
   function examSections(problemText) {
-    return Markup.mergeLeadSections(Markup.parseSections(problemText || ""));
+    var raw = Markup.parseSections(problemText || "");
+    var merged = Markup.mergeLeadSections(raw);
+    var bodyTexts = raw.filter(function (sec) { return sec.type === "本文"; }).map(function (sec) { return sec.text; });
+    var bodyIndex = 0;
+    merged.forEach(function (sec) {
+      if (sec.type === "本文") sec.metricText = bodyTexts[bodyIndex++];
+    });
+    return merged;
   }
 
   function saveOpenExam(examId, qnum) { try { sessionStorage.setItem("exam_open_id", examId + ":" + qnum); } catch (e) {} }
@@ -1656,7 +1663,7 @@
       if (q.answer_text && q.answer_text.trim() && !hasAnswerSection) sections.push({ type: "解答", text: q.answer_text });
       if (q.commentary_text && q.commentary_text.trim() && !hasCommentarySection) sections.push({ type: "解説", text: q.commentary_text });
       sections.forEach(function (sec) {
-        if (sec.text.trim()) fields.push(renderField(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text));
+        if (sec.text.trim()) fields.push(renderField(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text, sec.metricText));
       });
       var head = showQHead ? '<div class="modal-qhead">大問' + esc(qLabel(q)) + "</div>" : "";
       body += head + '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
@@ -1787,13 +1794,13 @@
     var body = isBodySection(label);
     return { paraNum: body, zenyaku: label === "全訳" };
   }
-  function renderField(label, icon, text) {
+  function renderField(label, icon, text, metricText) {
     var body = isBodySection(label);
     var r = Markup.render(text, markupOpts(label));
     var checked = Store.isPrintSection(label) ? " checked" : "";
     var wc = "";
     if (label === "本文") {
-      var d = sectionDifficulty(text);
+      var d = sectionDifficulty(metricText === undefined ? text : metricText);
       wc = '<div class="word-count">(' + d.words + " words)" +
         (d.score ? ' <span class="level-inline" title="本文の相対難易度（合成スコア）">' + esc(d.score.toFixed(1)) + " " + esc(d.band) + "</span>" : "") +
         (d.fk !== null ? ' <span class="fk-inline" title="Flesch–Kincaid Grade：本文の読みやすさの参考値。設問の難易度は含みません">FK ' + esc(d.fk.toFixed(1)) + '</span>' : '') +
