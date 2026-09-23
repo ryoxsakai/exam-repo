@@ -1,0 +1,499 @@
+/* =====================================================================
+   markup.js — 入試問題記法 → HTML
+   既存 parser.tsx と同じ記法を踏襲:
+     {{問N}}        … 大問見出しバッジ
+     [[N]] [[A]]    … 空所バッジ
+     [[-- --]] [[--A--]] … 3倍幅の空欄（ダッシュで囲む。中身はラベル表示・空白保持）
+     ##語::訳##     … 脚注（語注）。語中の ^ は注のみ直前文字を小文字化（M^isdiagnosis → 本文Misdiagnosis/注misdiagnosis）
+     ==語== :色     … ハイライト（色: yellow/blue/red/purple/pink/green/aqua）
+     __語__         … 下線
+     **語**         … 太字
+     ~~x~~          … 下付き
+     ^^x^^          … 上付き
+     ((A)) 本文      … 選択肢（行頭）
+     !!!!出典!!!!    … 出典表記（右寄せ・グレー・小）
+     ||||斜字||||    … 斜字（イタリック）
+     ----           … 区切り線
+     [1] [2]（行頭） … 段落先頭に置く段落番号バッジ（全セクションで有効。字下げは opts.paraNum=true のみ）
+   ===================================================================== */
+(function (global) {
+  "use strict";
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  var VALID_COLORS = ["yellow", "blue", "red", "purple", "pink", "green", "aqua"];
+
+  // 選択肢ラベルの表示用丸囲み文字。データは常に ((1)) / ((a)) / ((ア)) の
+  // 記法を保持し、対応するUnicode文字がある場合だけ表示時に置き換える。
+  // ひらがな・51以上・拗音などはUnicodeにないため、従来のCSS丸枠へフォールバックする。
+  var CIRCLED_KATAKANA = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヰヱヲ";
+  function circledChoiceLabel(label) {
+    var s = String(label);
+    if (/^(?:[1-9]|[1-4]\d|50)$/.test(s)) {
+      var n = Number(s);
+      if (n <= 20) return String.fromCodePoint(0x2460 + n - 1); // ①〜⑳
+      if (n <= 35) return String.fromCodePoint(0x3251 + n - 21); // ㉑〜㉟
+      return String.fromCodePoint(0x32B1 + n - 36); // ㊱〜㊿
+    }
+    if (/^[a-z]$/.test(s)) return String.fromCodePoint(0x24D0 + s.charCodeAt(0) - 97); // ⓐ〜ⓩ
+    if (/^[A-Z]$/.test(s)) return String.fromCodePoint(0x24B6 + s.charCodeAt(0) - 65); // Ⓐ〜Ⓩ
+    var kanaIndex = CIRCLED_KATAKANA.indexOf(s);
+    return kanaIndex >= 0 ? String.fromCodePoint(0x32D0 + kanaIndex) : ""; // ㋐〜㋾
+  }
+  function choiceLabelHtml(label, baseClass) {
+    var unicode = circledChoiceLabel(label);
+    var classes = baseClass + (unicode ? " choice-label-unicode" : "") +
+      (!unicode && String(label).length >= 2 ? " choice-label-compact" : "");
+    return '<span class="' + classes + '"><span class="choice-label-text">' +
+      esc(unicode || label) + "</span></span>";
+  }
+
+  // 画像URLの基準（Worker のベースURL）。![alt](/api/image/KEY) のような相対参照を解決する。
+  var imageBase = "";
+  function resolveImg(u) {
+    u = String(u || "").trim();
+    if (/^(https?:|data:)/i.test(u)) return u;           // 絶対URL・データURLはそのまま
+    var b = imageBase.replace(/\/+$/, "");
+    return b + (u.charAt(0) === "/" ? u : "/" + u);       // 相対は imageBase を前置
+  }
+
+
+  // Optional image attributes are stored verbatim with the image in the DB.
+  var IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)\s]+)\)(?:\{((?:size=(?:large|medium|small|full)|align=(?:left|right|center)|caption="(?:\\.|[^"\\\r\n])*")(?:\s+(?:size=(?:large|medium|small|full)|align=(?:left|right|center)|caption="(?:\\.|[^"\\\r\n])*"))*)\})?/;
+  var IMAGE_START_PATTERN = new RegExp("^" + IMAGE_PATTERN.source);
+  function imageAttributes(raw) {
+    var attrs = {}, token;
+    var re = /(size|align)=(\w+)|caption="((?:\\.|[^"\\\r\n])*)"/g;
+    while ((token = re.exec(raw || ""))) {
+      if (token[1]) attrs[token[1]] = token[2];
+      else attrs.caption = token[3].replace(/\\(["\\])/g, "$1");
+    }
+    return attrs;
+  }
+
+  // 「. 」の後を広げない略語（+ 単独の大文字イニシャル: J. K. Rowling など）
+  var ABBREV = /^(?:Mr|Mrs|Ms|Dr|Prof|St|Mt|Jr|Sr|vs|etc|No|Vol|Fig|cf|ca|pp|[A-Z])$/;
+
+  // out が「文末の . ? ! (+閉じ引用符等) + 半角スペース1つ」で終わっていて、続く文字が
+  // "(" や "[" （新しい区切りを示す開き括弧。(1) [1] など）なら、その末尾スペースを
+  // &nbsp;&nbsp; に広げる。"(" "[" は inline() 内で常にプレーンテキストの塊を区切る
+  // 文字のため、通常の1チャンク内正規表現では次のチャンクの先頭を先読みできない
+  // （例: "As follows. " と "(1) First point." が別チャンクに分かれる）。そのため
+  // チャンクをまたいで判定できるよう、次のチャンクへ進む直前にここで補う。
+  function maybeWidenTrailingSpace(out, nextCh) {
+    if (nextCh !== "(" && nextCh !== "[") return out;
+    var m = out.match(/([A-Za-z]*)([.?!])([”’"')\]）】」』]*) $/);
+    if (!m) return out;
+    if (m[2] === "." && !m[3] && ABBREV.test(m[1])) return out;
+    return out.slice(0, -1) + "&nbsp;&nbsp;";
+  }
+
+  // ストレートクォート → スマートクォート変換
+  function smartQuotes(s) {
+    s = s.replace(/(^|[\s(\[{—])"/g, "$1“");  // opening "
+    s = s.replace(/"/g, "”");                       // closing "
+    s = s.replace(/(^|[\s(\[{—])'/g, "$1‘");  // opening '
+    s = s.replace(/'/g, "’");                       // closing ' / apostrophe
+    return s;
+  }
+
+  // インライン記法をHTMLへ。footnotes は配列で受け取り副作用で追加。
+  function inline(text, footnotes) {
+    var out = "";
+    var rem = text;
+    while (rem.length > 0) {
+      var m;
+      out = maybeWidenTrailingSpace(out, rem[0]);
+
+      // [[N]] 空所
+      // 左右の間隔はどちらもスペース文字で確保（行頭・行末ではブラウザが
+      // スペースを消すため CSS マージンより自然に揃う）
+      if ((m = rem.match(/^\[\[([^\]]*)\]\]/))) {
+        if (out && !/[\s(\[{「『（【]$/.test(out)) out += " ";
+        // 先頭が -- のもの（[[--]] [[----]] [[-- --]] [[--A--]] 等）は3倍幅の空欄。
+        // 前後のダッシュのみ除いた中身をラベルとして表示する（空白は保持。
+        // [[-- --]]=半角スペース / [[--　--]]=全角スペース が中に入る）。
+        if (/^--/.test(m[1])) {
+          var label = m[1].replace(/^-+/, "").replace(/-+$/, "");
+          out += '<span class="blank-badge blank-badge-wide">' + esc(label) + "</span>";
+        } else {
+          out += '<span class="blank-badge">' + esc(m[1]) + "</span>";
+        }
+        rem = rem.slice(m[0].length);
+        if (rem.length && !/^[\s.,;:!?\]）」』】。、！？]/.test(rem)) out += " ";
+        continue;
+      }
+      // [N] 段落番号バッジ（行中。空所 [[ ]] とは別の単角括弧。[[ は上で処理済み）
+      // 中身が3文字以上のときはバッジ化せずリテラル [..] として出力
+      if ((m = rem.match(/^\[([^\[\]]+)\]/))) {
+        // [ ] は選択肢群を示す通常の角括弧として使うため、段落番号バッジにはしない。
+        // 選択肢群などの単一角括弧は記号そのものを残す。ただし中に ((a)) 等の
+        // インライン記法が含まれる場合は、角括弧内でも通常どおり表示変換する。
+        if (/^\s*$/.test(m[1]) || m[1].length >= 3) {
+          out += "[" + inline(m[1], footnotes) + "]";
+          rem = rem.slice(m[0].length); continue;
+        }
+        out += '<span class="para-badge para-badge-inline">' + esc(m[1]) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ##語::訳## 脚注
+      // 語中の ^ は「本文では除去（大小はそのまま）、注では ^ の直前の文字を小文字化」する
+      // マーカー。例: ##M^isdiagnosis::誤診## → 本文「Misdiagnosis」/ 注「misdiagnosis」
+      if ((m = rem.match(/^##([^:#]+)::([^#]+)##/))) {
+        var idx = footnotes.length + 1;
+        var dispWord = m[1].replace(/\^/g, "");
+        var footWord = m[1].replace(/(.)\^/g, function (_, ch) { return ch.toLowerCase(); }).replace(/\^/g, "");
+        footnotes.push({ index: idx, word: footWord, translation: m[2] });
+        out += '<span title="' + esc(footWord + ": " + m[2]) + '">' + esc(dispWord) +
+               '<sup class="footnote-number">*' + idx + "</sup></span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ![説明](URL){size=medium align=right caption="図1"}
+      if ((m = rem.match(IMAGE_START_PATTERN))) {
+        var attrs = imageAttributes(m[3]);
+        var img = '<img class="exam-img" src="' + esc(resolveImg(m[2])) + '" alt="' + esc(m[1]) +
+                  '"' + (m[1] ? ' title="' + esc(m[1]) + '"' : "") + ">";
+        if (m[3]) {
+          var size = attrs.size || (attrs.align === 'left' || attrs.align === 'right' ? 'medium' : 'auto');
+          out += '<span role="figure" class="exam-figure exam-figure-' + size + ' exam-figure-' +
+                 (attrs.align || 'center') + '">' + img +
+                 (attrs.caption ? '<span class="exam-caption">' + esc(attrs.caption) + '</span>' : '') + '</span>';
+        } else out += img;
+        rem = rem.slice(m[0].length); continue;
+      }
+      // !!!!出典!!!!（右寄せ・グレー・小）
+      if ((m = rem.match(/^!!!!([\s\S]+?)!!!!/))) {
+        out += '<span class="cite">' + inline(m[1], footnotes) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ||||斜字||||
+      if ((m = rem.match(/^\|\|\|\|([\s\S]+?)\|\|\|\|/))) {
+        out += "<em>" + inline(m[1], footnotes) + "</em>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ==語==:色
+      if ((m = rem.match(/^==([^=]+)==:(\w+)/))) {
+        var c = VALID_COLORS.indexOf(m[2]) >= 0 ? m[2] : "yellow";
+        out += '<mark class="hl hl-' + c + '">' + inline(m[1], footnotes) + "</mark>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ==語==
+      if ((m = rem.match(/^==([^=]+)==(?!:\w)/))) {
+        out += '<mark class="hl hl-yellow">' + inline(m[1], footnotes) + "</mark>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // __下線__
+      if ((m = rem.match(/^__([^_]+)__/))) {
+        out += "<u>" + inline(m[1], footnotes) + "</u>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ~~下付き~~
+      if ((m = rem.match(/^~~([^~]+)~~/))) {
+        out += "<sub>" + esc(m[1]) + "</sub>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ^^上付き^^
+      if ((m = rem.match(/^\^\^([^^]+)\^\^/))) {
+        out += "<sup>" + esc(m[1]) + "</sup>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // **太字**
+      if ((m = rem.match(/^\*\*([^*]+)\*\*/))) {
+        out += "<strong>" + inline(m[1], footnotes) + "</strong>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // {{問N}}（行中）
+      if ((m = rem.match(/^\{\{([^}]+)\}\}/))) {
+        out += '<span class="question-badge">' + esc(m[1]) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ((A)) 選択肢ラベル（行中・インライン。丸囲みラベルのみ表示）
+      if ((m = rem.match(/^\(\(([^)]+)\)\)/))) {
+        out += choiceLabelHtml(m[1], "choice-inline");
+        rem = rem.slice(m[0].length); continue;
+      }
+
+      // プレーンテキスト（次の記法開始まで）
+      var end = 1;
+      while (end < rem.length) {
+        var ch = rem[end];
+        if (ch === "[" || ch === "#" || ch === "=" || ch === "_" ||
+            ch === "~" || ch === "^" || ch === "{" || ch === "(" || ch === "*" ||
+            ch === "!" || ch === "|") break;
+        end++;
+      }
+      var plain = esc(smartQuotes(rem.slice(0, end)));
+      // 文末の . ? ! の後（閉じ引用符・閉じ括弧 ”’"')]）】」』 が続く場合も含む）に
+      // 大文字、または開き引用符（“‘"' 等。次の文が引用符から始まる場合）が来る場合、
+      // スペースを &nbsp;&nbsp; に広げる（例: ?” He / .) The / . “Quote”）
+      // （. のときのみ、かつ閉じ記号が無いときのみ Dr. / Mr. / Mt. などの略語・イニシャルを除外）
+      // "(" "[" で始まる場合（. (1) 等）はチャンクが分かれるためここでは扱えず、
+      // 次のチャンクへ進む直前の maybeWidenTrailingSpace で別途処理する。
+      plain = plain.replace(/([A-Za-z]*)([.?!])([”’"')\]）】」』]*)\s+(?=[A-Z“‘"'])/g, function (full, w, p, q) {
+        if (p === "." && !q && ABBREV.test(w)) return full;
+        return w + p + q + "&nbsp;&nbsp;";
+      });
+      // em dash → 2em幅（隙間なし）
+      plain = plain.replace(/—/g, '<span class="em-dash">——</span>');
+      out += plain;
+      rem = rem.slice(end);
+    }
+    return out;
+  }
+
+  // ---- Markdown 風テーブル ----
+  // 区切り行か（パイプを含む `|---|:--:|` 等。本文の `----` と混同しないため
+  // 必ずパイプを1つ以上含むことを条件にする）
+  function isTableSep(line) {
+    var t = line.trim();
+    if (t.indexOf("|") < 0) return false;
+    t = t.replace(/^\|/, "").replace(/\|$/, "");
+    var cells = t.split("|");
+    if (!cells.length) return false;
+    return cells.every(function (c) { return /^\s*:?-+:?\s*$/.test(c); });
+  }
+  // 行をセル配列へ分割（`\|` はセル内のリテラルパイプとして扱う）
+  function splitRow(line) {
+    var t = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+    var cells = [], buf = "";
+    for (var i = 0; i < t.length; i++) {
+      if (t[i] === "\\" && t[i + 1] === "|") { buf += "|"; i++; continue; }
+      if (t[i] === "|") { cells.push(buf.trim()); buf = ""; continue; }
+      buf += t[i];
+    }
+    cells.push(buf.trim());
+    return cells;
+  }
+  // lines[start] をヘッダ、lines[start+1] を区切り行とする表を描画。
+  // 返り値 next は表の次に処理すべき行インデックス。
+  function renderTable(lines, start, footnotes) {
+    var headers = splitRow(lines[start]);
+    var aligns = splitRow(lines[start + 1]).map(function (c) {
+      var l = c.charAt(0) === ":", r = c.charAt(c.length - 1) === ":";
+      return l && r ? "center" : r ? "right" : l ? "left" : "";
+    });
+    var bodies = [], idx = start + 2;
+    for (; idx < lines.length; idx++) {
+      var lt = lines[idx].trim();
+      if (lt === "" || lt.indexOf("|") < 0) break;
+      bodies.push(splitRow(lines[idx]));
+    }
+    function cell(tag, txt, al) {
+      return "<" + tag + (al ? ' style="text-align:' + al + '"' : "") + ">" +
+             inline(txt || "", footnotes) + "</" + tag + ">";
+    }
+    var h = '<div class="exam-table-wrap"><table class="exam-table"><thead><tr>';
+    headers.forEach(function (c, ci) { h += cell("th", c, aligns[ci]); });
+    h += "</tr></thead><tbody>";
+    bodies.forEach(function (row) {
+      h += "<tr>";
+      for (var ci = 0; ci < headers.length; ci++) h += cell("td", row[ci] != null ? row[ci] : "", aligns[ci]);
+      h += "</tr>";
+    });
+    h += "</tbody></table></div>";
+    return { html: h, next: idx };
+  }
+
+  // 発話行の先頭にある話者ラベル。一般的な設問見出しは除外する。
+  var SPEAKER = /^(?!(?:Question|Answer|Note|Example|Source|Instructions|Directions|Explanation):)((?:[A-Z]|(?:Mr|Mrs|Ms|Dr|Prof)\.\s+[A-Z][a-z]+|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}))(:)/;
+
+  // テキスト全体 → { html, footnotes }
+  // 段落先頭の [1] [2] は全セクションで段落番号バッジに変換する。
+  // opts.paraNum=true（本文・和訳セクション）のときは、さらにバッジの無い段落先頭に字下げを付ける。
+  // opts.zenyaku=true（全訳セクション）のとき、《…》で始まる行は字下げしない。
+  function render(text, opts) {
+    var paraNum = opts && opts.paraNum;
+    var footnotes = [];
+    var lines = String(text == null ? "" : text).split("\n");
+    var html = "";
+    var paraStart = true; // 段落先頭か（空行・見出し・選択肢・区切りの直後）
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var trimmed = line.trim();
+
+      if (trimmed === "") { html += '<div style="height:.6em"></div>'; paraStart = true; continue; }
+      if (trimmed === "----") { html += '<hr class="exam-hr">'; paraStart = true; continue; }
+
+      // Markdown 風テーブル（ヘッダ行 + 区切り行 |---|---| が続く場合）
+      if (trimmed.indexOf("|") >= 0 && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+        var tbl = renderTable(lines, i, footnotes);
+        html += tbl.html;
+        i = tbl.next - 1; // for ループの ++ で次行へ
+        paraStart = true;
+        continue;
+      }
+
+      // {{問N}} 行頭 → 見出し
+      var qm = trimmed.match(/^\{\{([^}]+)\}\}/);
+      if (qm) {
+        var rest = trimmed.slice(qm[0].length).trim();
+        html += '<div class="question-block-header"><span class="question-badge">' +
+                esc(qm[1]) + "</span>" +
+                (rest ? '<span class="qtext">' + inline(rest, footnotes) + "</span>" : "") +
+                "</div>";
+        paraStart = true;
+        continue;
+      }
+
+      // ((A)) 本文 → 選択肢（行頭）。ただし 1行に (()) が複数ある場合は
+      // ブロック化せず通常行として描画し、先頭も含めて全てインライン丸ラベルにする。
+      var cm = line.match(/^\s*\(\(([^)]+)\)\)\s*([\s\S]*)/);
+      var choiceCount = (line.match(/\(\([^)]+\)\)/g) || []).length;
+      if (cm && choiceCount === 1) {
+        html += '<div class="answer-choice">' + choiceLabelHtml(cm[1], "answer-choice-label") +
+                '<span class="answer-choice-text">' +
+                (cm[2] ? inline(cm[2], footnotes) : "") + "</span></div>";
+        paraStart = true;
+        continue;
+      }
+
+      // 段落先頭の [1] [2]（単角括弧。空所 [[ ]] とは別）を段落番号バッジに（全セクションで有効）
+      // 中身が3文字以上のときはバッジ化しない（[図] [グラフ] などをそのまま表示）
+      var badgeNum = "";
+      if (paraStart) {
+        var pm = trimmed.match(/^\[([^\[\]]+)\]\s?/);
+        if (pm && pm[1].length < 3 && !/^\s*$/.test(pm[1])) {
+          badgeNum = pm[1];
+          line = line.replace(/^\s*\[[^\[\]]+\]\s?/, "");
+          trimmed = line.trim();
+        }
+      }
+      // @@ 行頭タグ → 強制字下げなし（indent 抑制）
+      var noIndent = false;
+      if (/^\s*@@/.test(line)) {
+        noIndent = true;
+        line = line.replace(/^\s*@@\s?/, "");
+        trimmed = line.trim();
+      }
+      var speaker = trimmed.match(SPEAKER);
+      if (speaker) noIndent = true;
+      // 字下げ：本文・和訳ではバッジの無い「英字始まり」の段落先頭のみ字下げ
+      // （日本語の指示文などは左寄せにする）。それ以外のセクションは英語大文字始まりのみ。
+      // 引用符（" ' " '）で始まる段落も、直後が英字なら英文段落とみなし字下げする。
+      // 全訳セクションは常に日本語の全訳のため、たまたま固有名詞等の英字で始まる段落だけ
+      // 字下げされるのを避け、常に字下げしない。
+      var indent = (opts && opts.zenyaku) ? false :
+        (!noIndent && paraStart && (paraNum ? (!badgeNum && /^["'“‘]?[A-Za-z]/.test(trimmed)) : /^["'“‘]?[A-Z]/.test(trimmed)));
+      var prefix = badgeNum ? '<span class="para-badge">' + esc(badgeNum) + "</span>" : "";
+      var content = speaker
+        ? '<strong class="dialogue-speaker">' + esc(speaker[1] + speaker[2]) + '</strong>' +
+          inline(trimmed.slice(speaker[0].length), footnotes)
+        : inline(line, footnotes);
+      html += '<span class="blk' + (indent ? " indent" : "") + (speaker ? " dialogue-line" : "") + '">' + prefix + content + "</span>";
+      paraStart = false;
+    }
+
+    if (footnotes.length) {
+      html += '<div class="footnote-section"><ol>';
+      footnotes.forEach(function (fn) {
+        html += '<li><span class="footnote-number">*' + fn.index + "</span><span><strong>" +
+                esc(fn.word) + "</strong>: " + esc(fn.translation) + "</span></li>";
+      });
+      html += "</ol></div>";
+    }
+    return { html: html, footnotes: footnotes };
+  }
+
+  // 英文抽出用: 記法を取り除いてプレーン英文テキストにする（コーパス分析の前処理）
+  function strip(text) {
+    var t = String(text == null ? "" : text);
+    t = t.replace(/\{\{[^}]*\}\}/g, " ");           // 問見出し
+    t = t.replace(/\[\[[^\]]*\]\]/g, " ");          // 空所
+    t = t.replace(/^\s*\[[^\[\]]+\]\s?/gm, "");     // 段落番号 [1]（行頭・単角括弧）
+    t = t.replace(/##([^:#]+)::[^#]+##/g, function (_, w) { return w.replace(/\^/g, ""); }); // 脚注 → 語のみ残す（^マーカー除去）
+    t = t.replace(/!\[[^\]]*\]\([^)\s]+\)(?:\{[^}\n]*\})?/g, " "); // 画像と表示オプション → 除去
+    t = t.replace(/!!!!([\s\S]+?)!!!!/g, " ");      // 出典 → 除去
+    t = t.replace(/\|\|\|\|([\s\S]+?)\|\|\|\|/g, "$1"); // 斜字 → テキスト残す
+    t = t.replace(/^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/gm, " "); // 表の区切り行
+    t = t.replace(/\|/g, " ");                          // 表のセル区切り → 空白
+    t = t.replace(/==([^=]+)==:\w+/g, "$1");        // 色ハイライト
+    t = t.replace(/==([^=]+)==/g, "$1");            // ハイライト
+    t = t.replace(/__([^_]+)__/g, "$1");            // 下線
+    t = t.replace(/\*\*([^*]+)\*\*/g, "$1");       // 太字
+    t = t.replace(/~~([^~]+)~~/g, "$1");            // 下付き
+    t = t.replace(/\^\^([^^]+)\^\^/g, "$1");        // 上付き
+    t = t.replace(/\(\(([^)]+)\)\)/g, " ");         // 選択肢ラベル
+    t = t.replace(/<[^>]*>/g, " ");                 // HTML タグ
+    t = t.replace(/^@@\s?/gm, "");                  // @@ 字下げ抑制タグ
+    t = t.replace(/----/g, " ");
+    return t;
+  }
+
+  // problem_text を section 境界で分割。collectReg が追加した {{セクション名}} 行を検出。
+  // ASCII 英数字を含むバッジ（{{問1}} など）は問題番号として無視する。
+  function parseSections(text) {
+    var sections = [];
+    var lines = (text || "").split("\n");
+    var curType = "問題", curLines = [];
+    for (var i = 0; i < lines.length; i++) {
+      var m = lines[i].trim().match(/^\{\{([^0-9A-Za-z}]+)\}\}$/);
+      if (m) {
+        var t = curLines.join("\n").trim();
+        if (t) sections.push({ type: curType, text: t });
+        curType = m[1]; curLines = [];
+      } else {
+        curLines.push(lines[i]);
+      }
+    }
+    var last = curLines.join("\n").trim();
+    if (last || !sections.length) sections.push({ type: curType, text: last });
+    return sections;
+  }
+
+  // 「リード文」セクションは独立したセクションにせず、直後のセクションへ統合する
+  // （太字・字下げなし @@** ** で先頭に付け、空行を1つ挟んで元のセクション内容を続ける）。
+  // 連続する「リード文」はまとめて統合。直後にセクションが無いまま終わる場合はデータを失わないよう
+  // 「リード文」のまま残す。登録・取り込み保存時（settings.js）と表示・印刷・コーパス分析時
+  // （viewer.js）の両方で使う共通ロジック。
+  function mergeLeadSections(sections) {
+    var out = [], pendingLead = [];
+    (sections || []).forEach(function (sec) {
+      if (sec.type === "リード文") {
+        var t = (sec.text || "").trim();
+        if (t) pendingLead.push(t);
+        return;
+      }
+      if (pendingLead.length) {
+        var leadBlock = pendingLead.map(function (block) {
+          return block.split("\n").map(function (line) {
+            var l = line.trim();
+            return l ? "@@**" + l + "**" : "";
+          }).join("\n");
+        }).join("\n\n");
+        var body = sec.text || "";
+        out.push({ type: sec.type, text: body ? (leadBlock + "\n\n" + body) : leadBlock });
+        pendingLead = [];
+      } else {
+        out.push(sec);
+      }
+    });
+    if (pendingLead.length) out.push({ type: "リード文", text: pendingLead.join("\n\n") });
+    return out;
+  }
+
+  // 「全訳」セクション冒頭の《タイトル》を抽出（問題種別「長文」の一覧表示用。無ければ空文字）
+  function extractZenyakuTitle(text) {
+    var zenyaku = parseSections(text).filter(function (s) { return s.type === "全訳"; })[0];
+    if (!zenyaku) return "";
+    var lines = (zenyaku.text || "").split("\n");
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i].trim();
+      if (!l) continue;
+      var m = l.match(/^《([^》]+)》/);
+      return m ? m[1] : "";
+    }
+    return "";
+  }
+
+  function setImageBase(b) { imageBase = String(b || ""); }
+  global.Markup = {
+    render: render, strip: strip, escape: esc, parseSections: parseSections,
+    mergeLeadSections: mergeLeadSections, extractZenyakuTitle: extractZenyakuTitle,
+    setImageBase: setImageBase
+  };
+})(window);
