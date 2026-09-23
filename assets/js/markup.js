@@ -298,6 +298,9 @@
     return { html: h, next: idx };
   }
 
+  // 発話行の先頭にある話者ラベル。一般的な設問見出しは除外する。
+  var SPEAKER = /^(?!(?:Question|Answer|Note|Example|Source|Instructions|Directions|Explanation):)((?:[A-Z]|(?:Mr|Mrs|Ms|Dr|Prof)\.\s+[A-Z][a-z]+|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}))(:)/;
+
   // テキスト全体 → { html, footnotes }
   // 段落先頭の [1] [2] は全セクションで段落番号バッジに変換する。
   // opts.paraNum=true（本文・和訳セクション）のときは、さらにバッジの無い段落先頭に字下げを付ける。
@@ -367,6 +370,8 @@
         line = line.replace(/^\s*@@\s?/, "");
         trimmed = line.trim();
       }
+      var speaker = trimmed.match(SPEAKER);
+      if (speaker) noIndent = true;
       // 字下げ：本文・和訳ではバッジの無い「英字始まり」の段落先頭のみ字下げ
       // （日本語の指示文などは左寄せにする）。それ以外のセクションは英語大文字始まりのみ。
       // 引用符（" ' " '）で始まる段落も、直後が英字なら英文段落とみなし字下げする。
@@ -375,7 +380,11 @@
       var indent = (opts && opts.zenyaku) ? false :
         (!noIndent && paraStart && (paraNum ? (!badgeNum && /^["'“‘]?[A-Za-z]/.test(trimmed)) : /^["'“‘]?[A-Z]/.test(trimmed)));
       var prefix = badgeNum ? '<span class="para-badge">' + esc(badgeNum) + "</span>" : "";
-      html += '<span class="blk' + (indent ? " indent" : "") + '">' + prefix + inline(line, footnotes) + "</span>";
+      var content = speaker
+        ? '<strong class="dialogue-speaker">' + esc(speaker[1] + speaker[2]) + '</strong>' +
+          inline(trimmed.slice(speaker[0].length), footnotes)
+        : inline(line, footnotes);
+      html += '<span class="blk' + (indent ? " indent" : "") + (speaker ? " dialogue-line" : "") + '">' + prefix + content + "</span>";
       paraStart = false;
     }
 
