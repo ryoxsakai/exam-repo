@@ -694,6 +694,7 @@ body.sortlist-dragging-touch .sort-item * {
 .exam-doc { font-family: var(--serif); font-size: 16px; line-height: 1.95; color: var(--ink); }
 .exam-doc .blk { display: block; text-align: justify; }
 .exam-doc .blk.indent { text-indent: 1.5em; }
+.exam-doc .blk.dialogue-line { text-indent: 0; }
 /* 1行目インデントは本文セクションのみ。それ以外（設問・解答・解説・全訳・問題）は無効 */
 .exam-doc.no-indent .blk.indent { text-indent: 0; }
 .em-dash { letter-spacing: -.15em; }
