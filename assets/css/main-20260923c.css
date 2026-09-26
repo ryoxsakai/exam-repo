@@ -739,6 +739,8 @@ body.sortlist-dragging-touch .sort-item * {
 /* 中身が空でもテキストのベースラインを確保し、文字入りと縦位置を揃える
    （ゼロ幅スペース。空の inline-flex はベースラインが下端になり上に浮くため） */
 .blank-badge::before { content: "\200B"; }
+/* 空所の直後に続く閉じ括弧の字面を、バッジの枠へ寄せる */
+.blank-close { display: inline-block; margin-left: -.3em; }
 /* [[-- --]] [[--A--]] … 通常空所の3倍幅の空欄。中身の空白を保持（pre） */
 .blank-badge-wide { width: 12em; white-space: pre; }
 /* 段落番号バッジ：桁数によらず正方形にし、2桁の字間を詰める */
