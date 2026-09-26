@@ -7,6 +7,7 @@
      ##語::訳##     … 脚注（語注）。語中の ^ は注のみ直前文字を小文字化（M^isdiagnosis → 本文Misdiagnosis/注misdiagnosis）
      ==語== :色     … ハイライト（色: yellow/blue/red/purple/pink/green/aqua）
      __語__         … 下線
+     ~~~語~~~       … 波線
      **語**         … 太字
      ~~x~~          … 下付き
      ^^x^^          … 上付き
@@ -193,6 +194,11 @@
       // __下線__
       if ((m = rem.match(/^__([^_]+)__/))) {
         out += "<u>" + inline(m[1], footnotes) + "</u>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ~~~波線~~~（下付き ~~x~~ より先に判定）
+      if ((m = rem.match(/^~~~([^~]+)~~~/))) {
+        out += '<span class="wavy-underline">' + inline(m[1], footnotes) + "</span>";
         rem = rem.slice(m[0].length); continue;
       }
       // ~~下付き~~
@@ -419,6 +425,7 @@
     t = t.replace(/==([^=]+)==/g, "$1");            // ハイライト
     t = t.replace(/__([^_]+)__/g, "$1");            // 下線
     t = t.replace(/\*\*([^*]+)\*\*/g, "$1");       // 太字
+    t = t.replace(/~~~([^~]+)~~~/g, "$1");       // 波線
     t = t.replace(/~~([^~]+)~~/g, "$1");            // 下付き
     t = t.replace(/\^\^([^^]+)\^\^/g, "$1");        // 上付き
     t = t.replace(/\(\(([^)]+)\)\)/g, " ");         // 選択肢ラベル
