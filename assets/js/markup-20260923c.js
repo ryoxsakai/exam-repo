@@ -124,7 +124,11 @@
           out += '<span class="blank-badge">' + esc(m[1]) + "</span>";
         }
         rem = rem.slice(m[0].length);
-        if (rem.length && !/^[\s.,;:!?\]）」』】。、！？]/.test(rem)) out += " ";
+        // 括弧で囲んだ空所 ([[3]]) は閉じ括弧をバッジの直後へ寄せる。
+        if (rem[0] === ")" || rem[0] === "）") {
+          out += '<span class="blank-close">' + rem[0] + "</span>";
+          rem = rem.slice(1);
+        } else if (rem.length && !/^[\s.,;:!?\]）」』】。、！？]/.test(rem)) out += " ";
         continue;
       }
       // [N] 段落番号バッジ（行中。空所 [[ ]] とは別の単角括弧。[[ は上で処理済み）
