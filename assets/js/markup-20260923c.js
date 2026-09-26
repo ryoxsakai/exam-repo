@@ -361,7 +361,7 @@
       // ブロック化せず通常行として描画し、先頭も含めて全てインライン丸ラベルにする。
       var cm = line.match(/^\s*\(\(([^)]+)\)\)\s*([\s\S]*)/);
       var choiceCount = (line.match(/\(\([^)]+\)\)/g) || []).length;
-      if (cm && choiceCount === 1) {
+      if (cm && choiceCount === 1 && !/^\(\([^)]+\)\)(?:__[^_]+__|~~(?!~)[^~]+~~)/.test(trimmed)) {
         html += '<div class="answer-choice">' + choiceLabelHtml(cm[1], "answer-choice-label") +
                 '<span class="answer-choice-text">' +
                 (cm[2] ? inline(cm[2], footnotes) : "") + "</span></div>";
