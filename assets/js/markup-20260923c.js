@@ -299,7 +299,7 @@
   }
 
   // 発話行の先頭にある話者ラベル。一般的な設問見出しは除外する。
-  var SPEAKER = /^(?!(?:Question|Answer|Note|Example|Source|Instructions|Directions|Explanation):)((?:[A-Z]|(?:Mr|Mrs|Ms|Dr|Prof)\.\s+[A-Z][a-z]+|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}))(:)/;
+  var SPEAKER = /^(?!(?:Question|Answer|Note|Example|Source|Instructions|Directions|Explanation):)((?:[A-Z]|(?:Mr|Mrs|Ms|Dr|Prof)\.\s+[A-Z][a-z]+|[A-Z][a-z]+(?:\s+(?:[A-Z][a-z]+|[A-Z]|\d+)){0,3}))(:)/;
 
   // テキスト全体 → { html, footnotes }
   // 段落先頭の [1] [2] は全セクションで段落番号バッジに変換する。
