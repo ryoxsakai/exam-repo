@@ -756,6 +756,8 @@ body.sortlist-dragging-touch .sort-item * {
 .para-badge-inline { margin-right: 0; color: #000; }
 /* ~~~語句~~~ は下付き・通常の下線と区別できる波線で表示する */
 .exam-doc .wavy-underline { text-decoration-line: underline; text-decoration-style: wavy; text-decoration-thickness: 1px; text-underline-offset: .14em; }
+.exam-doc .underline-marker { font-size: .72em; line-height: 0; vertical-align: sub; margin-right: 0; }
+.exam-doc .underline-marker .choice-inline { margin: 0; font-size: 1em; vertical-align: baseline; }
 /* 出典表記（右寄せ・グレー・小） */
 .exam-doc .cite { display: block; text-align: right; color: #94a3b8; font-size: .8em; text-indent: 0; }
 /* 本文の字数表示（注釈の下・右寄せ・グレー・小） */
