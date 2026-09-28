@@ -1390,7 +1390,7 @@
         return examSections(q.problem_text).some(function (s) { return s.type === "本文"; });
       });
       var render = function () {
-        if (hasBody) ensureLongLevels();
+        if (hasBody && state.corpus) ensureLongLevels();
         var body = "";
         questions.forEach(function (q) {
           var fields = [];
@@ -1407,12 +1407,7 @@
         el("exam-modal-body").innerHTML = body || '<div class="empty">大問が登録されていません。</div>';
         buildExamShortcuts();
       };
-      if (hasBody && !state.longLevel) {
-        (state.corpus ? Promise.resolve() : Api.getCorpus().then(function (d) { state.corpus = d.questions || []; }, function () {}))
-          .then(render, render);
-      } else {
-        render();
-      }
+      render();
     }).catch(function (e) { el("exam-modal-body").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
   }
 
