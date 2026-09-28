@@ -1408,6 +1408,7 @@ export default {
         const year     = url.searchParams.get("year") || "";
         const schedule = url.searchParams.get("schedule") || "";
         const category = url.searchParams.get("category") || "";
+        const includeTitles = url.searchParams.get("includeTitles") !== "0";
 
         // 大問ごとに1行返す（exam_id + question_number で一意）
         let sql = `
@@ -1440,7 +1441,9 @@ export default {
         // D1(SQLite) はバインド変数数の上限が100（通常のSQLiteの既定999よりかなり小さい）で、
         // 101個目をbindすると "D1_ERROR: too many SQL variables" になることを実機で確認済み。
         // 余裕を持って90件ずつに分割する。
-        const longIds = rawRows.filter((r) => r.category === "長文").map((r) => r.question_id as number);
+        const longIds = includeTitles
+          ? rawRows.filter((r) => r.category === "長文").map((r) => r.question_id as number)
+          : [];
         const titleMap = new Map<number, string>();
         const CHUNK = 90;
         for (let i = 0; i < longIds.length; i += CHUNK) {
