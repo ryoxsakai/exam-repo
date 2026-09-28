@@ -492,7 +492,7 @@
     var searchP = Api.search({
       word: state.filter.word, universityName: state.filter.universityName,
       year: state.filter.year, schedule: state.filter.schedule,
-      category: state.filter.category
+      category: state.filter.category, includeTitles: 0
     });
     var corpusP = !needWords ? Promise.resolve(null)
       : (state.corpus ? Promise.resolve({ questions: state.corpus }) : Api.getCorpus());
