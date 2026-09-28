@@ -7,6 +7,7 @@
      ##語::訳##     … 脚注（語注）。語中の ^ は注のみ直前文字を小文字化（M^isdiagnosis → 本文Misdiagnosis/注misdiagnosis）
      ==語== :色     … ハイライト（色: yellow/blue/red/purple/pink/green/aqua）
      __語__         … 下線
+     ~~語~~         … 波線（直前の (1) / ((1)) は下付き）
      **語**         … 太字
      ~~x~~          … 下付き
      ^^x^^          … 上付き
@@ -124,7 +125,11 @@
           out += '<span class="blank-badge">' + esc(m[1]) + "</span>";
         }
         rem = rem.slice(m[0].length);
-        if (rem.length && !/^[\s.,;:!?\]）」』】。、！？]/.test(rem)) out += " ";
+        // 括弧で囲んだ空所 ([[3]]) は閉じ括弧をバッジの直後へ寄せる。
+        if (rem[0] === ")" || rem[0] === "）") {
+          out += '<span class="blank-close">' + rem[0] + "</span>";
+          rem = rem.slice(1);
+        } else if (rem.length && !/^[\s.,;:!?\]）」』】。、！？]/.test(rem)) out += " ";
         continue;
       }
       // [N] 段落番号バッジ（行中。空所 [[ ]] とは別の単角括弧。[[ は上で処理済み）
@@ -191,9 +196,21 @@
         out += "<u>" + inline(m[1], footnotes) + "</u>";
         rem = rem.slice(m[0].length); continue;
       }
-      // ~~下付き~~
+      // 下線・波線に隣接する番号は下付き。旧 ~~(1)~~ 記法も読み込み時に解釈する。
+      if ((m = rem.match(/^(?:~~(\([^~)]*\))~~|(\([^)]*\))|\(\(([^)]+)\)\))[ \t]*(?=__[^_]+__|~~(?!~)[^~]+~~)/))) {
+        var marker = m[1] || m[2];
+        out += '<sub class="underline-marker">' +
+          (m[3] ? choiceLabelHtml(m[3], "choice-inline") : esc(marker)) + "</sub>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ~~~ の旧波線も既存データの表示用に保持する。
+      if ((m = rem.match(/^~~~([^~]+)~~~/))) {
+        out += '<span class="wavy-underline">' + inline(m[1], footnotes) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ~~波線~~
       if ((m = rem.match(/^~~([^~]+)~~/))) {
-        out += "<sub>" + esc(m[1]) + "</sub>";
+        out += '<span class="wavy-underline">' + inline(m[1], footnotes) + "</span>";
         rem = rem.slice(m[0].length); continue;
       }
       // ^^上付き^^
@@ -303,7 +320,7 @@
   }
 
   // 発話行の先頭にある話者ラベル。一般的な設問見出しは除外する。
-  var SPEAKER = /^(?!(?:Question|Answer|Note|Example|Source|Instructions|Directions|Explanation):)((?:[A-Z]|(?:Mr|Mrs|Ms|Dr|Prof)\.\s+[A-Z][a-z]+|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}))(:)/;
+  var SPEAKER = /^(?!(?:Question|Answer|Note|Example|Source|Instructions|Directions|Explanation):)((?:[A-Z]|(?:Mr|Mrs|Ms|Dr|Prof)\.\s+[A-Z][a-z]+|[A-Z][a-z]+(?:\s+(?:[A-Z][a-z]+|[A-Z]|\d+)){0,3}))(:)/;
 
   // テキスト全体 → { html, footnotes }
   // 段落先頭の [1] [2] は全セクションで段落番号バッジに変換する。
@@ -348,7 +365,7 @@
       // ブロック化せず通常行として描画し、先頭も含めて全てインライン丸ラベルにする。
       var cm = line.match(/^\s*\(\(([^)]+)\)\)\s*([\s\S]*)/);
       var choiceCount = (line.match(/\(\([^)]+\)\)/g) || []).length;
-      if (cm && choiceCount === 1) {
+      if (cm && choiceCount === 1 && !/^\(\([^)]+\)\)(?:__[^_]+__|~~(?!~)[^~]+~~)/.test(trimmed)) {
         html += '<div class="answer-choice">' + choiceLabelHtml(cm[1], "answer-choice-label") +
                 '<span class="answer-choice-text">' +
                 (cm[2] ? inline(cm[2], footnotes) : "") + "</span></div>";
@@ -419,7 +436,8 @@
     t = t.replace(/==([^=]+)==/g, "$1");            // ハイライト
     t = t.replace(/__([^_]+)__/g, "$1");            // 下線
     t = t.replace(/\*\*([^*]+)\*\*/g, "$1");       // 太字
-    t = t.replace(/~~([^~]+)~~/g, "$1");            // 下付き
+    t = t.replace(/~~~([^~]+)~~~/g, "$1");       // 旧波線
+    t = t.replace(/~~([^~]+)~~/g, "$1");            // 波線
     t = t.replace(/\^\^([^^]+)\^\^/g, "$1");        // 上付き
     t = t.replace(/\(\(([^)]+)\)\)/g, " ");         // 選択肢ラベル
     t = t.replace(/<[^>]*>/g, " ");                 // HTML タグ
