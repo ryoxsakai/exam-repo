@@ -1,4 +1,4 @@
-import { handleMcpRoute, type McpEnv } from "./mcp";
+import { handleMcpRoute, safeEqual, type McpEnv } from "./mcp";
 
 export interface Env extends McpEnv {
   DB: D1Database;
@@ -425,17 +425,10 @@ async function ensureUserSettingsPrintTitlesColumn(env: Env) {
 }
 
 // ───────────────────────────────────────────────────────────────────
-// 上の ensure*/fix* 系マイグレーション・自動修復はすべて冪等だが、これまで
-// ほぼ毎リクエスト実行しており、問題文の読み込み（/api/exams/:id, /api/corpus,
-// /api/search 等）を含む全APIで無駄な D1 往復（ALTER TABLE の試行や
-// チェック用SELECT）が発生していた。Cloudflare Workers は同じ isolate が
-// 複数リクエストにまたがって再利用されるため、モジュールスコープの
-// フラグで「この isolate では実行済み」を憶えておき、以降のリクエストでは
-// スキップする（isolate がリサイクルされれば自然にリセットされ再実行される
-// ため、マイグレーション漏れの心配はない）。
+// 後方互換マイグレーションは isolate ごとに一度だけ実行する。
+// 全件走査を伴う修復は通常アクセスから分離し、認証済みの管理APIからのみ実行する。
 // ───────────────────────────────────────────────────────────────────
 let migrationsDone = false;
-let repairsDone = false;
 
 async function ensureMigrations(env: Env) {
   if (migrationsDone) return;
@@ -455,13 +448,11 @@ async function ensureMigrations(env: Env) {
   migrationsDone = true;
 }
 
-async function ensureRepairs(env: Env) {
-  if (repairsDone) return;
+async function runRepairs(env: Env) {
   await fixZeroQuestionNumbers(env);
   await fixOrphanedRecords(env);
   await fixLongReadingCategory(env);
   await mergeUniversityAliases(env);
-  repairsDone = true;
 }
 
 // 指定 id が「そのユーザーの、中に要素を入れられるフォルダ」か。
@@ -1026,10 +1017,19 @@ export default {
         return json({ key, path: "/api/image/" + key }, 201, origin);
       }
 
-      // 冪等なマイグレーション・自動修復をこの1箇所にまとめて実行（isolate内では2回目以降スキップ）。
-      // これより下のルートは、この時点で全てのカラム/テーブルが揃っている前提でよい。
+      // 全件走査を伴う整備は、管理者が明示的に起動したときだけ実行する。
+      if (path === "/api/maintenance/repairs" && request.method === "POST") {
+        const supplied = request.headers.get("Authorization")?.match(/^Bearer (\S+)$/)?.[1];
+        if (!env.EXAM_API_KEY || !supplied || !(await safeEqual(supplied, env.EXAM_API_KEY))) {
+          return json({ error: "Unauthorized" }, 401, origin);
+        }
+        await ensureMigrations(env);
+        await runRepairs(env);
+        return json({ repaired: true }, 200, origin);
+      }
+
+      // 後方互換マイグレーションのみ通常アクセスで確認する。
       await ensureMigrations(env);
-      await ensureRepairs(env);
 
       // ── GET /api/universities ──────────────────────────────────────
       if (path === "/api/universities" && request.method === "GET") {

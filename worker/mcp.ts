@@ -46,7 +46,7 @@ async function sign(env: McpEnv, value: string) {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(env.EXAM_SESSION_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return toBase64Url(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value))));
 }
-async function safeEqual(left: string, right: string) {
+export async function safeEqual(left: string, right: string) {
   const digest = async (value: string) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
   const [a, b] = await Promise.all([digest(left), digest(right)]); let diff = 0;
   for (let i = 0; i < a.length; i += 1) diff |= a[i] ^ b[i];
