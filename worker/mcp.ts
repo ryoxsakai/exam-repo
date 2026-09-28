@@ -1,3 +1,5 @@
+import { safeRefreshUniversityIndexForExam } from "./university-index";
+
 export interface McpEnv {
   DB: D1Database;
   IMAGES?: R2Bucket;
@@ -1748,9 +1750,11 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
     ];
     const results = await env.DB.batch(statements);
     if (d1Changes(results[0]) !== 1 || d1Changes(results[1]) !== 1 || d1Changes(results[2]) !== 1) throw new Error("Correction was not applied because the audited state no longer matched");
+    const indexUpdated = await safeRefreshUniversityIndexForExam(env, Number(audit.exam_id));
 
     return {
       success: true,
+      index_updated: indexUpdated,
       change_id: changeId,
       audit_id: auditId,
       exam_id: Number(audit.exam_id),
@@ -1845,9 +1849,11 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
       try { await env.IMAGES.delete(imageKey); } catch { throw new Error("Image was not attached and the unused R2 object could not be removed"); }
       throw new Error("Image was not attached because the audited state no longer matched");
     }
+    const indexUpdated = await safeRefreshUniversityIndexForExam(env, Number(audit.exam_id));
 
     return {
       success: true,
+      index_updated: indexUpdated,
       change_id: changeId,
       audit_id: auditId,
       exam_id: Number(audit.exam_id),

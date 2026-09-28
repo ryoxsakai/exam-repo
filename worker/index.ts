@@ -1,4 +1,5 @@
 import { handleMcpRoute, safeEqual, type McpEnv } from "./mcp";
+import { extractZenyakuTitle, readUniversityIndex, safeRefreshUniversityIndex, invalidateAllUniversityIndexes } from "./university-index";
 
 export interface Env extends McpEnv {
   DB: D1Database;
@@ -204,34 +205,6 @@ function normalizeUniversityName(name: string): string {
   n = n.trim();
   // 全部消えてしまう異常時は元の名前を返す
   return n || (name || "").trim();
-}
-
-// problem_text から「全訳」セクション冒頭の《タイトル》を抽出（問題種別「長文」の一覧表示用）。
-// フロントの Markup.parseSections と同じ区切りルール（{{セクション名}} 行。英数字を含むものは無視）。
-function extractZenyakuTitle(problemText: string): string {
-  const lines = (problemText || "").split("\n");
-  let curType = "問題";
-  let curLines: string[] = [];
-  let zenyakuLines: string[] | null = null;
-  for (const raw of lines) {
-    const m = raw.trim().match(/^\{\{([^0-9A-Za-z}]+)\}\}$/);
-    if (m) {
-      if (curType === "全訳" && zenyakuLines === null) zenyakuLines = curLines;
-      curType = m[1];
-      curLines = [];
-    } else {
-      curLines.push(raw);
-    }
-  }
-  if (curType === "全訳" && zenyakuLines === null) zenyakuLines = curLines;
-  if (!zenyakuLines) return "";
-  for (const raw of zenyakuLines) {
-    const l = raw.trim();
-    if (!l) continue;
-    const tm = l.match(/^《([^》]+)》/);
-    return tm ? tm[1] : "";
-  }
-  return "";
 }
 
 // 孤立レコードの自動削除: 親が存在しない questions / exams / favorites / favorite_copies を除去する。
@@ -453,6 +426,7 @@ async function runRepairs(env: Env) {
   await fixOrphanedRecords(env);
   await fixLongReadingCategory(env);
   await mergeUniversityAliases(env);
+  await mergeDuplicateUniversities(env);
 }
 
 // 指定 id が「そのユーザーの、中に要素を入れられるフォルダ」か。
@@ -682,12 +656,13 @@ async function handleBulkReplace(request: Request, env: Env, origin: string | nu
   if (!rules.length) return json({ message: "置換ルールがありません。" }, 400, origin);
 
   const { results } = await env.DB.prepare(
-    "SELECT id, problem_text, answer_text, commentary_text FROM questions"
-  ).all<{ id: number; problem_text: string; answer_text: string; commentary_text: string }>();
+    "SELECT q.id, q.problem_text, q.answer_text, q.commentary_text, e.university_id FROM questions q LEFT JOIN exams e ON e.id = q.exam_id"
+  ).all<{ id: number; problem_text: string; answer_text: string; commentary_text: string; university_id: number | null }>();
 
   let occurrences = 0;
   let changedRows = 0;
   const updates: { id: number; p: string; a: string; c: string }[] = [];
+  const affectedUniversities = new Set<number>();
   for (const row of results) {
     const rp = applyReplacements(row.problem_text || "", rules);
     const ra = applyReplacements(row.answer_text || "", rules);
@@ -697,6 +672,7 @@ async function handleBulkReplace(request: Request, env: Env, origin: string | nu
       occurrences += total;
       changedRows += 1;
       updates.push({ id: row.id, p: rp.text, a: ra.text, c: rc.text });
+      if (row.university_id !== null) affectedUniversities.add(row.university_id);
     }
   }
 
@@ -709,6 +685,7 @@ async function handleBulkReplace(request: Request, env: Env, origin: string | nu
       "UPDATE questions SET problem_text = ?, answer_text = ?, commentary_text = ?, updated_at = datetime('now') WHERE id = ?"
     ).bind(u.p, u.a, u.c, u.id).run();
   }
+  for (const universityId of affectedUniversities) await safeRefreshUniversityIndex(env, universityId);
   return json({ occurrences, changedRows, total: results.length }, 200, origin);
 }
 
@@ -1025,7 +1002,29 @@ export default {
         }
         await ensureMigrations(env);
         await runRepairs(env);
+        await invalidateAllUniversityIndexes(env);
         return json({ repaired: true }, 200, origin);
+      }
+
+      // 管理者が大学別目次を明示的に再構築する。外部から直接 D1 を変更した場合の復旧用。
+      const rebuildIndexMatch = path.match(/^\/api\/maintenance\/university-index\/(\d+)$/);
+      if (rebuildIndexMatch && request.method === "POST") {
+        const supplied = request.headers.get("Authorization")?.match(/^Bearer (\S+)$/)?.[1];
+        if (!env.EXAM_API_KEY || !supplied || !(await safeEqual(supplied, env.EXAM_API_KEY))) {
+          return json({ error: "Unauthorized" }, 401, origin);
+        }
+        await ensureMigrations(env);
+        const universityId = Number(rebuildIndexMatch[1]);
+        const indexUpdated = await safeRefreshUniversityIndex(env, universityId);
+        return json({ university_id: universityId, index_updated: indexUpdated }, indexUpdated ? 200 : 503, origin);
+      }
+
+      // 閲覧用の大学別目次。初回だけ該当大学を D1 から作り、以後は R2 の JSON を返す。
+      const universityIndexMatch = path.match(/^\/api\/university-index\/(\d+)$/);
+      if (universityIndexMatch && request.method === "GET") {
+        const index = await readUniversityIndex(env, Number(universityIndexMatch[1]));
+        if (!index) return json({ error: "University not found" }, 404, origin);
+        return json(index, 200, origin);
       }
 
       // 後方互換マイグレーションのみ通常アクセスで確認する。
@@ -1033,7 +1032,6 @@ export default {
 
       // ── GET /api/universities ──────────────────────────────────────
       if (path === "/api/universities" && request.method === "GET") {
-        await mergeDuplicateUniversities(env);
         const { results } = await env.DB.prepare(
           "SELECT * FROM universities WHERE hidden = 0 ORDER BY name ASC"
         ).all();
@@ -1122,7 +1120,6 @@ export default {
       // ── PUT /api/universities/:id（大学名のリネーム・よみがな更新） ───
       const putUniMatch = path.match(/^\/api\/universities\/(\d+)$/);
       if (putUniMatch && request.method === "PUT") {
-        await mergeDuplicateUniversities(env);
         const uniId = Number(putUniMatch[1]);
         const body = await request.json<{ name?: string; reading?: string; abbreviation?: string }>().catch(() => ({}));
         const name = (body.name || "").trim();
@@ -1140,11 +1137,13 @@ export default {
           await env.DB.prepare(
             "UPDATE universities SET name = ?, reading = ?, abbreviation = ? WHERE id = ?"
           ).bind(name, reading, abbreviation, uniId).run();
+          await safeRefreshUniversityIndex(env, uniId);
           return json({ success: true, id: uniId, name, reading, abbreviation }, 200, origin);
         }
         await env.DB.prepare(
           "UPDATE universities SET name = ?, reading = ? WHERE id = ?"
         ).bind(name, reading, uniId).run();
+        await safeRefreshUniversityIndex(env, uniId);
         return json({ success: true, id: uniId, name, reading }, 200, origin);
       }
 
@@ -1162,6 +1161,7 @@ export default {
           );
         }
         await env.DB.prepare("DELETE FROM universities WHERE id = ?").bind(uniId).run();
+        await safeRefreshUniversityIndex(env, uniId);
         return json({ success: true }, 200, origin);
       }
 
@@ -1227,6 +1227,7 @@ export default {
           if (created) createdQuestions.push(created);
         }
 
+        await safeRefreshUniversityIndex(env, uni.id);
         return json({ exam: { ...exam, university_name: universityName }, questions: createdQuestions }, 201, origin);
       }
 
@@ -1255,6 +1256,8 @@ export default {
       if (delQMatch && request.method === "DELETE") {
         const examId = Number(delQMatch[1]);
         const questionNumber = Number(delQMatch[2]);
+        const exam = await env.DB.prepare("SELECT university_id FROM exams WHERE id = ?")
+          .bind(examId).first<{ university_id: number }>();
         await env.DB.prepare("DELETE FROM questions WHERE exam_id = ? AND question_number = ?")
           .bind(examId, questionNumber).run();
         // 試験に大問が0件になったら試験ごと削除
@@ -1263,6 +1266,7 @@ export default {
         if (remaining && remaining.cnt === 0) {
           await env.DB.prepare("DELETE FROM exams WHERE id = ?").bind(examId).run();
         }
+        if (exam) await safeRefreshUniversityIndex(env, exam.university_id);
         return json({ success: true }, 200, origin);
       }
 
@@ -1270,8 +1274,11 @@ export default {
       const examIdMatch = path.match(/^\/api\/exams\/(\d+)$/);
       if (examIdMatch && request.method === "DELETE") {
         const examId = Number(examIdMatch[1]);
+        const exam = await env.DB.prepare("SELECT university_id FROM exams WHERE id = ?")
+          .bind(examId).first<{ university_id: number }>();
         await env.DB.prepare("DELETE FROM questions WHERE exam_id = ?").bind(examId).run();
         await env.DB.prepare("DELETE FROM exams WHERE id = ?").bind(examId).run();
+        if (exam) await safeRefreshUniversityIndex(env, exam.university_id);
         return json({ success: true }, 200, origin);
       }
 
@@ -1360,6 +1367,8 @@ export default {
         const updated = await env.DB.prepare(
           "SELECT e.id, e.year, e.schedule, u.name AS university_name FROM exams e JOIN universities u ON e.university_id = u.id WHERE e.id = ?"
         ).bind(examId).first();
+        await safeRefreshUniversityIndex(env, targetUniId);
+        if (existing.university_id !== targetUniId) await safeRefreshUniversityIndex(env, existing.university_id);
         return json({ exam: updated, merged }, 200, origin);
       }
 

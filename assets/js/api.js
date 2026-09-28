@@ -41,6 +41,7 @@
     getConfig:        function () { return call("/api/config"); },
     updateConfig:     function (data) { return call("/api/config", { method: "PUT", body: JSON.stringify(data) }); },
     getUniversities:  function () { return call("/api/universities"); },
+    getUniversityIndex: function (id) { return call("/api/university-index/" + id); },
     updateUniversity: function (id, name, reading, abbreviation) {
       var b = { name: name, reading: reading || "" };
       if (abbreviation !== undefined) b.abbreviation = abbreviation || "";
