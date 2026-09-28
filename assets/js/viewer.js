@@ -44,7 +44,8 @@
     corpus:    { id: "corpus",    label: "コーパス検索", icon: "fa-language" },
     print:     { id: "print",     label: "問題印刷",   icon: "fa-print" }
   };
-  var DEFAULT_ORDER = ["tree", "search", "favorites", "corpus", "print"];
+  // コーパス検索は一時的に非表示。保存済みのタブ順も Store.getTabOrder がここに合わせて除外する。
+  var DEFAULT_ORDER = ["tree", "search", "favorites", "print"];
 
   // 状態
   var state = {
