@@ -1385,7 +1385,7 @@
       state.examView = { examId: examId, qnum: qnum, questions: questions };
       el("exam-modal-title").textContent = title;
 
-      // 本文があり難易度帯の基準（四分位）が未取得なら、コーパスを取り込んでから描画
+      // 問題表示時に全コーパスを取得せず、取得済みなら相対難易度を使う。
       var hasBody = questions.some(function (q) {
         return examSections(q.problem_text).some(function (s) { return s.type === "本文"; });
       });
@@ -1521,7 +1521,7 @@
       var d = Difficulty.detailForText(metricText === undefined ? text : metricText);
       var band = Difficulty.band(d.score, state.longLevel ? state.longLevel.cutoffs : null);
       wc = '<div class="word-count">(' + d.words + " words)" +
-        (d.score ? ' <span class="level-inline" title="本文の相対難易度（合成スコア）">' + esc(d.score.toFixed(1)) + " " + esc(band) + "</span>" : "") +
+        (d.score ? ' <span class="level-inline" title="本文の難易度（合成スコア' + (state.longLevel ? '・登録済み長文との比較' : '・固定基準') + '）">' + esc(d.score.toFixed(1)) + " " + esc(band) + "</span>" : "") +
         (d.fk !== null ? ' <span class="fk-inline" title="Flesch–Kincaid Grade：本文の読みやすさの参考値。設問の難易度は含みません">FK ' + esc(d.fk.toFixed(1)) + '</span>' : '') +
         "</div>";
     }
