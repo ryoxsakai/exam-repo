@@ -1771,7 +1771,7 @@
     if (label === "本文") {
       var d = sectionDifficulty(metricText === undefined ? text : metricText);
       wc = '<div class="word-count">(' + d.words + " words)" +
-        (d.score ? ' <span class="level-inline" title="本文の相対難易度（合成スコア）">' + esc(d.score.toFixed(1)) + " " + esc(d.band) + "</span>" : "") +
+        (d.score ? ' <span class="level-inline" title="本文の難易度（合成スコア' + (state.longLevel ? '・登録済み長文との比較' : '・固定基準') + '）">' + esc(d.score.toFixed(1)) + " " + esc(d.band) + "</span>" : "") +
         (d.fk !== null ? ' <span class="fk-inline" title="Flesch–Kincaid Grade：本文の読みやすさの参考値。設問の難易度は含みません">FK ' + esc(d.fk.toFixed(1)) + '</span>' : '') +
         "</div>";
     }
