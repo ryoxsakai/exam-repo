@@ -283,6 +283,13 @@
         renderPrintPreview();
       });
     }
+    if (el("pr-renumber")) {
+      el("pr-renumber").checked = Store.getPrintRenumber();
+      el("pr-renumber").addEventListener("change", function () {
+        Store.setPrintRenumber(el("pr-renumber").checked);
+        renderPrintPreview();
+      });
+    }
     if (el("pr-linenum")) {
       el("pr-linenum").checked = Store.getPrintLineNumbers();
       el("pr-linenum").addEventListener("change", function () {
@@ -1867,6 +1874,51 @@
     });
   }
 
+  // 印刷用のコピーだけを変換する。問題面で定義された番号を両面で共有し、
+  // 段落番号 [N]・選択肢 ((N))・URL・語注・出典の数字は触らない。
+  function renumberPrintSections(sections) {
+    var questions = {}, blanks = {}, questionCount = 0, blankCount = 0;
+    function protectedText(text, transform) {
+      var saved = [];
+      var safe = String(text || "").replace(/!\[[^\]]*\]\([^\n]*?\)|https?:\/\/[^\s<>]+|##[\s\S]*?##|!!!![\s\S]*?!!!!|`[^`\n]*`/g, function (m) {
+        saved.push(m); return "\u0001" + (saved.length - 1) + "\u0002";
+      });
+      return transform(safe).replace(/\u0001(\d+)\u0002/g, function (_, i) { return saved[Number(i)]; });
+    }
+    function add(map, n, blank) {
+      n = String(Number(n));
+      if (!Object.prototype.hasOwnProperty.call(map, n)) map[n] = blank ? ++blankCount : ++questionCount;
+    }
+    sections.forEach(function (sec) {
+      if (isAnswerSide(sec.type)) return;
+      protectedText(sec.text, function (text) {
+        text.replace(/\{\{\s*(?:問\s*)?(\d+)\s*\}\}|^\s*(?:@@)?(?:\*\*)?問\s*(\d+)(?!\d)|^\s*(?:@@)?(?:\*\*)?(?:[（(](\d+)[）)]|(\d+)[.．、：:](?=\s|[^\d]))/gm, function (_, a, b, c, d) {
+          add(questions, a || b || c || d, false); return _;
+        });
+        text.replace(/\[\[\s*(?:--\s*)?(\d+)\s*(?:--)?\s*\]\]/g, function (_, n) { add(blanks, n, true); return _; });
+        return text;
+      });
+    });
+    function number(map, n) { var v = map[String(Number(n))]; return v == null ? n : String(v); }
+    return sections.map(function (sec) {
+      var copy = Object.assign({}, sec);
+      copy.text = protectedText(sec.text, function (text) {
+        text = text.replace(/(\{\{\s*(?:問\s*)?)(\d+)(\s*\}\})/g, function (_, a, n, b) { return a + number(questions, n) + b; });
+        text = text.replace(/(\[\[\s*(?:--\s*)?)(\d+)(\s*(?:--)?\s*\]\])/g, function (_, a, n, b) {
+          return a + number(Object.keys(blanks).length ? blanks : questions, n) + b;
+        });
+        text = text.replace(/(^|[^大])問(\s*)(\d+)(?!\d)/g, function (_, a, space, n) { return a + "問" + space + number(questions, n); });
+        // 括弧と区切り付きの行頭番号。選択肢マークアップの二重括弧は一致しない。
+        text = text.replace(/^(\s*(?:@@)?(?:\*\*)?)(?:([（(])(\d+)([）)])|(\d+)([.．、：:])(?=\s|[^\d]))/gm, function (_, prefix, a, n, b, bare, sep) {
+          var map = Object.keys(questions).length ? questions : blanks;
+          return prefix + (a ? a + number(map, n) + b : number(map, bare) + sep);
+        });
+        return text;
+      });
+      return copy;
+    });
+  }
+
   function buildPrintHtml(ex, opts, useDraftTitles) {
     var html = "";
     if (opts.cover) {
@@ -1916,6 +1968,11 @@
     }
     var qs = printQuestions(ex);
     var items = printItems(ex);
+    var sectionsOf = {};
+    qs.forEach(function (q) {
+      var sections = questionSections(q);
+      sectionsOf[printQKey(q)] = opts.renumber ? renumberPrintSections(sections) : sections;
+    });
     // 通し番号は qs 内の位置に固定し、問題面と解答面で同じ大問が同じ番号になるようにする
     // （セクション見出しは番号を消費しない）
     var seqOf = {};
@@ -1933,7 +1990,7 @@
       items.forEach(function (it) {
         if (it.kind === "section") { pendingSection = it; return; }
         var q = it.q;
-        var secs = questionSections(q).filter(function (s) {
+        var secs = sectionsOf[printQKey(q)].filter(function (s) {
           return s.text && s.text.trim() && (isAnswerSide(s.type) === answerSide) && Store.isPrintSection(s.type);
         });
         if (!secs.length) return;
@@ -1972,6 +2029,7 @@
       sBreakA: el("pr-sbreak-a") ? el("pr-sbreak-a").checked : false,
       hideHeadQ: el("pr-hide-head-q") ? el("pr-hide-head-q").checked : false,
       hideHeadA: el("pr-hide-head-a") ? el("pr-hide-head-a").checked : false,
+      renumber: el("pr-renumber") ? el("pr-renumber").checked : false,
       qSubtitle: el("pr-qsubtitle") ? el("pr-qsubtitle").checked : false,
       lineNumbers: el("pr-linenum") ? el("pr-linenum").checked : false,
       writingLines: Store.getPrintWritingLines(),
@@ -3174,3 +3232,4 @@
   var global = window;
   document.addEventListener("DOMContentLoaded", init);
 })();
+

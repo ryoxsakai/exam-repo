@@ -32,6 +32,7 @@
     printHideHeadA: "exam_print_hide_head_a", // 「解答・解説」パート見出しを出さない
     printSBreakQ:  "exam_print_sbreak_q",    // 問題面でセクションごとに改ページする
     printSBreakA:  "exam_print_sbreak_a",    // 解答・解説面でセクションごとに改ページする
+    printRenumber: "exam_print_renumber",    // 印刷時だけ小問番号を大問ごとに1から振り直す
     printQSubtitle: "exam_print_qsubtitle",  // 大問見出しを「1. 2018 ○○ 前期 大問3」形式にする
     printWritingLines: "exam_print_writing_lines",
     printWritingSpace: "exam_print_writing_space",
@@ -340,6 +341,9 @@
     /* 問題印刷タブ: 大問見出しを「1. 2018 ○○ 前期 大問3」形式にする（既定は「大問3」だけ）。
        お気に入りフォルダの印刷では大問が複数の試験にまたがるため、この形式が既定で有効になる
        （viewer.js 側で判断。ここはユーザーが明示的に選んだ値の保存のみ）。 */
+    getPrintRenumber: function () { return read(KEYS.printRenumber, false) === true; },
+    setPrintRenumber: function (on) { write(KEYS.printRenumber, !!on); },
+
     getPrintQSubtitle: function () { return read(KEYS.printQSubtitle, false) === true; },
     setPrintQSubtitle: function (on) { write(KEYS.printQSubtitle, !!on); },
 
@@ -519,3 +523,4 @@
 
   global.Store = Store;
 })(window);
+

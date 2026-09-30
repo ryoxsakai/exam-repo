@@ -145,6 +145,8 @@
             <input type="checkbox" id="pr-hide-head-a"> <span>「解答・解説」ヘッダーを外す</span></label>
           <label class="check-inline" title="大問の見出しを「1. 2018 関西医科 前期 大問3」のように通し番号＋試験情報つきにします">
             <input type="checkbox" id="pr-qsubtitle"> <span>大問見出しに通し番号・試験情報を入れる</span></label>
+          <label class="check-inline" title="大問ごとに小問・空所番号を1から振り直し、解答・解説の対応番号にも反映します。元データは変更しません">
+            <input type="checkbox" id="pr-renumber"> <span>小問番号を1から振り直す</span></label>
           <label class="check-inline" title="本文セクションの左側に5行ごとの行番号を付けます（大問ごとに1から数え直します）">
             <input type="checkbox" id="pr-linenum"> <span>本文に5行ごとの行番号をつける</span></label>
           <label class="check-inline" title="英作文カテゴリの各大問の末尾に、四角で囲んだ罫線付きの解答スペースをつけます">
@@ -409,7 +411,7 @@
   <!-- Firebase Authentication（Googleログイン用。Firestore等は未使用） -->
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="assets/js/store.js?v=20260914a"></script>
+  <script src="assets/js/store.js?v=20261001b"></script>
   <script src="assets/js/auth.js?v=20260706a"></script>
   <script src="assets/js/api.js?v=20260922a"></script>
   <script src="assets/js/ui.js?v=20260726a"></script>
@@ -417,7 +419,8 @@
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260923a"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/viewer.js?v=20261001a"></script>
+  <script src="assets/js/viewer.js?v=20261001b"></script>
   <script src="assets/js/webmcp.js?v=20260826a"></script>
 </body>
 </html>
+
