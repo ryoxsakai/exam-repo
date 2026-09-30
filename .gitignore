@@ -4,6 +4,7 @@ node_modules/
 out/
 next-env.d.ts
 tsconfig.tsbuildinfo
+worker/panel-resource.ts
 
 # Wrangler / Cloudflare
 .wrangler/
