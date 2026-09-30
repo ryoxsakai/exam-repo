@@ -2247,7 +2247,7 @@
       if (/[a-z0-9]/.test(map.text.charAt(at - 1)) || /[a-z0-9]/.test(map.text.charAt(at + phrase.length))) continue;
       hits.push(at);
     }
-    if (hits.length !== 1) return null;
+    if (!hits.length) return null; // 複数一致する場合は本文で最初の箇所を使う。
     function lineAt(pos) {
       var n = 0;
       starts.forEach(function (start, i) {
@@ -2280,7 +2280,7 @@
       });
       if (unresolved) {
         var warning = create("div", {class: "print-line-ref-warning"});
-        warning.textContent = "行番号参照：" + unresolved + "件は本文の引用箇所を一意に特定できません。元の行番号を残しています。印刷前に確認してください。";
+        warning.textContent = "行番号参照：" + unresolved + "件は本文の引用箇所が見つかりません。元の行番号を残しています。印刷前に確認してください。";
         q.appendChild(warning);
       }
     });
