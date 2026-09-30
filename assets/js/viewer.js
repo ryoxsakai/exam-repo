@@ -290,6 +290,13 @@
         renderPrintPreview();
       });
     }
+    if (el("pr-line-refs")) {
+      el("pr-line-refs").checked = localStorage.getItem("print_line_refs") === "1";
+      el("pr-line-refs").addEventListener("change", function () {
+        localStorage.setItem("print_line_refs", el("pr-line-refs").checked ? "1" : "0");
+        renderPrintPreview();
+      });
+    }
     if (el("pr-linenum")) {
       el("pr-linenum").checked = Store.getPrintLineNumbers();
       el("pr-linenum").addEventListener("change", function () {
@@ -1816,10 +1823,22 @@
     // .linenum-target を目印に実際の行番号を後付けする。CSSだけでは折り返し後の
     // 「見た目の行」境界を判定できないため JS 側で計測する。addLineNumbers 参照）。
     var lineNum = opts && opts.lineNumbers && label === "本文";
+    var refs = [];
+    if (opts && opts.lineReferences && label === "設問") {
+      text = text.replace(/(["“”‘’])([^"“”‘’\n]+)(["“”‘’])(\s+(?:in|on)\s+)(lines?)(\s+)(\d+(?:\s*(?:[\/–—-]|to|and)\s*\d+)?)/gi, function (_, quote, phrase, closeQuote, prep, line, space, number) {
+        var token = "EXAMLINEREF" + refs.length + "TOKEN";
+        refs.push({ token: token, phrase: phrase, original: line + space + number });
+        return quote + phrase + closeQuote + prep + token;
+      });
+    }
+    var rendered = Markup.render(text, markupOpts(label)).html;
+    refs.forEach(function (ref) {
+      rendered = rendered.replace(ref.token, '<span class="print-line-ref" data-phrase="' + esc(ref.phrase) + '" data-original="' + esc(ref.original) + '">' + esc(ref.original) + "</span>");
+    });
     return '<div class="print-field">' +
       (hideLabel ? "" : '<div class="print-field-label">' + esc(label) + "</div>") +
       '<div class="exam-doc' + (body ? "" : " no-indent") + (lineNum ? " linenum-target" : "") + '">' +
-      Markup.render(text, markupOpts(label)).html + "</div></div>";
+      rendered + "</div></div>";
   }
 
   // 印刷ドキュメントの HTML を構築（表紙 → 問題面 → 解答面）
@@ -2031,7 +2050,8 @@
       hideHeadA: el("pr-hide-head-a") ? el("pr-hide-head-a").checked : false,
       renumber: el("pr-renumber") ? el("pr-renumber").checked : false,
       qSubtitle: el("pr-qsubtitle") ? el("pr-qsubtitle").checked : false,
-      lineNumbers: el("pr-linenum") ? el("pr-linenum").checked : false,
+      lineNumbers: (el("pr-linenum") && el("pr-linenum").checked) || (el("pr-line-refs") && el("pr-line-refs").checked),
+      lineReferences: el("pr-line-refs") && el("pr-line-refs").checked,
       writingLines: Store.getPrintWritingLines(),
       writingSpace: el("pr-writing-space") ? el("pr-writing-space").checked : false,
       grayscale: el("pr-grayscale") ? el("pr-grayscale").checked : false
@@ -2203,7 +2223,71 @@
     });
   }
 
+  // Normalize quotes/case/spacing while retaining character-to-node positions.
+  function referenceTextMap(doc) {
+    var nodes = countableTextNodes(doc), text = "", positions = [];
+    nodes.forEach(function (node, ni) {
+      if (ni && node.parentElement.closest(".blk") !== nodes[ni - 1].parentElement.closest(".blk") && text.slice(-1) !== " ") {
+        text += " "; positions.push({nodeIndex: ni, offset: 0});
+      }
+      for (var i = 0; i < node.nodeValue.length; i++) {
+        var c = node.nodeValue.charAt(i).toLowerCase().replace(/[’‘]/g, "'");
+        if (/\s/.test(c)) c = " ";
+        if (c === " " && text.slice(-1) === " ") continue;
+        text += c; positions.push({ nodeIndex: ni, offset: i });
+      }
+    });
+    return { text: text, positions: positions };
+  }
+
+  function referenceLines(map, phrase, starts) {
+    phrase = phrase.toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
+    var hits = [], at = -1;
+    while ((at = map.text.indexOf(phrase, at + 1)) >= 0) {
+      if (/[a-z0-9]/.test(map.text.charAt(at - 1)) || /[a-z0-9]/.test(map.text.charAt(at + phrase.length))) continue;
+      hits.push(at);
+    }
+    if (hits.length !== 1) return null;
+    function lineAt(pos) {
+      var n = 0;
+      starts.forEach(function (start, i) {
+        if (start.nodeIndex < pos.nodeIndex || (start.nodeIndex === pos.nodeIndex && start.offset <= pos.offset)) n = i + 1;
+      });
+      return n;
+    }
+    var first = lineAt(map.positions[hits[0]]), last = lineAt(map.positions[hits[0] + phrase.length - 1]);
+    return first && last ? (first === last ? "line " + first : "lines " + first + "–" + last) : null;
+  }
+
+  function updatePrintLineReferences(root, forPrint) {
+    $all(".print-q", root).forEach(function (q) {
+      $all(".print-line-ref-warning", q).forEach(function (n) { n.remove(); });
+      var refs = $all(".print-line-ref", q), bodies = $all(".linenum-target", q);
+      if (!refs.length) return;
+      var measured, map;
+      if (bodies.length === 1) {
+        var body = bodies[0];
+        $all(".print-linenum", body).forEach(function (n) { n.remove(); });
+        body.normalize();
+        measured = forPrint ? lineStartsSimulated(body) : lineStartPositions(body);
+        map = referenceTextMap(forPrint ? lineMeasureBox : body);
+      }
+      var unresolved = 0;
+      refs.forEach(function (ref) {
+        var value = map && referenceLines(map, ref.getAttribute("data-phrase"), measured.starts);
+        ref.textContent = value || ref.getAttribute("data-original");
+        if (!value) unresolved++;
+      });
+      if (unresolved) {
+        var warning = create("div", {class: "print-line-ref-warning"});
+        warning.textContent = "行番号参照：" + unresolved + "件は本文の引用箇所を一意に特定できません。元の行番号を残しています。印刷前に確認してください。";
+        q.appendChild(warning);
+      }
+    });
+  }
+
   function applyPrintLineNumbers(root, forPrint) {
+    updatePrintLineReferences(root, forPrint);
     $all(".exam-doc.linenum-target", root).forEach(function (examDoc) {
       $all(".print-linenum", examDoc).forEach(function (n) { n.remove(); });
       examDoc.normalize();
@@ -3235,5 +3319,6 @@
   var global = window;
   document.addEventListener("DOMContentLoaded", init);
 })();
+
 
 

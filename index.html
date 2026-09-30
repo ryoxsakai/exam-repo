@@ -149,6 +149,8 @@
             <input type="checkbox" id="pr-renumber"> <span>小問番号を1から振り直す</span></label>
           <label class="check-inline" title="本文セクションの左側に5行ごとの行番号を付けます（大問ごとに1から数え直します）">
             <input type="checkbox" id="pr-linenum"> <span>本文に5行ごとの行番号をつける</span></label>
+          <label class="check-inline" title="設問の引用語句を本文から特定し、印刷時の行番号へ更新します。本文の行番号も表示します。特定できない参照は元の番号を残し、確認メッセージを表示します。">
+            <input type="checkbox" id="pr-line-refs"> <span>設問内の行番号を本文に合わせて自動更新</span></label>
           <label class="check-inline" title="英作文カテゴリの各大問の末尾に、四角で囲んだ罫線付きの解答スペースをつけます">
             <input type="checkbox" id="pr-writing-space"> <span>英作文に解答欄をつける</span></label>
           <label class="check-inline"><span>英作文の解答欄の行数</span>
@@ -419,8 +421,9 @@
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260923a"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/viewer.js?v=20261001d"></script>
+  <script src="assets/js/viewer.js?v=20261001e"></script>
   <script src="assets/js/webmcp.js?v=20260826a"></script>
 </body>
 </html>
+
 
