@@ -127,14 +127,12 @@
 - **大問見出しに通し番号・試験情報を入れる**（`pr-qsubtitle` / `Store.getPrintQSubtitle`）: `printQHeading` が「大問3」の代わりに「1. 2018 関西医科 前期 大問3」形式で出力する。通し番号は印刷順（`printQuestions` の並び）での位置に固定するため、問題面と解答面で同じ大問が同じ番号になる。試験情報は各大問に添えた `q._ctx`（`{year, university_name, schedule}`）から作る。
 - **印刷する大問 / セクションの選択**（`renderPrintSectionControls`。セクションの取捨は閲覧モーダルと共通の `Store.isPrintSection`）
 - **空所のフォント**: `[[1]]` `[[A]]` 等の空所バッジ（`.blank-badge`）は、印刷（プレビュー `.print-doc` / 実際の印刷 `#print-area` とも）では Arial に固定する（閲覧モーダルの既定 `--sans` には影響しない）。
-- **本文に5行ごとの行番号をつける**（`pr-linenum` / `Store.getPrintLineNumbers`）: CSSのcounterは要素単位でしか数えられず折り返し後の「見た目の行」の境界を判定できないため、JS側で `Range.getClientRects()` を使って行の切れ目を求め、5行ごとの**行頭にラベル（`.print-linenum`）を差し込む**（`insertLineNumbers`。大問＝本文セクションごとに1行目から数え直す）。
-  - **ラベルは `position: absolute` だが `top` を指定しない**（`left` だけ指定）。こうすると縦方向は「その場に流し込まれていたら来るはずの位置」＝その行のベースラインになるので、(1) 本文とラベルでフォント・サイズが違ってもベースラインが自動的に揃い、(2) 改ページで本文がずれてもラベルが同じ行にくっついたまま移動する。`top` を計算して絶対配置する方式では、本文より約3.7pt高い位置に出たり、ページをまたぐと最大7.5ptずれるのを実際のPDFで確認済み。
-  - **行頭ちょうどではなく「行頭の1文字あと」に差し込む**。行頭に置くとこの要素は行送りに影響しない（幅ゼロの流し込み扱い）ため、静的位置が「前の行の末尾」とみなされて1行ぶん上にずれる（実測で確認）。
-  - **必ずテキストノード単位で矩形を取る**（`lineStartPositions` の TreeWalker）。`Range.getClientRects()` は「インライン要素そのものの矩形」と「その中のテキストノードの矩形」を別々に返すため、`.blk`（段落）全体で範囲を取ると `<strong>` `<u>` や空所バッジのある行が1行なのに複数カウントされ、装飾を含む行を通過するたびに行番号がずれていく（実機で確認した不具合）。`top` が行の高さの半分以内の矩形は同じ視覚行としてまとめ、上付き・下付き・空所バッジのぶんのずれを吸収する。
-  - **リード文は行番号の対象外**（`leadBlocks`）。`Markup.mergeLeadSections` が「リード文」を `@@**文**` の形で本文の先頭へ統合するため、描画後は「先頭から連続する、中身が全て太字の段落」として現れる。これを英文本体の行として数えないよう除外する（途中に出てくる太字は本文の一部なので、通常の本文が1つ現れた時点で打ち切る）。語注一覧（`.footnote-section`）・語数表示（`.word-count`）も同様に対象外。
-  - **行番号ONのときは印刷時の本文幅を絶対単位で固定する**（CSS の `#print-area.print-out .exam-doc.linenum-target { width: 174mm }` と JS の `PRINT_BODY_WIDTH` を必ず同じ値にする）。固定しないと、印刷ダイアログで余白設定を変えられたときに折り返し位置が変わり、計測時と実際の印刷で行が食い違って番号が別の行に付いてしまう（Wordの固定行幅と同じ考え方）。
-  - プレビュー（画面上に見えている `.print-doc`）はそのまま `getClientRects()` で直接計測する（`lineMarksDirect`）。
-  - 実際の印刷（`#print-area`）は画面上 `display:none`（`@media print` のときだけ表示）で、計測しようとした瞬間は矩形が全て0になってしまう（`beforeprint` イベントで試しても印刷レイアウトがまだ反映されないことを実機で確認済み）。そのため `@media print` 側と同じ数値（A4本文幅・`pr-fontsize`に対応するpt値・`pr-lineheight`に対応する行間）を画面外の計測用コンテナ（`lineMeasureOuter`/`lineMeasureBox`）に直接指定して再現し、そこで計測した結果をそのまま `#print-area` 側のラベルに使う（`lineMarksSimulated`）。同じ内容・同じ幅・同じフォントサイズなら折り返し位置は一致するため、実際に印刷されたときに正しい位置に重なる。
+- **本文に5行ごとの行番号をつける**（`pr-linenum` / `Store.getPrintLineNumbers`）: `Range.getClientRects()`で折り返し後の視覚行を数え、本文セクションごとに5行おきの番号を付ける。
+  - 本文へ左余白を追加しない。番号は幅・高さ0のベースラインアンカー（`.print-linenum`）から左の既存余白へSVGで描くため、ON/OFFで本文の幅・位置・折り返しを保つ。SVGの`text y=0`を各行のベースラインに合わせ、最初の段落による共通の縦補正はしない。
+  - アンカーは行頭の最初の単語の末尾へ差し込む。文字の途中にinline-blockを入れて単語内に新しい折り返し位置を作らない。横位置は本文の左端から0.45em外側に統一する。
+  - 矩形はテキストノード単位で取得し、同じ行の太字・下線等を重複して数えない。語注・語数・出典・リード文・上付き/下付き・各種バッジの小さいラベルを除外する。
+  - 印刷本文幅はON/OFF共通の174mm（`#print-area.print-out`と`PRINT_BODY_WIDTH`）。画面外の計測コンテナは`.print-doc`を付け、印刷用のArial空所バッジ・文字サイズ・行間・元の字下げ指定を再現する。番号を各行へ付けるため、改ページしてもその行と一緒に移動する。
+  - プレビューは実際の表示幅で計測し、ResizeObserverとフォント読み込み後に再計測する。印刷はフォントと画像の読み込み完了後に計測してから印刷ダイアログを開く。
 
 #### お気に入りフォルダの一括印刷
 
@@ -183,3 +181,4 @@
 - **Worker(D1) config**: サイトタイトル / 方式(schedules) / 年度(year_presets) … 全端末で共有
 - **Worker(D1) user_settings**: タブ順 / お気に入りフォルダ印刷の表紙タイトル（Googleログイン時のみ。`GET/PUT /api/user-settings`）… ログインアカウントに紐づけて端末をまたいで共有
 - **localStorage**: Worker URL / タブ順（未ログイン時、またはログイン時もこの端末用のフォールバックとして常に保存） / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`) / 印刷オプション（文字サイズ・行間・対象セクション、ラベルを外す(`exam_print_hide_labels`)・大問ごとに改ページ(`exam_print_qbreak_q`/`exam_print_qbreak_a`)・セクションごとに改ページ(`exam_print_sbreak_q`/`exam_print_sbreak_a`)・パート見出しを外す(`exam_print_hide_head_q`/`exam_print_hide_head_a`)・通し番号つき見出し(`exam_print_qsubtitle`)・5行ごとの行番号(`exam_print_linenum`)） / お気に入りフォルダ印刷の表紙タイトル(`exam_print_folder_titles`。ログイン時はアカウントにも保存)
+

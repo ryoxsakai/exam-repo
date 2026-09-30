@@ -2038,31 +2038,14 @@
     };
   }
 
-  // 本文セクション（.exam-doc.linenum-target）に5行ごとの行番号を付ける。
-  // CSSのcounterは要素単位でしか数えられず、折り返し後の「見た目の行」の境界を
-  // 判定できないため、Range.getClientRects() で実際の行境界を計測し、5行ごとに
-  // 絶対配置のラベルを挿入する。大問（本文セクション）ごとに1行目から数え直す。
-  //
-  // プレビュー（画面上に見えている .print-doc）と実際の印刷（#print-area。画面上は
-  // display:none で、@media print のときだけ表示される）で計測方法を分ける必要がある:
-  //   - プレビューは既に画面に見えているので、その場で直接 getClientRects() できる。
-  //   - #print-area は計測しようとした瞬間 display:none のため矩形が全て0になってしまう
-  //     （beforeprint イベントで試しても、印刷レイアウトがまだ反映されていないことを
-  //     実機で確認済み）。そのため、@media print 側と同じ数値（A4本文幅・pt指定の
-  //     フォントサイズ）を画面外の計測用コンテナへ直接指定して再現し、そこで計測した
-  //     結果（.exam-doc 先頭からの相対位置）をそのまま #print-area 側のラベルに使う。
-  //     同じ内容・同じ幅・同じフォントサイズであれば折り返し位置は一致するため、
-  //     実際に印刷されたときに正しい位置に重なる。
-  // 行番号ONのときの本文幅。@page { margin: 15mm 18mm; size: A4 } の本文幅と同じ値を、
-  // CSS 側（#print-area.print-out .exam-doc.linenum-target）でも絶対単位で固定している。
-  // 幅を固定しないと、印刷ダイアログで余白設定を変えられたときに折り返し位置が変わり、
-  // 計測時と実際の印刷で行が食い違って番号が別の行に付いてしまう（Wordの固定行幅と同じ考え方）。
-  var PRINT_BODY_WIDTH = (210 - 18 * 2) + "mm";
-  var PRINT_FS_PT = { xs: 9, sm: 10.5, md: 12, lg: 14, xl: 16 };   // #print-area.fs-* .exam-doc と同じ値
-  var PRINT_LH = { "1": 1.3, "2": 1.6, "3": 1.9, "4": 2.3, "5": 2.8 }; // #print-area.lh-* .exam-doc と同じ値
+  // 本文幅は行番号ON/OFF共通。ラベルは幅・高さ0のベースラインアンカーから
+  // 左の既存余白へ描くので、本文の幅・字下げ・折り返し・行間は変えない。
+  var PRINT_BODY_WIDTH = "174mm";
+  var PRINT_FS_PT = { xs: 9, sm: 10.5, md: 12, lg: 14, xl: 16 };
+  var PRINT_LH = { "1": 1.3, "2": 1.6, "3": 1.9, "4": 2.3, "5": 2.8 };
 
-  // 本文として数えないもの（語注一覧・語数表示・行番号ラベル自身）
-  var LINENUM_SKIP = ".footnote-section, .word-count, .print-linenum, .exam-figure";
+  // 本文以外と、ベースラインが上げ下げされた小さいインライン要素は数えない。
+  var LINENUM_SKIP = ".footnote-section, .word-count, .cite, .print-linenum, .exam-figure, .blank-badge, .para-badge, .question-badge, .choice-inline, sup, sub, .underline-marker";
 
   // リード文（「以下の英文を読み、問いに答えよ。」等の指示文）は英文本体の行では
   // ないため、行番号の対象から外す。Markup.mergeLeadSections がセクション種別
@@ -2152,101 +2135,106 @@
         curTop = t;
       });
     });
-    return { starts: starts, shift: staticLabelShift(nodes[0]) };
+    return { starts: starts };
   }
 
-  // ラベルを静的位置（top 指定なし）に置くと、縦方向は「行ボックスの上端」に合わせられる
-  // ため、本文のベースラインとはフォント分だけずれる。実測ではページや行によらず常に
-  // 同じ値（+8.2pt 相当）だったので、実際に1つ置いて測り、その差を margin-top で打ち消す。
-  // 幅も高さも 0 の inline-block を vertical-align: baseline で置くと、その要素の上端が
-  // ちょうどその行のベースラインになることを利用して、本文とラベルの両方を測る。
-  function staticLabelShift(firstNode) {
-    if (!firstNode || !firstNode.parentNode || firstNode.nodeValue.length < 2) return 0;
-    function mark() {
-      var i = create("i");
-      i.style.cssText = "display:inline-block; width:0; height:0; vertical-align:baseline;";
-      return i;
-    }
-    // 実際のラベルと同じく「行頭の1文字あと」に置いて測る（行頭ちょうどだと静的位置が
-    // 前の行の末尾になってしまい、正しい差が取れない）。
-    var rest = firstNode.splitText(1);
-    var parent = firstNode.parentNode;
-    var bodyMark = mark();                                   // 流し込み＝本文のベースライン
-    var probe = create("span", { class: "print-linenum" });  // 静的位置＝ラベルのベースライン
-    var probeMark = mark();
-    probe.appendChild(document.createTextNode("8"));
-    probe.appendChild(probeMark);
-    parent.insertBefore(bodyMark, rest);
-    parent.insertBefore(probe, rest);
-    var d = bodyMark.getBoundingClientRect().top - probeMark.getBoundingClientRect().top;
-    probe.remove();
-    bodyMark.remove();
-    parent.normalize();   // 分割したテキストノードを元に戻す
-    return d;
-  }
-
-  // 印刷用の計測コンテナ。外側に A4 本文幅を与え、内側の .exam-doc.linenum-target は
-  // 幅を指定せず自動にすることで、実際の #print-area 内と同じ入れ子・同じ折り返しにする。
+  // 印刷と同じフォント・本文幅で計測する。print-docを付けることで、
+  // 印刷専用のArial空所バッジも再現する（以前はここだけUI用フォントだった）。
   var lineMeasureOuter = null, lineMeasureBox = null;
-  function lineStartsSimulated(examDocHtml) {
+  function lineStartsSimulated(examDoc) {
     if (!lineMeasureOuter) {
       lineMeasureOuter = create("div");
-      lineMeasureOuter.style.cssText = "position:fixed; left:-99999px; top:0; visibility:hidden;";
-      lineMeasureBox = create("div", { class: "exam-doc linenum-target" });
+      lineMeasureOuter.style.cssText = "position:fixed; left:-99999px; top:0; visibility:hidden; padding:0; border:0; box-shadow:none;";
+      lineMeasureBox = create("div");
       lineMeasureOuter.appendChild(lineMeasureBox);
       document.body.appendChild(lineMeasureOuter);
     }
+    lineMeasureOuter.className = "print-doc print-line-measure " + printDocClasses();
     lineMeasureOuter.style.width = PRINT_BODY_WIDTH;
-    lineMeasureBox.style.fontFamily = "var(--serif)";
+    lineMeasureBox.className = examDoc.className;
     lineMeasureBox.style.fontSize = (PRINT_FS_PT[Store.getPrintFontSize()] || 12) + "pt";
     lineMeasureBox.style.lineHeight = String(PRINT_LH[Store.getPrintLineHeight()] || 1.9);
-    lineMeasureBox.innerHTML = examDocHtml;
+    lineMeasureBox.innerHTML = examDoc.innerHTML;
     return lineStartPositions(lineMeasureBox);
   }
 
-  // 5行ごとの行頭に行番号を差し込む。
-  // ラベルは position:absolute だが top を指定しない（left だけ指定する）。こうすると
-  // 縦方向は「その場に流し込まれていたら来るはずの位置」＝その行のベースラインになるため、
-  //   - 本文とラベルでフォント・サイズが違ってもベースラインが自動的に揃う
-  //   - 改ページで本文がずれても、ラベルは同じ行にくっついたまま移動する
-  // という2点が同時に解決する（top を計算して置く方式では、実際のPDFで本文より
-  // 約3.7pt高い位置に出たり、ページをまたぐと最大7.5pt ずれるのを確認済み）。
+  // 行頭の最初の単語の末尾へ挿入する。文字の途中へ幅0のinline-blockを挿すと
+  // 単語内に新しい折り返し位置ができるため、既存の単語境界を使う。
+  function lineAnchorOffset(node, offset) {
+    var text = node.nodeValue, at = offset;
+    while (at < text.length && /\s/.test(text.charAt(at))) at++;
+    while (at < text.length && !/\s/.test(text.charAt(at))) at++;
+    return at;
+  }
+
   function insertLineNumbers(examDoc, measured) {
-    var starts = measured.starts, shift = measured.shift || 0;
-    var nodes = countableTextNodes(examDoc);
-    var items = [];
-    starts.forEach(function (s, i) {
-      var lineNo = i + 1;
-      if (lineNo % 5 === 0) items.push({ lineNo: lineNo, nodeIndex: s.nodeIndex, offset: s.offset });
+    var nodes = countableTextNodes(examDoc), items = [];
+    measured.starts.forEach(function (start, i) {
+      if ((i + 1) % 5 === 0) items.push({ lineNo: i + 1, nodeIndex: start.nodeIndex, offset: start.offset });
     });
-    // 後ろから挿入する（splitText しても、まだ処理していない前方のノードがずれない）
     items.reverse().forEach(function (it) {
       var node = nodes[it.nodeIndex];
       if (!node || !node.parentNode) return;
-      var len = node.nodeValue.length;
-      // 行頭ちょうどではなく「行頭の1文字あと」に入れる。行頭に置くと、この要素は
-      // 行送りに影響しない（幅ゼロの流し込み扱い）ため、静的位置が「前の行の末尾」と
-      // みなされて1行ぶん上にずれてしまう（実測で確認）。
-      var at = Math.min(it.offset + 1, len);
-      var target = node, before = true;
-      if (at >= len) before = false;
-      else target = node.splitText(at);
-      var label = create("span", { class: "print-linenum" }, String(it.lineNo));
-      // 静的位置と本文ベースラインの一定のずれを打ち消す
-      if (shift) label.style.marginTop = shift + "px";
-      if (before) target.parentNode.insertBefore(label, target);
-      else target.parentNode.insertBefore(label, target.nextSibling);
+      var at = lineAnchorOffset(node, it.offset);
+      var rest = at < node.nodeValue.length ? node.splitText(at) : node.nextSibling;
+      var anchor = create("span", { class: "print-linenum", "aria-hidden": "true" });
+      var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      // SVGのy=0は文字のベースライン。最初の段落による縦補正は不要で、
+      // バッジや段落間隔・改ページがあってもアンカーの行について移動する。
+      text.setAttribute("x", "0");
+      text.setAttribute("y", "0");
+      text.setAttribute("text-anchor", "end");
+      text.textContent = String(it.lineNo);
+      svg.appendChild(text);
+      anchor.appendChild(svg);
+      node.parentNode.insertBefore(anchor, rest);
+    });
+    return $all(".print-linenum", examDoc);
+  }
+
+  function positionLineNumbers(examDoc, anchors) {
+    var left = examDoc.getBoundingClientRect().left;
+    var gap = (parseFloat(getComputedStyle(examDoc).fontSize) || 16) * 0.45;
+    anchors.forEach(function (anchor) {
+      // 親段落の字下げやtext-align:justifyに依存せず、本文の左端から同じ間隔。
+      anchor.firstChild.style.left = (left - anchor.getBoundingClientRect().left - gap) + "px";
     });
   }
 
-  // forPrint=true: #print-area 向け（画面外シミュレーションで行頭を求める）。
-  // forPrint=false: プレビュー向け（見えている要素をそのまま計測）。
   function applyPrintLineNumbers(root, forPrint) {
     $all(".exam-doc.linenum-target", root).forEach(function (examDoc) {
       $all(".print-linenum", examDoc).forEach(function (n) { n.remove(); });
-      examDoc.normalize();   // 前回の splitText で分かれたテキストノードを戻す
-      insertLineNumbers(examDoc, forPrint ? lineStartsSimulated(examDoc.innerHTML) : lineStartPositions(examDoc));
+      examDoc.normalize();
+      if (forPrint) {
+        var measured = lineStartsSimulated(examDoc);
+        // 印刷先はdisplay:none。位置は同じDOMの計測用クローンで決め、印刷先へコピーする。
+        var probes = insertLineNumbers(lineMeasureBox, measured);
+        positionLineNumbers(lineMeasureBox, probes);
+        var anchors = insertLineNumbers(examDoc, measured);
+        anchors.forEach(function (anchor, i) { anchor.firstChild.style.left = probes[i].firstChild.style.left; });
+      } else {
+        positionLineNumbers(examDoc, insertLineNumbers(examDoc, lineStartPositions(examDoc)));
+      }
     });
+  }
+
+  var lineNumberFrame = 0, lineNumberObserver = null;
+  function schedulePreviewLineNumbers() {
+    if (lineNumberFrame) cancelAnimationFrame(lineNumberFrame);
+    lineNumberFrame = requestAnimationFrame(function () {
+      lineNumberFrame = 0;
+      var preview = el("print-preview");
+      if (preview && preview.querySelector(".linenum-target")) applyPrintLineNumbers(preview);
+    });
+  }
+
+  function watchPreviewLineNumbers() {
+    if (!lineNumberObserver && typeof ResizeObserver !== "undefined") {
+      lineNumberObserver = new ResizeObserver(schedulePreviewLineNumbers);
+      lineNumberObserver.observe(el("print-preview"));
+    }
+    if (document.fonts) document.fonts.ready.then(schedulePreviewLineNumbers);
   }
 
   // 印刷ドキュメントのルートに付けるクラス（文字サイズ・行間・大問／セクションごとの改ページ）。
@@ -2598,7 +2586,10 @@
     if (!html) { el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>印刷対象がありません。チェックや登録内容を確認してください。</div></div>'; return; }
     el("print-preview").innerHTML = '<div class="print-doc ' + printDocClasses(opts) + '">' + html + "</div>";
     wirePrintTitleEdit();
-    if (opts.lineNumbers) applyPrintLineNumbers(el("print-preview"));
+    if (opts.lineNumbers) {
+      applyPrintLineNumbers(el("print-preview"));
+      watchPreviewLineNumbers();
+    }
   }
 
   // 表紙の各行をダブルタップ（ダブルクリック）で編集できるようにする。
@@ -2770,8 +2761,16 @@
     if (!area) { area = create("div", { id: "print-area" }); document.body.appendChild(area); }
     area.className = "print-out " + printDocClasses(opts);
     area.innerHTML = html;
-    if (opts.lineNumbers) applyPrintLineNumbers(area, true);
-    window.print();
+    // Webフォントや画像の読み込み後に確定した折り返しを計測する。
+    var ready = document.fonts ? document.fonts.ready : Promise.resolve();
+    ready.then(function () {
+      return Promise.all($all("img", area).map(function (img) {
+        return img.decode ? img.decode().catch(function () {}) : Promise.resolve();
+      }));
+    }).then(function () {
+      if (opts.lineNumbers) applyPrintLineNumbers(area, true);
+      window.print();
+    });
   }
 
   /* ---------------- コーパス対象絞り込み ---------------- */
@@ -3232,4 +3231,5 @@
   var global = window;
   document.addEventListener("DOMContentLoaded", init);
 })();
+
 
