@@ -1,0 +1,11 @@
+{
+  "name": "exam-conversation-panel",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "node build.mjs", "test": "node ../scripts/test-exam-panel.cjs" },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@openai/mcp-extensions": "0.1.0",
+    "esbuild": "0.28.2"
+  }
+}

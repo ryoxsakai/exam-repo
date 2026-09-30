@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>入試問題ブラウザー</title><style>/* PANEL_CSS */</style></head>
+<body>
+<header><h1>入試問題ブラウザー</h1><p>問題を見ながら、選択した箇所をチャットへ共有できます。</p></header>
+<form id="search-form" aria-label="問題検索">
+<div class="filters"><label>大学<input name="university_name" placeholder="例：獨協医科" autocomplete="off"></label><label>年度<input name="year" type="number" min="1900" max="2200" placeholder="例：2015"></label><label>方式<input name="schedule" placeholder="例：前期"></label><label>キーワード<input name="word" placeholder="本文・解答・解説を検索"></label></div>
+<button id="search" type="submit" disabled>検索</button>
+</form>
+<p id="status" role="status" aria-live="polite">Examに接続しています…</p>
+<main><section id="results-area" aria-label="検索結果"><h2>検索結果</h2><p id="result-count"></p><div id="results"></div></section>
+<section id="detail" aria-label="大問詳細" hidden><button id="back" type="button">検索結果に戻る</button><h2 id="question-title"></h2><div id="tabs" role="tablist" aria-label="表示内容"></div><article id="document" class="exam-doc" role="tabpanel" tabindex="0"></article></section></main>
+<aside id="share-bar" hidden><p id="selection-preview">共有する文章を選択してください。</p><div class="share-actions"><button id="share" type="button" disabled>選択箇所をチャットに共有</button><button id="clear-share" type="button" hidden>添付を解除</button></div><p class="hint">共有後、チャットに質問を入力してください。</p></aside>
+<script type="module">/* PANEL_JS */</script></body></html>

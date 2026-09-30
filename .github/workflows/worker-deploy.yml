@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - "worker/**"
+      - "panel/**"
+      - "assets/js/markup.js"
+      - "assets/css/main.css"
       - "wrangler.toml"
   workflow_dispatch:
 
@@ -13,6 +16,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build and verify Exam conversation panel
+        run: |
+          npm ci --prefix panel
+          npm run build --prefix panel
+          npm test --prefix panel
 
       - name: Deploy Worker to Cloudflare
         uses: cloudflare/wrangler-action@v3

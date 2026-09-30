@@ -1,5 +1,7 @@
 import { safeRefreshUniversityIndexForExam } from "./university-index";
 
+import { PANEL_HTML } from "./panel-resource";
+
 export interface McpEnv {
   DB: D1Database;
   IMAGES?: R2Bucket;
@@ -1202,6 +1204,14 @@ function insertImageMarkup(text: string, markup: string, placement: ImagePlaceme
 }
 
 async function callTool(name: string, args: Record<string, unknown>, env: McpEnv, auth: McpAuth | null = null) {
+  if (name === "open_question_browser") {
+    if (args.exam_id !== undefined || args.question_number !== undefined) {
+      if (!Number.isSafeInteger(args.exam_id) || Number(args.exam_id) < 1 || !Number.isSafeInteger(args.question_number) || Number(args.question_number) < 1) throw new Error("exam_id and question_number must both be positive integers");
+      const detail = await callTool("get_question", args, env, auth) as { question: Record<string, unknown> };
+      return { ...detail, exam_id: args.exam_id, results: [] };
+    }
+    return callTool("search_questions", { limit: 30 }, env, auth);
+  }
   if (name === "list_universities") {
     const q = String(args.query || ""); const rows = q
       ? await env.DB.prepare("SELECT id, name, reading, abbreviation FROM universities WHERE hidden = 0 AND (name LIKE ? OR reading LIKE ? OR abbreviation LIKE ?) ORDER BY name LIMIT ?").bind(`%${q}%`, `%${q}%`, `%${q}%`, limit(args.limit)).all()
@@ -1950,8 +1960,23 @@ const TOOLS = [
 
 const MCP_WRITE_TOOL_NAMES = new Set(["audit_question_for_correction", "prepare_question_correction", "apply_audited_correction", "add_question_image"]);
 const MCP_OPEN_WORLD_TOOL_NAMES = new Set(["add_question_image"]);
-const ANNOTATED_TOOLS = TOOLS.map((tool) => ({
+const PANEL_URI = "ui://exam/question-browser-v1";
+const PANEL_RESOURCE = { uri: PANEL_URI, name: "exam-question-browser", title: "入試問題ブラウザー", mimeType: "text/html;profile=mcp-app" };
+const PANEL_TOOL = {
+  name: "open_question_browser",
+  title: "入試問題ブラウザー",
+  description: "チャット横のパネルで入試問題を検索・表示し、選択した文章をチャットに共有します。引数なしで検索画面を開けます。exam_idとquestion_numberの両方を指定すると大問を直接表示します。",
+  inputSchema: { type: "object", properties: { exam_id: { type: "integer", minimum: 1 }, question_number: { type: "integer", minimum: 1 } }, additionalProperties: false },
+  _meta: {
+    ui: { resourceUri: PANEL_URI, visibility: ["model", "app"] },
+    "openai/ui": { entrypoints: [{ type: "thread" }], preferredModelDisplayMode: "fullscreen" },
+    "openai/outputTemplate": PANEL_URI,
+  },
+  icons: [{ src: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.33"%3E%3Cpath d="M3 3h6c1 0 1 1 1 1s0-1 1-1h6v13h-6c-1 0-1 1-1 1s0-1-1-1H3zM10 4v13"/%3E%3C/svg%3E', mimeType: "image/svg+xml", sizes: ["any"] }],
+};
+const ANNOTATED_TOOLS = [...TOOLS, PANEL_TOOL].map((tool) => ({
   ...tool,
+  ...(["search_questions", "get_question"].includes(tool.name) ? { _meta: { ui: { visibility: ["model", "app"] } } } : {}),
   annotations: {
     readOnlyHint: !MCP_WRITE_TOOL_NAMES.has(tool.name),
     destructiveHint: false,
@@ -1961,7 +1986,7 @@ const ANNOTATED_TOOLS = TOOLS.map((tool) => ({
 
 // Keep the canonical bare names for direct MCP clients while also advertising
 // the namespaced aliases cached by ChatGPT custom connectors.
-const DISCOVERABLE_TOOLS = ANNOTATED_TOOLS.flatMap((tool) => [
+const DISCOVERABLE_TOOLS = ANNOTATED_TOOLS.flatMap((tool) => tool.name === "open_question_browser" ? [tool] : [
   tool,
   { ...tool, name: `exam.${tool.name}` },
 ]);
@@ -1971,8 +1996,8 @@ async function mcp(request: Request, env: McpEnv, url: URL) {
   let msg: any; try { msg = await request.json(); } catch { return rpcError(null, -32700, "Parse error"); }
   if (msg.method === "initialize") return rpc(msg.id, {
     protocolVersion: msg.params?.protocolVersion || "2025-06-18",
-    capabilities: { tools: {} },
-    serverInfo: { name: "medical-exam", version: "1.1.0" },
+    capabilities: { tools: {}, resources: {} },
+    serverInfo: { name: "medical-exam", version: "1.2.0" },
     instructions: [
       "Use these tools to search, retrieve, audit, add explicitly confirmed images, and—only after an explicit audit and diff confirmation—correct the user's Japanese medical school entrance-exam database.",
       "The problem_text, answer_text, translation_text, and commentary_text fields contain canonical database text.",
@@ -1985,14 +2010,27 @@ async function mcp(request: Request, env: McpEnv, url: URL) {
   });
   if (msg.method === "notifications/initialized") return new Response(null, { status: 202 });
   if (msg.method === "tools/list") return rpc(msg.id, { tools: DISCOVERABLE_TOOLS });
-  if (msg.method !== "tools/call") return rpcError(msg.id, -32601, "Method not found");
+  if (msg.method === "resources/list") return rpc(msg.id, { resources: [PANEL_RESOURCE] });
+  if (msg.method === "resources/templates/list") return rpc(msg.id, { resourceTemplates: [] });
+  if (!["tools/call", "resources/read"].includes(msg.method)) return rpcError(msg.id, -32601, "Method not found");
   const auth = await verify(request, env);
   if (!auth) return response({ error: "unauthorized" }, 401, { "WWW-Authenticate": `Bearer resource_metadata="${baseUrl(url)}/.well-known/oauth-protected-resource", scope="${MCP_DEFAULT_SCOPE}"` });
+  if (msg.method === "resources/read") {
+    if (msg.params?.uri !== PANEL_URI) return rpcError(msg.id, -32002, "Resource not found");
+    return rpc(msg.id, { contents: [{ ...PANEL_RESOURCE, text: PANEL_HTML, _meta: {
+      ui: { csp: { connectDomains: [], resourceDomains: [baseUrl(url)] } },
+      "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["fullscreen"] },
+    } }] });
+  }
   const toolName = normalizeToolName(msg.params?.name);
   if (MCP_WRITE_TOOL_NAMES.has(toolName) && !hasScope(auth, MCP_WRITE_SCOPE)) {
     return rpc(msg.id, { content: [{ type: "text", text: "exams:write scope is required; reconnect the MCP connection and approve audited image additions and corrections" }], isError: true });
   }
-  try { const result = await callTool(toolName, msg.params?.arguments || {}, env, auth); return rpc(msg.id, { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: false }); }
+  try {
+    const data = await callTool(toolName, msg.params?.arguments || {}, env, auth);
+    const result = toolName === "open_question_browser" ? { ...data, image_base: baseUrl(url) } : data;
+    return rpc(msg.id, { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: false });
+  }
   catch (error) { return rpc(msg.id, { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true }); }
 }
 
