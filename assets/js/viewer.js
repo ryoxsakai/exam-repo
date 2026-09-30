@@ -2198,6 +2198,7 @@
     var gap = (parseFloat(getComputedStyle(examDoc).fontSize) || 16) * 0.45;
     anchors.forEach(function (anchor) {
       // 親段落の字下げやtext-align:justifyに依存せず、本文の左端から同じ間隔。
+      anchor.firstChild.style.fontSize = getComputedStyle(examDoc).fontSize;
       anchor.firstChild.style.left = (left - anchor.getBoundingClientRect().left - gap) + "px";
     });
   }
@@ -2212,7 +2213,10 @@
         var probes = insertLineNumbers(lineMeasureBox, measured);
         positionLineNumbers(lineMeasureBox, probes);
         var anchors = insertLineNumbers(examDoc, measured);
-        anchors.forEach(function (anchor, i) { anchor.firstChild.style.left = probes[i].firstChild.style.left; });
+        anchors.forEach(function (anchor, i) {
+          anchor.firstChild.style.left = probes[i].firstChild.style.left;
+          anchor.firstChild.style.fontSize = probes[i].firstChild.style.fontSize;
+        });
       } else {
         positionLineNumbers(examDoc, insertLineNumbers(examDoc, lineStartPositions(examDoc)));
       }
