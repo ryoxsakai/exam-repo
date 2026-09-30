@@ -1762,7 +1762,7 @@
   function wordCount(text) { return Difficulty.wordCount(text); }
   function markupOpts(label) {
     var body = isBodySection(label);
-    return { paraNum: body, zenyaku: label === "全訳" };
+    return { paraNum: body, zenyaku: /全訳|和訳/.test(label) };
   }
   function renderField(label, icon, text, metricText) {
     var body = isBodySection(label);

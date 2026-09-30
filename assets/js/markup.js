@@ -308,7 +308,7 @@
   // テキスト全体 → { html, footnotes }
   // 段落先頭の [1] [2] は全セクションで段落番号バッジに変換する。
   // opts.paraNum=true（本文・和訳セクション）のときは、さらにバッジの無い段落先頭に字下げを付ける。
-  // opts.zenyaku=true（全訳セクション）のとき、《…》で始まる段落以外を字下げする。
+  // opts.zenyaku=true（全訳セクション）のとき、段落番号・《…》見出しの無い段落を字下げする。
   function render(text, opts) {
     var paraNum = opts && opts.paraNum;
     var footnotes = [];
@@ -379,9 +379,9 @@
       // 字下げ：本文・和訳ではバッジの無い「英字始まり」の段落先頭のみ字下げ
       // （日本語の指示文などは左寄せにする）。それ以外のセクションは英語大文字始まりのみ。
       // 引用符（" ' " '）で始まる段落も、直後が英字なら英文段落とみなし字下げする。
-      // 全訳は《…》で始まる見出し段落を除き、言語や段落番号に関係なく字下げする。
+      // 全訳は段落番号付きの行と《…》見出しを除き、従来どおり字下げする。
       var indent = !noIndent && ((opts && opts.zenyaku)
-        ? !/^《/.test(trimmed)
+        ? !badgeNum && !/^\[[^\[\]]{1,2}\]/.test(trimmed) && !/^《/.test(trimmed)
         : (paraStart && (paraNum ? (!badgeNum && /^["'“‘]?[A-Za-z]/.test(trimmed)) : /^["'“‘]?[A-Z]/.test(trimmed))));
       var prefix = badgeNum ? '<span class="para-badge">' + esc(badgeNum) + "</span>" : "";
       var content = speaker
