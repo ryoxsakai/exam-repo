@@ -13,8 +13,8 @@
   }
 
   // problem_text を実際に表示・印刷・分析で使うセクション一覧へ（「リード文」は直後のセクションへ統合済み）。
-  // 登録・取り込み保存時（settings.js）は保存時点で統合されるが、一括アップロード等で保存前に
-  // 統合されていないデータが残っていても、表示側でも必ず統合されるようここで一元的に処理する。
+  // 保存されている独立セクションを表示時だけ統合する。旧形式の統合済みデータも
+  // そのまま表示できるよう、ここで一元的に処理する。
   function examSections(problemText) {
     var raw = Markup.parseSections(problemText || "");
     var merged = Markup.mergeLeadSections(raw);
@@ -3319,6 +3319,5 @@
   var global = window;
   document.addEventListener("DOMContentLoaded", init);
 })();
-
 
 
