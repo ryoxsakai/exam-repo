@@ -1918,21 +1918,35 @@
         return text;
       });
     });
-    function number(map, n) { var v = map[String(Number(n))]; return v == null ? n : String(v); }
+    // 解答の {{66}} は、問題側では [[66]] として定義されることもある。
+    // 大問に別系統の「問1」等があっても、番号ごとに空所の対応表へフォールバックする。
+    function number(map, n, fallback) {
+      var key = String(Number(n)), v = map[key];
+      if (v == null && fallback) v = fallback[key];
+      return v == null ? n : String(v);
+    }
     return sections.map(function (sec) {
       var copy = Object.assign({}, sec);
+      var answerSide = isAnswerSide(sec.type);
       copy.text = protectedText(sec.text, function (text) {
-        text = text.replace(/(\{\{\s*(?:問\s*)?)(\d+)(\s*\}\})/g, function (_, a, n, b) { return a + number(questions, n) + b; });
-        text = text.replace(/(\[\[\s*(?:--\s*)?)(\d+)(\s*(?:--)?\s*\]\])/g, function (_, a, n, b) {
-          return a + number(Object.keys(blanks).length ? blanks : questions, n) + b;
+        // バッジを先に置換して退避し、生成した「問1」を後段でもう一度変換しない。
+        var labels = [];
+        function label(value) { labels.push(value); return "\u0003" + (labels.length - 1) + "\u0004"; }
+        text = text.replace(/(\{\{\s*(?:問\s*)?)(\d+)(\s*\}\})/g, function (_, a, n, b) {
+          return label(a + number(questions, n, answerSide ? blanks : null) + b);
         });
-        text = text.replace(/(^|[^大])問(\s*)(\d+)(?!\d)/g, function (_, a, space, n) { return a + "問" + space + number(questions, n); });
+        text = text.replace(/(\[\[\s*(?:--\s*)?)(\d+)(\s*(?:--)?\s*\]\])/g, function (_, a, n, b) {
+          return label(a + number(Object.keys(blanks).length ? blanks : questions, n, answerSide ? questions : null) + b);
+        });
+        text = text.replace(/(^|[^大])問(\s*)(\d+)(?!\d)/g, function (_, a, space, n) {
+          return a + "問" + space + number(questions, n, answerSide ? blanks : null);
+        });
         // 括弧と区切り付きの行頭番号。選択肢マークアップの二重括弧は一致しない。
         text = text.replace(/^(\s*(?:@@)?(?:\*\*)?)(?:([（(])(\d+)([）)])|(\d+)([.．、：:])(?=\s|[^\d]))/gm, function (_, prefix, a, n, b, bare, sep) {
           var map = Object.keys(questions).length ? questions : blanks;
-          return prefix + (a ? a + number(map, n) + b : number(map, bare) + sep);
+          return prefix + (a ? a + number(map, n, answerSide ? blanks : null) + b : number(map, bare, answerSide ? blanks : null) + sep);
         });
-        return text;
+        return text.replace(/\u0003(\d+)\u0004/g, function (_, i) { return labels[Number(i)]; });
       });
       return copy;
     });
