@@ -1803,12 +1803,19 @@
   function isAnswerSide(type) { return /解答|解説|和訳|訳|答|講評/.test(type); }
 
   // 1大問のセクション一覧（problem_text の {{セクション}} ＋ 旧カラム互換）
-  function questionSections(q) {
-    var sections = examSections(q.problem_text);
+  function questionSections(q, renumber) {
+    var sections = renumber ? Markup.parseSections(q.problem_text || "") : examSections(q.problem_text);
+    var storedSectionCount = sections.length;
     var hasAns = sections.some(function (s) { return s.type === "解答"; });
     var hasCom = sections.some(function (s) { return s.type === "解説"; });
     if (q.answer_text && q.answer_text.trim() && !hasAns) sections.push({ type: "解答", text: q.answer_text });
     if (q.commentary_text && q.commentary_text.trim() && !hasCom) sections.push({ type: "解説", text: q.commentary_text });
+    if (renumber) {
+      // リード文と参照を区別できる生セクションで採番した後、表示用に結合する。
+      // 末尾のリード文は旧カラムの解答へ移さず、元の問題面に残す。
+      sections = renumberPrintSections(sections);
+      return Markup.mergeLeadSections(sections.slice(0, storedSectionCount)).concat(sections.slice(storedSectionCount));
+    }
     return sections;
   }
 
@@ -1908,18 +1915,33 @@
       n = String(Number(n));
       if (!Object.prototype.hasOwnProperty.call(map, n)) map[n] = blank ? ++blankCount : ++questionCount;
     }
+    var rangeJoin = "\\s*(?:[〜～~–—-]|から|to)\\s*";
+    var blankLabel = "\\[\\[\\s*(?:--\\s*)?\\d+\\s*(?:--)?\\s*\\]\\]";
+    var questionLabel = "\\{\\{\\s*(?:問\\s*)?\\d+\\s*\\}\\}";
+    var referenceRanges = new RegExp(blankLabel + "(?:" + rangeJoin + blankLabel + ")+|" +
+      questionLabel + "(?:" + rangeJoin + questionLabel + ")+|問\\s*\\d+(?:" + rangeJoin + "(?:問\\s*)?\\d+)+", "g");
+    function referenceSuffix(text) {
+      // 明示的な参照表現だけを除外する。「がん」「におい」等で始まる設問を
+      // 助詞の1文字だけで参照と誤判定しない。
+      return /^(?:\*\*)?[ \t]*(?:の(?:解答|答え|説明|解説|結果|内容)|(?:を|も|に)?(?:参照|参考)|を(?:見|確認)|について|まで|[〜～~–—-])/.test(text);
+    }
     sections.forEach(function (sec) {
-      if (isAnswerSide(sec.type)) return;
+      if (isAnswerSide(sec.type) || sec.type === "リード文") return;
       protectedText(sec.text, function (text) {
-        text.replace(/\{\{\s*(?:問\s*)?(\d+)\s*\}\}|^\s*(?:@@)?(?:\*\*)?問\s*(\d+)(?!\d)|^\s*(?:@@)?(?:\*\*)?(?:[（(](\d+)[）)]|(\d+)[.．、：:](?=\s|[^\d]))/gm, function (_, a, b, c, d) {
-          add(questions, a || b || c || d, false); return _;
+        // 範囲説明は番号の定義ではない。旧形式の統合済みリード文でも、
+        // [[49]]〜[[71]] の終点が2番を消費しないよう、採番時だけ退避する。
+        text = text.replace(referenceRanges, "\u0005");
+        text.split("\n").forEach(function (line) {
+          // 行中の {{問7}} 等も参照。実際の小問見出しの出現順だけで採番する。
+          var m = line.match(/^\s*(?:@@)?(?:\*\*)?(?:\{\{\s*(?:問\s*)?(\d+)\s*\}\}|問\s*(\d+)(?!\d)|[（(](\d+)[）)]|(\d+)[.．、：:](?=\s|[^\d]))/);
+          if (m && !referenceSuffix(line.slice(m[0].length))) add(questions, m[1] || m[2] || m[3] || m[4], false);
         });
         text.replace(/\[\[\s*(?:--\s*)?(\d+)\s*(?:--)?\s*\]\]/g, function (_, n) { add(blanks, n, true); return _; });
         return text;
       });
     });
-    // 解答の {{66}} は、問題側では [[66]] として定義されることもある。
-    // 大問に別系統の「問1」等があっても、番号ごとに空所の対応表へフォールバックする。
+    // 解答やリード文の {{66}} は、問題側では [[66]] として定義されることもある。
+    // 定義をすべて集めた後で参照も変換し、参照だけの番号は新規採番しない。
     function number(map, n, fallback) {
       var key = String(Number(n)), v = map[key];
       if (v == null && fallback) v = fallback[key];
@@ -1927,24 +1949,32 @@
     }
     return sections.map(function (sec) {
       var copy = Object.assign({}, sec);
-      var answerSide = isAnswerSide(sec.type);
       copy.text = protectedText(sec.text, function (text) {
         // バッジを先に置換して退避し、生成した「問1」を後段でもう一度変換しない。
         var labels = [];
         function label(value) { labels.push(value); return "\u0003" + (labels.length - 1) + "\u0004"; }
+        // {{56-61}} 等の範囲見出しも、実際の空所・小問の対応表を共有する。
+        text = text.replace(/(\{\{\s*(?:問\s*)?)(\d+)((?:\s*(?:[〜～~–—-]|から|to)\s*(?:問\s*)?\d+)+)(\s*\}\})/g, function (_, a, n, rest, b) {
+          return label(a + number(questions, n, blanks) + rest.replace(/\d+/g, function (v) { return number(questions, v, blanks); }) + b);
+        });
+        text = text.replace(/(\[\[\s*(?:--\s*)?)(\d+)((?:\s*(?:[〜～~–—-]|から|to)\s*\d+)+)(\s*(?:--)?\s*\]\])/g, function (_, a, n, rest, b) {
+          return label(a + number(blanks, n, questions) + rest.replace(/\d+/g, function (v) { return number(blanks, v, questions); }) + b);
+        });
         text = text.replace(/(\{\{\s*(?:問\s*)?)(\d+)(\s*\}\})/g, function (_, a, n, b) {
-          return label(a + number(questions, n, answerSide ? blanks : null) + b);
+          return label(a + number(questions, n, blanks) + b);
         });
         text = text.replace(/(\[\[\s*(?:--\s*)?)(\d+)(\s*(?:--)?\s*\]\])/g, function (_, a, n, b) {
-          return label(a + number(Object.keys(blanks).length ? blanks : questions, n, answerSide ? questions : null) + b);
+          return label(a + number(blanks, n, questions) + b);
+        });
+        text = text.replace(/(^|[^大])(問\s*)(\d+)((?:\s*(?:[〜～~–—-]|から|to)\s*(?:問\s*)?\d+)+)/g, function (_, before, a, n, rest) {
+          return before + label(a + number(questions, n, blanks) + rest.replace(/\d+/g, function (v) { return number(questions, v, blanks); }));
         });
         text = text.replace(/(^|[^大])問(\s*)(\d+)(?!\d)/g, function (_, a, space, n) {
-          return a + "問" + space + number(questions, n, answerSide ? blanks : null);
+          return a + "問" + space + number(questions, n, blanks);
         });
         // 括弧と区切り付きの行頭番号。選択肢マークアップの二重括弧は一致しない。
         text = text.replace(/^(\s*(?:@@)?(?:\*\*)?)(?:([（(])(\d+)([）)])|(\d+)([.．、：:])(?=\s|[^\d]))/gm, function (_, prefix, a, n, b, bare, sep) {
-          var map = Object.keys(questions).length ? questions : blanks;
-          return prefix + (a ? a + number(map, n, answerSide ? blanks : null) + b : number(map, bare, answerSide ? blanks : null) + sep);
+          return prefix + (a ? a + number(questions, n, blanks) + b : number(questions, bare, blanks) + sep);
         });
         return text.replace(/\u0003(\d+)\u0004/g, function (_, i) { return labels[Number(i)]; });
       });
@@ -2003,8 +2033,7 @@
     var items = printItems(ex);
     var sectionsOf = {};
     qs.forEach(function (q) {
-      var sections = questionSections(q);
-      sectionsOf[printQKey(q)] = opts.renumber ? renumberPrintSections(sections) : sections;
+      sectionsOf[printQKey(q)] = questionSections(q, opts.renumber);
     });
     // 通し番号は qs 内の位置に固定し、問題面と解答面で同じ大問が同じ番号になるようにする
     // （セクション見出しは番号を消費しない）
@@ -3333,5 +3362,4 @@
   var global = window;
   document.addEventListener("DOMContentLoaded", init);
 })();
-
 
