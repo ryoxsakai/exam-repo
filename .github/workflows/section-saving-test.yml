@@ -1,0 +1,24 @@
+name: Test section saving
+
+on:
+  pull_request:
+    paths:
+      - "assets/js/**"
+      - "setting/index.html"
+      - "scripts/test-section-saving.cjs"
+      - ".github/workflows/section-saving-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  section-saving:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify editor and import section round trips
+        run: node scripts/test-section-saving.cjs

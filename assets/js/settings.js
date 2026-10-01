@@ -11,8 +11,8 @@
   }
 
   // problem_text を表示用のセクション一覧へ（「リード文」は直後のセクションへ統合済み）。
-  // 一括アップロード等で保存前に統合されていないデータが残っていても、プレビュー表示では
-  // 必ず統合された状態で見せる（登録フォームの編集用パース＝生データのままにしたい箇所には使わない）。
+  // 保存時は独立セクションを保持し、統合はプレビュー表示時だけ行う。
+  // 登録フォームの編集用パース＝生データのままにしたい箇所には使わない。
   function examSections(problemText) {
     var raw = Markup.parseSections(problemText || "");
     var merged = Markup.mergeLeadSections(raw);
@@ -667,26 +667,36 @@
     openPreview(m || "解析結果プレビュー", body);
   }
 
-  // セクション配列を保存用の {problemText, answerText, commentaryText} へ（問題登録と同じ規則）
-  function ingSectionsToQuestion(q) {
-    var sections = Markup.mergeLeadSections(q.sections);
+  // セクションの種類・順序を保って保存する（表示用のリード文統合は行わない）。
+  // 先頭の「問題」だけは旧形式と同じく見出しを省略できるが、途中の「問題」は
+  // 区切りを必ず書く。省略すると直前のリード文・本文・解説などに取り込まれてしまう。
+  function sectionsToStoredText(sections) {
     var problemLines = [];
-    sections.forEach(function (sec) {
-      var t = sec.text || "";
-      if (sec.type !== "問題") problemLines.push("{{" + sec.type + "}}");
-      if (t) problemLines.push(t);
-    });
     var answer = [], commentary = [];
-    sections.forEach(function (sec) {
-      if (sec.type === "解答") answer.push(sec.text || "");
-      else if (sec.type === "解説") commentary.push(sec.text || "");
+    (sections || []).forEach(function (sec, i) {
+      var t = sec.text || "";
+      if (i > 0 || sec.type !== "問題") problemLines.push("{{" + sec.type + "}}");
+      if (t) problemLines.push(t);
+      // 後方互換のため、解答・解説も別途抽出する。
+      if (sec.type === "解答") answer.push(t);
+      else if (sec.type === "解説") commentary.push(t);
     });
     return {
-      questionNumber: Number(q.questionNumber) || 1,
-      category: (q.category || "").trim(),
       problemText: problemLines.join("\n\n"),
       answerText: answer.join("\n\n"),
       commentaryText: commentary.join("\n\n")
+    };
+  }
+
+  // PDF取り込みも通常の問題登録と同じ保存規則を使う。
+  function ingSectionsToQuestion(q) {
+    var text = sectionsToStoredText(q.sections);
+    return {
+      questionNumber: Number(q.questionNumber) || 1,
+      category: (q.category || "").trim(),
+      problemText: text.problemText,
+      answerText: text.answerText,
+      commentaryText: text.commentaryText
     };
   }
 
@@ -1635,7 +1645,9 @@
     c.innerHTML = "";
     state.reg.sections.forEach(function (sec, i) {
       var box = create("div", { class: "reg-section" });
-      var typeOpts = types.map(function (t) { return '<option value="' + esc(t) + '"' + (t === sec.type ? " selected" : "") + ">" + esc(t) + "</option>"; }).join("");
+      // 設定の候補に無い既存の種類（リード文など）も、読み込んだ種類のまま表示する。
+      var sectionTypes = types.indexOf(sec.type) < 0 ? types.concat([sec.type]) : types;
+      var typeOpts = sectionTypes.map(function (t) { return '<option value="' + esc(t) + '"' + (t === sec.type ? " selected" : "") + ">" + esc(t) + "</option>"; }).join("");
       box.innerHTML =
         '<div class="reg-section-head">' +
           '<span class="idx">' + (i + 1) + "</span>" +
@@ -1855,31 +1867,15 @@
     var label = el("reg-label") ? el("reg-label").value.trim() : "";
     var category = el("reg-category").value || "";
 
-    // problemText に全セクションを順序どおり統合（セクション区切り {{名}} 付き。
-    // 「リード文」は独立セクションにせず直後のセクションへ統合する）
-    var sections = Markup.mergeLeadSections(state.reg.sections);
-    var problemLines = [];
-    sections.forEach(function (sec) {
-      var t = sec.text || "";
-      if (sec.type !== "問題") problemLines.push("{{" + sec.type + "}}");
-      if (t) problemLines.push(t);
-    });
-    var problemText = problemLines.join("\n\n");
-
-    // 後方互換のため、解答・解説も別途抽出
-    var answer = [], commentary = [];
-    sections.forEach(function (sec) {
-      if (sec.type === "解答") answer.push(sec.text || "");
-      else if (sec.type === "解説") commentary.push(sec.text || "");
-    });
+    var text = sectionsToStoredText(state.reg.sections);
 
     return {
       universityName: uni, year: Number(year), schedule: sched,
       questions: [{
         questionNumber: qnum, label: label, category: category,
-        problemText: problemText,
-        answerText: answer.join("\n\n"),
-        commentaryText: commentary.join("\n\n")
+        problemText: text.problemText,
+        answerText: text.answerText,
+        commentaryText: text.commentaryText
       }]
     };
   }
@@ -1923,8 +1919,8 @@
     var q = data.questions[0];
     var fields = [];
     // problemText に全セクション（問題・解答・解説）が順序どおり含まれている
-    Markup.parseSections(q.problemText || "").forEach(function (sec) {
-      if (sec.text.trim()) fields.push(field(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text));
+    examSections(q.problemText || "").forEach(function (sec) {
+      if (sec.text.trim()) fields.push(field(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text, sec.metricText));
     });
     var body = '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
     openPreview(title, body);
