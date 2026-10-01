@@ -42,6 +42,103 @@ assert.equal(renumber([{type:'問題',text:'[[68]] [[66]]\n{{66}} A\n{{68}} B'},
 assert.equal(renumber([{type:'設問',text:'{{問7}} A\n{{問1}} B'},
   {type:'解答',text:'{{問7}} 7　{{問1}} 1'}])[1].text,'{{問1}} 7　{{問2}} 1');
 assert.equal(renumber([{type:'解答',text:'{{66}}((7))\n問7：66\n66: B'}])[0].text,'{{66}}((7))\n問7：66\n66: B');
+// Reference-only text must not allocate numbers, even when it comes first.
+const rangeSections = [
+  {type:'リード文',text:'Fill [[49]]〜[[71]]. Review [[71]] and {{71}} first. {{99}} stays unknown.'},
+  {type:'リード文',text:'Again [[49]]～[[71]].'},
+  {type:'問題',text:Array.from({length:23},(_,i)=>'[[ '+(i+49)+' ]]').join(' ')},
+  {type:'解答',text:Array.from({length:23},(_,i)=>'{{'+(i+49)+'}}(('+((i%8)+1)+'))').join('　')},
+  {type:'解説',text:'{{49}}〜{{56}}; {{57}}〜{{64}}; {{65}}〜{{71}}. Values 49 and 71 stay.'},
+  {type:'リード文',text:'Last reference [[71]].'}
+];
+const rangeBefore=JSON.stringify(rangeSections),ranges=renumber(rangeSections);
+assert.equal(ranges[0].text,'Fill [[1]]〜[[23]]. Review [[23]] and {{23}} first. {{99}} stays unknown.');
+assert.equal(ranges[1].text,'Again [[1]]～[[23]].');
+assert.deepEqual([...ranges[2].text.matchAll(/\[\[ (\d+) \]\]/g)].map(m=>+m[1]),Array.from({length:23},(_,i)=>i+1));
+assert.deepEqual([...ranges[3].text.matchAll(/\{\{(\d+)\}\}/g)].map(m=>+m[1]),Array.from({length:23},(_,i)=>i+1));
+assert.deepEqual(ranges[3].text.match(/\(\(\d+\)\)/g),rangeSections[3].text.match(/\(\(\d+\)\)/g));
+assert.equal(ranges[4].text,'{{1}}〜{{8}}; {{9}}〜{{16}}; {{17}}〜{{23}}. Values 49 and 71 stay.');
+assert.equal(ranges[5].text,'Last reference [[23]].');
+assert.equal(JSON.stringify(rangeSections),rangeBefore);
+
+// Legacy merged instructions and other range expressions have the same mapping.
+for(const join of ['〜','～','~','-','–','—','から',' to ']) {
+  const legacy=renumber([{type:'問題',text:'@@**Fill [[49]]'+join+'[[71]].**\n\n[[49]] [[50]] [[71]]'},
+    {type:'解答',text:'{{49}} A　{{50}} B　{{71}} C'}]);
+  assert.equal(legacy[0].text,'@@**Fill [[1]]'+join+'[[3]].**\n\n[[1]] [[2]] [[3]]');
+  assert.equal(legacy[1].text,'{{1}} A　{{2}} B　{{3}} C');
+}
+assert.equal(renumber([{type:'問題',text:'[[49]]〜[[50]]〜[[71]] are references.\n[[71]] [[49]] [[50]]'}])[0].text,
+  '[[2]]〜[[3]]〜[[1]] are references.\n[[1]] [[2]] [[3]]','Definitions retain appearance order, not numeric order');
+
+const questionRefs=renumber([
+  {type:'リード文',text:'See 問9, {{問9}} and [[9]]. 問7〜9; {{問7}}〜{{問9}}; {{問7-9}}.'},
+  {type:'本文',text:'See {{問9}} before the questions.\n問9の説明を参照。\n{{問9}}を参照。\n(9)の説明も参照。\n[[66]]'},
+  {type:'設問',text:'問7〜9を解きなさい。\n{{問7}}〜{{問9}}を解きなさい。\n{{問7}} First\n{{問8}} Second\n{{問9}} Third\n{{問7}} repeated'},
+  {type:'解説',text:'問7〜9, 問7から問9, {{問7-9}}, {{問7}}〜{{問9}}. 大問7 remains.'}
+]);
+assert.equal(questionRefs[0].text,'See 問3, {{問3}} and [[3]]. 問1〜3; {{問1}}〜{{問3}}; {{問1-3}}.');
+assert.equal(questionRefs[1].text,'See {{問3}} before the questions.\n問3の説明を参照。\n{{問3}}を参照。\n(3)の説明も参照。\n[[1]]');
+assert.equal(questionRefs[2].text,'問1〜3を解きなさい。\n{{問1}}〜{{問3}}を解きなさい。\n{{問1}} First\n{{問2}} Second\n{{問3}} Third\n{{問1}} repeated');
+assert.equal(questionRefs[3].text,'問1〜3, 問1から問3, {{問1-3}}, {{問1}}〜{{問3}}. 大問7 remains.');
+assert.equal(renumber([{type:'リード文',text:'(66)を見よ。\n(68)を見よ。\n66: 内容'},
+  {type:'設問',text:'{{問7}} Choose [[66]].\n{{問8}} Choose [[68]].'}])[0].text,'(1)を見よ。\n(2)を見よ。\n1: 内容');
+
+const compound=renumber([
+  {type:'問題',text:'{{56-61}} Group\n[[56]] [[57]] [[61]]\n{{62-68}} Group\n[[62]] [[68]]\n{{69-75}} Group\n[[69]] [[75]]'},
+  {type:'解説',text:'{{56-61}} then {{62〜68}} then {{69-75}}. [[56-75]]; [[--56-75--]]; {{56-99}}.'}
+]);
+assert.equal(compound[0].text,'{{1-3}} Group\n[[1]] [[2]] [[3]]\n{{4-5}} Group\n[[4]] [[5]]\n{{6-7}} Group\n[[6]] [[7]]');
+assert.equal(compound[1].text,'{{1-3}} then {{4〜5}} then {{6-7}}. [[1-7]]; [[--1-7--]]; {{1-99}}.');
+// No-indent/bold is generic formatting, not proof that the line is a lead.
+assert.equal(renumber([{type:'問題',text:'@@**{{問7}} Choose [[66]].**\n@@**問1 Choose [[68]].**'},
+  {type:'解説',text:'{{問7-1}}; 問7〜1; [[66]] [[68]]'}])[1].text,'{{問1-2}}; 問1〜2; [[1]] [[2]]');
+assert.equal(renumber([{type:'リード文',text:'[[49]]〜[[71]]; 問7〜9; {{56-61}}'}])[0].text,
+  '[[49]]〜[[71]]; 問7〜9; {{56-61}}','References never invent definitions');
+for(const word of ['がん','におい','へき地','はしか','やけど','からだ']) {
+  for(const style of [n=>'{{問'+n+'}}',n=>'問'+n,n=>'('+n+')',n=>n+'.']) {
+    const result=renumber([{type:'設問',text:style(7)+' '+word+'について答えよ。\n'+style(8)+' 次の英文について答えよ。'},
+      {type:'解答',text:'問7：A\n問8：B'}]);
+    assert.equal(result[0].text,style(1)+' '+word+'について答えよ。\n'+style(2)+' 次の英文について答えよ。');
+    assert.equal(result[1].text,'問1：A\n問2：B');
+  }
+}
+
+// Exercise the raw-section → numbering → lead-merge path used by printing.
+const rangedQuestion={exam_id:50,question_number:7,problem_text:rangeSections.map(s=>'{{'+s.type+'}}\n'+s.text).join('\n'),answer_text:'Duplicate legacy answer must not appear'};
+const rangedExam={questions:[rangedQuestion]},rangedBefore=JSON.stringify(rangedExam);
+const rangedHtml=ctx.testPrint.buildPrintHtml(rangedExam,{renumber:true});
+assert(rangedHtml.includes('Fill <span class="blank-badge">1</span> 〜 <span class="blank-badge">23</span>'));
+assert(rangedHtml.includes('question-badge">23</span>'));
+assert(!rangedHtml.includes('Duplicate legacy answer'));
+assert(ctx.testPrint.buildPrintHtml(rangedExam,{renumber:false}).includes('question-badge">71</span>'));
+assert.equal(ctx.testPrint.buildPrintHtml(rangedExam,{renumber:true}),rangedHtml);
+ctx.Store.setPrintSection('問題',false);ctx.Store.setPrintSection('リード文',false);
+const rangedAnswers=ctx.testPrint.buildPrintHtml(rangedExam,{renumber:true});
+assert(!rangedAnswers.includes('print-part-q'));
+assert(rangedAnswers.includes('question-badge">23</span>'));
+ctx.Store.setPrintSection('問題',true);ctx.Store.setPrintSection('リード文',true);
+assert.equal(JSON.stringify(rangedExam),rangedBefore);
+const rangedSecond={exam_id:60,question_number:7,problem_text:'{{リード文}}\nFill [[56]]〜[[58]].\n{{問題}}\n[[56]] [[57]] [[58]]',answer_text:'{{56}} A {{57}} B {{58}} C'};
+const rangedFolder={kind:'favFolder',questions:[rangedQuestion,rangedSecond],items:[
+  {kind:'section',name:'Range group one'},{kind:'question',q:rangedQuestion},
+  {kind:'section',name:'Range group two'},{kind:'question',q:rangedSecond}
+]};
+const rangedFolderBefore=JSON.stringify(rangedFolder),rangedFolderHtml=ctx.testPrint.buildPrintHtml(rangedFolder,{renumber:true});
+assert.equal((rangedFolderHtml.match(/print-section-head">Range group one/g)||[]).length,2);
+assert.equal((rangedFolderHtml.match(/print-section-head">Range group two/g)||[]).length,2);
+assert(rangedFolderHtml.includes('Fill <span class="blank-badge">1</span> 〜 <span class="blank-badge">3</span>'));
+assert(rangedFolderHtml.includes('question-badge">1</span><span class="qtext">A <span class="question-badge">2</span> B <span class="question-badge">3</span> C'));
+assert.equal(JSON.stringify(rangedFolder),rangedFolderBefore);
+const trailingLegacy={questions:[{question_number:1,problem_text:'{{本文}}\nBody [[66]].\n{{リード文}}\nTrailing [[66]] instructions.',answer_text:'{{66}} A',commentary_text:'{{66}} Explanation.'}]};
+for(const on of [false,true]) {
+  const output=ctx.testPrint.buildPrintHtml(trailingLegacy,{renumber:on});
+  const [questionSide,answerSide]=output.split('<div class="print-part print-part-a">');
+  assert(questionSide.includes('Trailing'),'A trailing stored lead stays on the question side');
+  assert(!answerSide.includes('Trailing'),'Legacy answer columns must not absorb a stored trailing lead');
+  assert(answerSide.includes('question-badge">'+(on?1:66)+'</span>'));
+}
+
 const ex={kind:'favFolder',questions:[{exam_id:10,question_number:1,problem_text:'{{設問}}\n{{問7}} A\n{{解答}}\n問7：B'},{exam_id:20,question_number:1,problem_text:'{{設問}}\n{{問66}} C\n{{解答}}\n問66：D'}]};
 const before=JSON.stringify(ex);let html=ctx.testPrint.buildPrintHtml(ex,{renumber:true});assert.equal((html.match(/question-badge">問1</g)||[]).length,2);assert(html.includes('問1：B'));assert(html.includes('問1：D'));assert.equal(JSON.stringify(ex),before);
 html=ctx.testPrint.buildPrintHtml(ex,{renumber:false});assert(html.includes('問7'));assert(html.includes('問66'));
@@ -75,4 +172,4 @@ html=ctx.testPrint.buildPrintHtml(folder,{renumber:true});
 assert(!html.includes('First group'));
 assert(html.includes('Second group'));
 assert.equal(JSON.stringify(folder),folderBefore,'Printing must not mutate stored or favorite data');
-console.log('PASS: persisted option; per-question and blank-to-answer numbering; all label styles; choices/numeric answers preserved; overlapping maps; no double remapping; legacy/embedded answers; favorite groups; OFF/ON; answer-only printing; excluded questions; no data mutation');
+console.log('PASS: definition-first numbering; explicit/legacy/repeated/trailing leads; range references and compound labels; persisted option; per-question and blank-to-answer numbering; all label styles; choices/numeric answers preserved; overlapping maps; no double remapping; legacy/embedded answers; favorite groups; OFF/ON; answer-only printing; excluded questions; no data mutation');
