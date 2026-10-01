@@ -5,7 +5,9 @@ on:
     paths:
       - "assets/js/**"
       - "setting/index.html"
+      - "index.html"
       - "scripts/test-section-saving.cjs"
+      - "scripts/test-print-renumber.cjs"
       - ".github/workflows/section-saving-test.yml"
   workflow_dispatch:
 
@@ -22,3 +24,5 @@ jobs:
           node-version: 24
       - name: Verify editor and import section round trips
         run: node scripts/test-section-saving.cjs
+      - name: Verify matching question and answer print numbering
+        run: node scripts/test-print-renumber.cjs
