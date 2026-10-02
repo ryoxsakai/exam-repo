@@ -1,0 +1,36 @@
+name: Test OAuth browser login
+
+on:
+  pull_request:
+    paths:
+      - "worker/**"
+      - "panel/**"
+      - "scripts/test-oauth-browser-session.cjs"
+      - ".github/workflows/oauth-browser-session-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  oauth-browser-login:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --prefix panel
+      - run: npm run build --prefix panel
+      - run: npm test --prefix panel
+      - name: Install Chromium for synthetic HTTPS QA
+        run: ./panel/node_modules/.bin/playwright install --with-deps chromium
+      - name: Verify OAuth flows with fake credentials and intercepted HTTPS requests
+        run: node scripts/test-oauth-browser-session.cjs --browser
+      - name: Preserve synthetic login screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exam-oauth-browser-qa
+          path: /tmp/exam-oauth-*.png
+          if-no-files-found: ignore

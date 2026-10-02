@@ -1,6 +1,7 @@
 import { safeRefreshUniversityIndexForExam } from "./university-index";
 
 import { PANEL_HTML } from "./panel-resource";
+import { ensureBrowserSessionSchema, rememberedLogin, rememberLogin, forgetLogin, loginFormToken, validLoginForm } from "./oauth-browser-session";
 
 export interface McpEnv {
   DB: D1Database;
@@ -37,8 +38,8 @@ function rpcError(id: unknown, code: number, message: string) { return response(
 function escapeHtml(value: unknown) {
   return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char] || char));
 }
-function html(body: string, status = 200) {
-  return new Response(body, { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+function html(body: string, status = 200, extra: Record<string, string> = {}) {
+  return new Response(body, { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "same-origin", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", ...extra } });
 }
 function toBase64Url(bytes: Uint8Array) {
   let value = ""; for (const byte of bytes) value += String.fromCharCode(byte);
@@ -71,7 +72,7 @@ async function ensureSchema(env: McpEnv) {
 async function registerClient(request: Request, env: McpEnv) {
   await ensureSchema(env); const body = await request.json<Record<string, unknown>>();
   const uris = Array.isArray(body.redirect_uris) ? body.redirect_uris.map(String) : [];
-  if (!uris.length || uris.some((uri) => !uri.startsWith("https://"))) return response({ error: "invalid_client_metadata" }, 400);
+  if (!uris.length || uris.some((uri) => !validRedirectUri(uri))) return response({ error: "invalid_client_metadata" }, 400);
   const id = crypto.randomUUID();
   await env.DB.prepare("INSERT INTO mcp_oauth_clients (client_id, redirect_uris) VALUES (?, ?)").bind(id, JSON.stringify(uris)).run();
   return response({ client_id: id, token_endpoint_auth_method: "none", grant_types: ["authorization_code"], response_types: ["code"] }, 201);
@@ -80,30 +81,66 @@ async function clientUris(env: McpEnv, id: string): Promise<string[]> {
   await ensureSchema(env); const row = await env.DB.prepare("SELECT redirect_uris FROM mcp_oauth_clients WHERE client_id = ?").bind(id).first<{ redirect_uris: string }>();
   try { return row ? JSON.parse(row.redirect_uris) : []; } catch { return []; }
 }
-function authError(message: string) {
-  return html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>入試データベース認証</title><body style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans JP',sans-serif;max-width:560px;margin:48px auto;padding:0 20px"><h1>認証エラー</h1><p>${escapeHtml(message)}</p></body></html>`, 400);
+function authError(message: string, status = 400) {
+  return html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>入試データベース認証</title><body style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans JP',sans-serif;max-width:560px;margin:48px auto;padding:0 20px"><h1>認証エラー</h1><p>${escapeHtml(message)}</p></body></html>`, status);
 }
-function authForm(params: URLSearchParams) {
-  const hidden = ["response_type", "client_id", "redirect_uri", "state", "code_challenge", "code_challenge_method", "scope"].map((name) => `<input type="hidden" name="${name}" value="${escapeHtml(params.get(name))}">`).join("");
+const AUTH_FIELDS = ["response_type", "client_id", "redirect_uri", "state", "code_challenge", "code_challenge_method", "scope"];
+function authContext(params: URLSearchParams) { return JSON.stringify(AUTH_FIELDS.map((name) => params.get(name) || "")); }
+function validRedirectUri(value: string) {
+  try { const uri = new URL(value); return uri.protocol === "https:" && !uri.username && !uri.password && !value.includes("#") && value.startsWith("https://") && !/[\s\\]/.test(value); } catch { return false; }
+}
+async function validAuthorization(params: URLSearchParams, env: McpEnv) {
+  const scopes = Array.from(new Set((params.get("scope") || MCP_DEFAULT_SCOPE).split(" ").filter(Boolean)));
+  const redirect = params.get("redirect_uri") || "";
+  const uris = await clientUris(env, params.get("client_id") || "");
+  return AUTH_FIELDS.every((name) => params.getAll(name).length <= 1) && params.get("response_type") === "code" && validRedirectUri(redirect) && uris.includes(redirect) && /^[A-Za-z0-9_-]{43}$/.test(params.get("code_challenge") || "") && params.get("code_challenge_method") === "S256" && scopes.includes(MCP_SCOPE) && scopes.every((item) => MCP_SUPPORTED_SCOPES.includes(item));
+}
+async function authForm(request: Request, env: McpEnv, params: URLSearchParams, remembered: { expiresAt: number } | null, message = "", checked = Boolean(remembered)) {
+  const hidden = AUTH_FIELDS.map((name) => `<input type="hidden" name="${name}" value="${escapeHtml(params.get(name))}">`).join("");
+  const form = await loginFormToken(request, env, "authorize", authContext(params));
+  const logout = remembered ? await loginFormToken(request, env, "logout", authContext(params), form.nonce) : null;
   const writeRequested = String(params.get("scope") || MCP_DEFAULT_SCOPE).split(" ").includes(MCP_WRITE_SCOPE);
   const permissionText = writeRequested
     ? "大学・試験・登録問題の読み取りと、監査・確認を完了した問題への画像追加、および監査・差分確認を完了した問題だけの修正を許可します。削除は行いません。"
     : "大学・試験・登録問題の読み取りを許可します。編集や削除は行いません。";
-  return html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>医学部入試DBを接続</title><body style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans JP',sans-serif;max-width:560px;margin:48px auto;padding:0 20px"><h1>医学部入試DBをChatGPTに接続</h1><p>${permissionText}</p><form method="post"><label style="display:block;margin:24px 0 8px">EXAM APIキー</label><input name="api_key" type="password" required style="box-sizing:border-box;width:100%;padding:12px;font-size:16px">${hidden}<button type="submit" style="margin-top:24px;padding:12px 18px;font-size:16px">接続を許可</button></form></body></html>`);
+  return html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>医学部入試DBを接続</title><body style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans JP',sans-serif;max-width:560px;margin:48px auto;padding:0 20px"><h1>医学部入試DBをChatGPTに接続</h1><p>${permissionText}</p><p style="overflow-wrap:anywhere">接続先: ${escapeHtml(params.get("redirect_uri"))}</p>${message ? `<p role="alert" style="color:#b91c1c">${escapeHtml(message)}</p>` : ""}<form method="post" action="/oauth/authorize">${remembered ? `<p>このブラウザのログイン状態を保持しています（期限: ${new Date(remembered.expiresAt).toISOString().slice(0, 10)} UTC）。接続先と権限を確認して許可してください。</p>` : `<label for="api-key" style="display:block;margin:24px 0 8px">EXAM APIキー</label><input id="api-key" name="api_key" type="password" autocomplete="off" required style="box-sizing:border-box;width:100%;padding:12px;font-size:16px">`}${hidden}<input type="hidden" name="csrf_token" value="${escapeHtml(form.token)}"><label style="display:flex;gap:8px;align-items:flex-start;margin-top:20px"><input type="checkbox" name="remember_login" value="1"${checked ? " checked" : ""}>ログイン状態を30日間保持する</label><p style="font-size:14px;color:#555">APIキーは保存しません。共有端末ではチェックを外してください。保持中も、接続の許可は毎回確認します。</p><button type="submit" style="margin-top:12px;padding:12px 18px;font-size:16px">接続を許可</button></form>${logout ? `<form method="post" action="/oauth/logout" style="margin-top:24px">${hidden}<input type="hidden" name="csrf_token" value="${escapeHtml(logout.token)}"><button type="submit">このブラウザのログイン保持を解除</button><p style="font-size:14px;color:#555">接続済みアプリのアクセストークンは期限まで有効です。</p></form>` : ""}</body></html>`, message ? 401 : 200, { "Set-Cookie": form.cookie, "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${new URL(params.get("redirect_uri")!).origin}; frame-ancestors 'none'; base-uri 'none'` });
 }
 async function authorize(request: Request, env: McpEnv, url: URL) {
+  if (url.protocol !== "https:") return authError("認証にはHTTPS接続が必要です。");
+  if (!env.EXAM_API_KEY || !env.EXAM_SESSION_SECRET) return authError("認証の設定が完了していません。管理者にお問い合わせください。", 503);
   const p = request.method === "POST" ? new URLSearchParams(await request.text()) : url.searchParams;
   const cid = p.get("client_id") || "", redirect = p.get("redirect_uri") || "", challenge = p.get("code_challenge") || "", scope = p.get("scope") || MCP_DEFAULT_SCOPE;
   const requestedScopes = Array.from(new Set(scope.split(" ").filter(Boolean)));
-  const uris = await clientUris(env, cid);
-  if (p.get("response_type") !== "code" || !uris.includes(redirect) || !challenge || p.get("code_challenge_method") !== "S256" || !requestedScopes.includes(MCP_SCOPE) || requestedScopes.some((item) => !MCP_SUPPORTED_SCOPES.includes(item))) return authError("認可リクエストが正しくありません。");
-  if (request.method === "GET") return authForm(p);
+  if (!(await validAuthorization(p, env))) return authError("認可リクエストが正しくありません。");
+  await ensureBrowserSessionSchema(env);
+  const remembered = await rememberedLogin(request, env);
+  if (request.method === "GET") return authForm(request, env, p, remembered);
+  if (!(await validLoginForm(request, env, "authorize", authContext(p), p.get("csrf_token") || ""))) return authError("認証画面の有効期限が切れたか、送信元を確認できません。認証画面を開き直してください。", 403);
   const supplied = p.get("api_key") || "";
-  if (!env.EXAM_API_KEY || !supplied || !(await safeEqual(supplied, env.EXAM_API_KEY))) return authError("APIキーが正しくありません。");
+  if (supplied ? !(await safeEqual(supplied, env.EXAM_API_KEY)) : !remembered) return authForm(request, env, p, remembered, "APIキーが正しくないか、ログイン保持の有効期限が切れています。", p.get("remember_login") === "1");
+  let sessionCookie = "";
+  if (p.get("remember_login") !== "1") sessionCookie = await forgetLogin(request, env);
+  else if (!remembered || supplied) sessionCookie = await rememberLogin(request, env);
   const code = crypto.randomUUID();
   await env.DB.prepare("INSERT INTO mcp_oauth_codes (code, client_id, redirect_uri, code_challenge, scope, expires_at) VALUES (?, ?, ?, ?, ?, ?)").bind(code, cid, redirect, challenge, requestedScopes.join(" "), Date.now() + CODE_AGE_MS).run();
   const dest = new URL(redirect); dest.searchParams.set("code", code); if (p.get("state")) dest.searchParams.set("state", p.get("state")!);
-  return Response.redirect(dest.toString(), 302);
+  return new Response(null, { status: 302, headers: { "Location": dest.toString(), "Cache-Control": "no-store", "Referrer-Policy": "same-origin", ...(sessionCookie ? { "Set-Cookie": sessionCookie } : {}) } });
+}
+async function logout(request: Request, env: McpEnv, url: URL) {
+  if (url.protocol !== "https:" || !env.EXAM_API_KEY || !env.EXAM_SESSION_SECRET) return authError("認証の設定とHTTPS接続を確認してください。", 503);
+  await ensureBrowserSessionSchema(env);
+  if (request.method === "GET") {
+    const form = await loginFormToken(request, env, "logout", authContext(new URLSearchParams()));
+    return html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ログイン保持の解除</title><body style="font-family:sans-serif;max-width:560px;margin:48px auto;padding:0 20px"><h1>このブラウザのログイン保持を解除</h1><p>次回の接続ではAPIキーの入力が必要になります。接続済みアプリのアクセストークンは期限まで有効です。</p><form method="post" action="/oauth/logout"><input type="hidden" name="csrf_token" value="${escapeHtml(form.token)}"><button type="submit">ログイン保持を解除する</button></form></body></html>`, 200, { "Set-Cookie": form.cookie });
+  }
+  const p = new URLSearchParams(await request.text());
+  const hasAuthorization = AUTH_FIELDS.some((name) => p.has(name));
+  if ((hasAuthorization && !(await validAuthorization(p, env))) || !(await validLoginForm(request, env, "logout", authContext(p), p.get("csrf_token") || ""))) return authError("送信元を確認できません。認証画面を開き直してください。", 403);
+  const sessionCookie = await forgetLogin(request, env);
+  if (!hasAuthorization) return html("<!doctype html><html lang=\"ja\"><meta charset=\"utf-8\"><title>ログイン保持の解除</title><h1>ログイン保持を解除しました</h1><p>この画面を閉じてください。次回の接続ではAPIキーの入力が必要になります。</p></html>", 200, { "Set-Cookie": sessionCookie });
+  const dest = new URL("/oauth/authorize", url);
+  for (const name of AUTH_FIELDS) if (p.has(name)) dest.searchParams.set(name, p.get(name)!);
+  return new Response(null, { status: 303, headers: { "Location": dest.toString(), "Cache-Control": "no-store", "Referrer-Policy": "same-origin", "Set-Cookie": sessionCookie } });
 }
 async function sha256(value: string) { return toBase64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))); }
 async function token(request: Request, env: McpEnv) {
@@ -2040,6 +2077,7 @@ export async function handleMcpRoute(request: Request, env: McpEnv): Promise<Res
   if (path === "/.well-known/oauth-authorization-server" && request.method === "GET") return response({ issuer: root, authorization_endpoint: `${root}/oauth/authorize`, token_endpoint: `${root}/oauth/token`, registration_endpoint: `${root}/oauth/register`, response_types_supported: ["code"], grant_types_supported: ["authorization_code"], token_endpoint_auth_methods_supported: ["none"], code_challenge_methods_supported: ["S256"], scopes_supported: MCP_SUPPORTED_SCOPES });
   if (path === "/oauth/register" && request.method === "POST") return registerClient(request, env);
   if (path === "/oauth/authorize" && (request.method === "GET" || request.method === "POST")) return authorize(request, env, url);
+  if (path === "/oauth/logout" && (request.method === "GET" || request.method === "POST")) return logout(request, env, url);
   if (path === "/oauth/token" && request.method === "POST") return token(request, env);
   if (path === "/mcp") return mcp(request, env, url);
   return null;
