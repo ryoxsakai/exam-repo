@@ -129,6 +129,7 @@
 印刷対象は `state.printSel.kind` で切り替える（`"exam"`=大学/年度/方式、`"favFolder"`=お気に入りフォルダ）。大問の識別は `printQKey(q)`（`exam_id:question_number`）に統一されており、お気に入りフォルダのように複数の試験の大問が混ざって `question_number` が衝突しても正しく扱える。
 
 - **表紙をつける**（`pr-cover`）
+- **氏名欄を追加**（`pr-name-field` / `Store.getPrintNameField`）: 既定OFF。表紙右下に「氏名:」と記入線を出す。大学・年度・方式／お気に入りフォルダの両方に対応し、プレビューと印刷で同じHTMLを使う。表紙を外すと操作を無効にして氏名欄も出さないが、設定値は維持する。`exam_print_name_field` にこの端末だけの設定として保存し、既存の表紙タイトル・問題面・解答面の配置は変えない。回帰テスト: `node scripts/test-print-name-field.cjs`（`--browser` でChromiumによるUI・A4 PDF検証も実行）。
 - **「問題」「本文」「設問」のラベルを外す**（`pr-hide-labels` / `Store.getPrintHideLabels`）: `printField` がこの3種（`LABEL_HIDABLE`）のセクション名見出しを出力しなくなり、中身だけが印刷される。解答・解説・全訳などはどのセクションか分からなくなると困るため対象外で、常にラベルを出す。
 - **大問ごとに改ページ（問題面／解答・解説面で別々）**（`pr-qbreak-q` / `pr-qbreak-a` / `Store.getPrintQPageBreak(side)`）: ルート要素に `qbreak-q` / `qbreak-a` クラスを付け、`@media print` の `#print-area.print-out.qbreak-q .print-part-q .print-q ~ .print-q { page-break-before: always }`（解答面は `qbreak-a` / `.print-part-a`）で2つ目以降の大問を新しいページから始める（各パート先頭の大問は `.print-part + .print-part` の改ページで既に新ページ）。面の区別のため `part()` が `.print-part-q` / `.print-part-a` を付けている。画面のプレビューでは破線で改ページ位置を示す。面別に分ける前の設定（`exam_print_qbreak`）が残っている場合はその値を両面に引き継ぐ。**隣接（`+`）ではなく一般兄弟（`~`）を使う**のは、大問と大問の間にセクション見出しが挟まっても「2つ目以降の大問」と判定できるようにするため。
 - **セクションごとに改ページ（問題面／解答・解説面で別々）**（`pr-sbreak-q` / `pr-sbreak-a` / `Store.getPrintSectionPageBreak(side)`）: ルート要素に `sbreak-q` / `sbreak-a` クラスを付け、`.print-q ~ .print-section-head` で2つ目以降のセクション見出しの前を改ページする（パート先頭の見出しは対象外）。お気に入りフォルダの印刷でのみ意味を持つ。

@@ -1,0 +1,45 @@
+name: Test print cover name field
+
+on:
+  pull_request:
+    paths:
+      - "assets/js/**"
+      - "assets/css/**"
+      - "index.html"
+      - "scripts/test-print-*.cjs"
+      - ".github/workflows/print-name-field-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  print-cover-name-field:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --prefix panel
+      - run: npm run build --prefix panel
+      - run: npm test --prefix panel
+      - name: Verify existing print behavior
+        run: |
+          node scripts/test-print-renumber.cjs
+          node scripts/test-print-writing-space.cjs
+          node scripts/test-print-line-numbers.cjs
+          node scripts/test-section-saving.cjs
+      - name: Install Chromium for local fixture QA
+        run: ./panel/node_modules/.bin/playwright install --with-deps chromium
+      - name: Install Japanese fonts and PDF inspection tools
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk poppler-utils
+      - name: Verify print cover option, preview, and A4 PDFs
+        run: node scripts/test-print-name-field.cjs --browser
+      - name: Preserve print preview and PDF evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exam-print-name-field-qa
+          path: /tmp/exam-print-name-*
+          if-no-files-found: ignore

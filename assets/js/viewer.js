@@ -239,7 +239,18 @@
     if (treeRefresh) treeRefresh.addEventListener("click", function () { loadTree(true); });
 
     // 問題印刷タブ
-    el("pr-cover").addEventListener("change", renderPrintPreview);
+    el("pr-cover").addEventListener("change", function () {
+      if (el("pr-name-field")) el("pr-name-field").disabled = !el("pr-cover").checked;
+      renderPrintPreview();
+    });
+    if (el("pr-name-field")) {
+      el("pr-name-field").checked = Store.getPrintNameField();
+      el("pr-name-field").disabled = !el("pr-cover").checked;
+      el("pr-name-field").addEventListener("change", function () {
+        Store.setPrintNameField(el("pr-name-field").checked);
+        renderPrintPreview();
+      });
+    }
     el("pr-fontsize").value = Store.getPrintFontSize();
     el("pr-fontsize").addEventListener("change", function () {
       Store.setPrintFontSize(el("pr-fontsize").value);
@@ -1985,6 +1996,10 @@
   function buildPrintHtml(ex, opts, useDraftTitles) {
     var html = "";
     if (opts.cover) {
+      var coverClass = "print-cover" + (opts.nameField ? " has-name-field" : "");
+      var nameField = opts.nameField
+        ? '<div class="pc-name-field" aria-label="氏名記入欄"><span>氏名:</span><span class="pc-name-line" aria-hidden="true"></span></div>'
+        : "";
       if (ex.kind === "favFolder") {
         // お気に入りフォルダ: 既定3行に加え、必要なら任意の行を追加できる。
         // 編集中の下書きはプレビューだけに使い、印刷には保存済みの文言だけを使う。
@@ -2011,7 +2026,7 @@
             '</div>' +
           "</div>";
         };
-        html += '<div class="print-cover">' +
+        html += '<div class="' + coverClass + '">' +
           lines.map(function (text, index) {
             var cls = index === 0 ? "pc-year" : index === 1 ? "pc-uni" : index === 2 ? "pc-sched" : "pc-extra";
             return line(cls, index, text);
@@ -2020,13 +2035,13 @@
             '<button type="button" class="btn ghost sm" data-print-title-add="' + esc(String(ex.folderId)) + '"><i class="fa-solid fa-plus"></i> 行を追加</button>' +
             (lines.length > 3 ? '<button type="button" class="btn ghost sm" data-print-title-remove="' + esc(String(ex.folderId)) + '"><i class="fa-solid fa-trash"></i> 追加行を削除</button>' : '') +
             '<button type="button" class="btn primary sm" data-print-title-save="' + esc(String(ex.folderId)) + '" hidden><i class="fa-solid fa-floppy-disk"></i> 保存</button>' +
-          "</div>" +
+          "</div>" + nameField +
           "</div>";
       } else {
-        html += '<div class="print-cover">' +
+        html += '<div class="' + coverClass + '">' +
           '<div class="pc-year">' + esc(ex.year) + "年度</div>" +
           '<div class="pc-uni">' + esc(ex.university_name) + "</div>" +
-          '<div class="pc-sched">' + esc(ex.schedule) + "</div></div>";
+          '<div class="pc-sched">' + esc(ex.schedule) + "</div>" + nameField + "</div>";
       }
     }
     var qs = printQuestions(ex);
@@ -2084,6 +2099,7 @@
   function printOptions() {
     return {
       cover: el("pr-cover").checked,
+      nameField: el("pr-name-field") ? el("pr-name-field").checked : false,
       hideLabels: el("pr-hide-labels") ? el("pr-hide-labels").checked : false,
       qBreakQ: el("pr-qbreak-q") ? el("pr-qbreak-q").checked : false,
       qBreakA: el("pr-qbreak-a") ? el("pr-qbreak-a").checked : false,
