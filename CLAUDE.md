@@ -79,6 +79,16 @@
 - サーバー: `worker/index.ts` が Firebase ID トークン（JWT/RS256）を **npm依存なし・Web Crypto API のみ**で検証する（`verifyFirebaseIdToken`）。署名鍵は Google の JWKS（`securetoken@system.gserviceaccount.com`）を Workers の Cache API でエッジキャッシュして取得。`getAuthUid(request)` が `Authorization: Bearer <idToken>` から検証済み `uid`（Firebaseの`sub`クレーム）を返す。
 - 認可が必要なのは `/api/favorites` `/api/favorite-folders` `/api/user-settings` 系のみ。閲覧・検索など既存APIは引き続き無認証。
 
+### MCP接続画面のログイン保持（Googleログインとは別）
+
+- `worker/mcp.ts` の `/oauth/authorize` は `EXAM_API_KEY` で本人確認し、要求された接続先・権限を毎回表示して明示的な許可を求める。初回は「ログイン状態を30日間保持する」が未選択。保持しても OAuth の許可を自動化しない。
+- `worker/oauth-browser-session.ts` は32バイトの暗号学的乱数を `__Host-exam_oauth_login` Cookie（`Secure; HttpOnly; SameSite=Lax; Path=/`、Domainなし）に保存。D1 の `mcp_oauth_browser_sessions` にはそのSHA-256ハッシュ・認証設定のHMACタグ・固定30日の期限だけを保存する。APIキー・OAuthトークンを localStorage/sessionStorage に保存しない。繰り返し許可しても期限を延長せず、APIキーまたは `EXAM_SESSION_SECRET` の変更でも無効になる。
+- CookieはMCP接続画面専用。既存のOAuthスコープ・5分の認可コード・24時間のアクセストークン、Firebase認証には流用しない。
+- 認可・解除のPOSTは完全一致のOriginと、D1の10分・一回限りのフォームトークンで保護。トークンはブラウザ専用HttpOnly nonce、保持Cookie、認可パラメータ、操作に結びつけ、`DELETE … RETURNING` で原子的に消費する。Cookieのnonceは有効な間再利用して複数タブを許容する。
+- 保持中にチェックを外して許可すると保持を解除。画面内の解除ボタン、または `/oauth/logout` の確認画面からも解除でき、D1のセッション行を削除してCookieを失効する。すでに接続済みのアプリのアクセストークンは期限まで有効。
+- ログイン画面はHTTPS必須。`Referrer-Policy: same-origin` により同一オリジンのフォームOriginを維持し、外部コールバックへのReferer送信を防ぐ。CSPの `form-action` は自オリジンと検証済みコールバックのオリジンのみ（OAuthリダイレクトをブラウザが拒否しないため）。新たなSecretや外部ライブラリは不要。D1テーブル・索引は対象ルートで冪等に作成し、期限切れ行を削除する。
+- 回帰テスト（Node.js 24+）: `npm ci --prefix panel && npm run build --prefix panel && node scripts/test-oauth-browser-session.cjs`。実際のin-memory SQLiteとダミー認証情報で、ON/OFF、反復、並列・再送、期限、解除、失敗、Origin/CSRF/redirect/PKCEを検証する。任意のブラウザテストはPlaywrightとChromiumを用意し、`PLAYWRIGHT_MODULE=/path/to/playwright PANEL_CHROMIUM=/path/to/chromium node scripts/test-oauth-browser-session.cjs --browser`（外部通信はテスト用URLでインターセプト）で実行する。
+
 ### お気に入りのフォルダ分け・並べ替え（`assets/js/viewer.js`）
 
 - お気に入りタブはフォルダ・セクション・大問を1本の木構造（`#favorites-area` 内 `.fav-tree`）として描画する。並び順・所属フォルダは `favorites` / `favorite_copies` の `sort_order`/`folder_id` と `favorite_folders.sort_order`/`parent_id` で管理し、3種をまとめて1つの表示順にする（`favChildrenOf`）。
@@ -184,4 +194,3 @@
 - **Worker(D1) config**: サイトタイトル / 方式(schedules) / 年度(year_presets) … 全端末で共有
 - **Worker(D1) user_settings**: タブ順 / お気に入りフォルダ印刷の表紙タイトル（Googleログイン時のみ。`GET/PUT /api/user-settings`）… ログインアカウントに紐づけて端末をまたいで共有
 - **localStorage**: Worker URL / タブ順（未ログイン時、またはログイン時もこの端末用のフォールバックとして常に保存） / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`) / 印刷オプション（文字サイズ・行間・対象セクション、ラベルを外す(`exam_print_hide_labels`)・大問ごとに改ページ(`exam_print_qbreak_q`/`exam_print_qbreak_a`)・セクションごとに改ページ(`exam_print_sbreak_q`/`exam_print_sbreak_a`)・パート見出しを外す(`exam_print_hide_head_q`/`exam_print_hide_head_a`)・通し番号つき見出し(`exam_print_qsubtitle`)・5行ごとの行番号(`exam_print_linenum`)） / お気に入りフォルダ印刷の表紙タイトル(`exam_print_folder_titles`。ログイン時はアカウントにも保存)
-
