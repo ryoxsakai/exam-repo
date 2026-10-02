@@ -128,11 +128,28 @@ async function browserTest() {
   const f=fixture(); await f.ready();
   try {
     const context=await browser.newContext({viewport:{width:390,height:844}}); const page=await context.newPage();
-    await context.route('**/*',async route=>{
-      const req=route.request(); const origin=new URL(req.url()).origin; if(origin==='https://client.test'){assert.equal((await req.allHeaders()).referer,undefined);await route.fulfill({status:200,contentType:'text/html',body:`<p>OAuth callback received</p><a href="${ROOT}/oauth/authorize?${new URLSearchParams(FIELDS)}">認証画面を開く</a>`});return;} if(origin!==ROOT){await route.abort();return;}
-      const result=await handleMcpRoute(new Request(req.url(),{method:req.method(),headers:await req.allHeaders(),...(req.postData()?{body:req.postData()}: {})}),f.env);
-      await route.fulfill({status:result.status,headers:Object.fromEntries(result.headers),body:await result.text()});
+    // Playwright route() skips redirected requests. Fetch interception handles
+    // every hop while retaining actual browser redirects, CSP, Origin and cookies.
+    const session=await context.newCDPSession(page);
+    const interceptionErrors=[];
+    page.on('console',message=>{if(message.type()==='error') console.error('Browser:',message.text());});
+    page.on('requestfailed',request=>console.error('Browser request failed:',request.method(),request.url(),request.failure()?.errorText));
+    session.on('Fetch.requestPaused',async ({requestId,request})=>{
+      try {
+        const target=new URL(request.url); let result;
+        if(target.origin==='https://client.test') {
+          assert.equal(new Headers(request.headers).get('Referer'),null);
+          assert.equal(new Headers(request.headers).get('Cookie'),null);
+          result=new Response(`<p>OAuth callback received</p><a href="${ROOT}/oauth/authorize?${new URLSearchParams(FIELDS)}">認証画面を開く</a>`,{headers:{'Content-Type':'text/html; charset=utf-8'}});
+        } else if(target.origin===ROOT) {
+          result=await handleMcpRoute(new Request(request.url,{method:request.method,headers:request.headers,...(request.postData?{body:request.postData}:{})}),f.env);
+        } else { await session.send('Fetch.failRequest',{requestId,errorReason:'BlockedByClient'}); return; }
+        assert.ok(result,'The synthetic route must be handled');
+        console.log('Browser mock:',request.method,target.pathname,'→',result.status);
+        await session.send('Fetch.fulfillRequest',{requestId,responseCode:result.status,responseHeaders:[...result.headers].map(([name,value])=>({name,value})),body:Buffer.from(await result.text()).toString('base64')});
+      } catch(error) { interceptionErrors.push(error); console.error('Synthetic intercept failed:',error); await session.send('Fetch.failRequest',{requestId,errorReason:'Failed'}); }
     });
+    await session.send('Fetch.enable',{patterns:[{urlPattern:'*',requestStage:'Request'}]});
     const url=ROOT+'/oauth/authorize?'+new URLSearchParams(FIELDS);
     await page.goto(url); await page.getByLabel('EXAM APIキー',{exact:true}).fill(KEY); assert.equal(await page.getByRole('checkbox').isChecked(),false); await page.getByRole('checkbox').check();
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
@@ -149,7 +166,7 @@ async function browserTest() {
     await page.goto(ROOT+'/oauth/logout');await page.getByRole('button',{name:'ログイン保持を解除する',exact:true}).click();await page.getByRole('heading',{name:'ログイン保持を解除しました',exact:true}).waitFor();await page.goto(url);assert.equal(await page.locator('input[type=password]').count(),1);
     await page.getByLabel('EXAM APIキー',{exact:true}).fill('incorrect');await page.getByRole('button',{name:'接続を許可',exact:true}).click();await page.getByRole('alert').waitFor();assert.equal(await page.getByLabel('EXAM APIキー',{exact:true}).inputValue(),'');
     await page.getByLabel('EXAM APIキー',{exact:true}).fill(KEY);await page.getByRole('button',{name:'接続を許可',exact:true}).click();await page.waitForURL('https://client.test/**');assert.equal((await context.cookies(ROOT)).some(c=>c.name===SESSION),false);
-    await context.close();console.log('PASS: Chromium mobile layout, checkbox, HttpOnly visibility, cross-site remembered repeat consent, fixed expiry, expiry re-login, unchecking revocation, logout, failed retry, unchecked login');
+    assert.deepEqual(interceptionErrors,[]); await context.close();console.log('PASS: Chromium mobile layout, checkbox, HttpOnly visibility, cross-site remembered repeat consent, fixed expiry, expiry re-login, unchecking revocation, logout, failed retry, unchecked login');
   } finally { f.db.close();await browser.close(); }
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
