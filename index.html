@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+JP:wght@400;500;600;700;800&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="assets/css/main-20261001d.css" />
+  <link rel="stylesheet" href="assets/css/main-20261003a.css" />
   <link rel="stylesheet" href="assets/css/image-layout.css?v=20260923b" />
 </head>
 <body>
@@ -129,6 +129,8 @@
           <summary><span><i class="fa-solid fa-sliders"></i> 印刷設定</span><i class="fa-solid fa-chevron-down print-settings-chevron"></i></summary>
           <div class="toolbar print-settings-toolbar">
           <label class="check-inline"><input type="checkbox" id="pr-cover" checked> <span>表紙をつける</span></label>
+          <label class="check-inline" title="表紙の右下に氏名の記入欄を追加します（表紙をつける場合のみ）">
+            <input type="checkbox" id="pr-name-field"> <span>氏名欄を追加</span></label>
           <label class="check-inline" title="「問題」「本文」「設問」の見出しを出さずに中身だけを印刷します（解答・解説・全訳などの見出しは残ります）">
             <input type="checkbox" id="pr-hide-labels"> <span>「問題」「本文」「設問」のラベルを外す</span></label>
           <label class="check-inline" title="問題面で、大問1つごとに新しいページから印刷します">
@@ -413,7 +415,7 @@
   <!-- Firebase Authentication（Googleログイン用。Firestore等は未使用） -->
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="assets/js/store.js?v=20261001b"></script>
+  <script src="assets/js/store.js?v=20261003a"></script>
   <script src="assets/js/auth.js?v=20260706a"></script>
   <script src="assets/js/api.js?v=20260922a"></script>
   <script src="assets/js/ui.js?v=20260726a"></script>
@@ -421,7 +423,7 @@
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260923a"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/viewer.js?v=20261001h"></script>
+  <script src="assets/js/viewer.js?v=20261003a"></script>
   <script src="assets/js/webmcp.js?v=20260826a"></script>
 </body>
 </html>
