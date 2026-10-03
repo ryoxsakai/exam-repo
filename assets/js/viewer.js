@@ -1931,6 +1931,9 @@
     var questionLabel = "\\{\\{\\s*(?:問\\s*)?\\d+\\s*\\}\\}";
     var referenceRanges = new RegExp(blankLabel + "(?:" + rangeJoin + blankLabel + ")+|" +
       questionLabel + "(?:" + rangeJoin + questionLabel + ")+|問\\s*\\d+(?:" + rangeJoin + "(?:問\\s*)?\\d+)+", "g");
+    // 通常の丸括弧範囲も参照。二重括弧の選択肢 ((N)) は対象外。
+    var parenLabel = "[（(]\\s*\\d+\\s*[）)]";
+    var parenRanges = new RegExp("(^|[^（(])(" + parenLabel + "(?:" + rangeJoin + parenLabel + ")+)(?![）)])", "g");
     function referenceSuffix(text) {
       // 明示的な参照表現だけを除外する。「がん」「におい」等で始まる設問を
       // 助詞の1文字だけで参照と誤判定しない。
@@ -1941,7 +1944,7 @@
       protectedText(sec.text, function (text) {
         // 範囲説明は番号の定義ではない。旧形式の統合済みリード文でも、
         // [[49]]〜[[71]] の終点が2番を消費しないよう、採番時だけ退避する。
-        text = text.replace(referenceRanges, "\u0005");
+        text = text.replace(referenceRanges, "\u0005").replace(parenRanges, "$1\u0005");
         text.split("\n").forEach(function (line) {
           // 行中の {{問7}} 等も参照。実際の小問見出しの出現順だけで採番する。
           var m = line.match(/^\s*(?:@@)?(?:\*\*)?(?:\{\{\s*(?:問\s*)?(\d+)\s*\}\}|問\s*(\d+)(?!\d)|[（(](\d+)[）)]|(\d+)[.．、：:](?=\s|[^\d]))/);
@@ -1982,6 +1985,17 @@
         });
         text = text.replace(/(^|[^大])問(\s*)(\d+)(?!\d)/g, function (_, a, space, n) {
           return a + "問" + space + number(questions, n, blanks);
+        });
+        // リード文の (35)〜(42) も、本文の空所・小問の定義から変換する。
+        // 全端点が既知の範囲のみ扱い、未知の数値範囲はそのまま退避する。
+        text = text.replace(parenRanges, function (_, before, range) {
+          var known = (range.match(/\d+/g) || []).every(function (n) {
+            var key = String(Number(n));
+            return questions[key] != null || blanks[key] != null;
+          });
+          return before + label(known ? range.replace(/\d+/g, function (n) {
+            return number(questions, n, blanks);
+          }) : range);
         });
         // 括弧と区切り付きの行頭番号。選択肢マークアップの二重括弧は一致しない。
         text = text.replace(/^(\s*(?:@@)?(?:\*\*)?)(?:([（(])(\d+)([）)])|(\d+)([.．、：:])(?=\s|[^\d]))/gm, function (_, prefix, a, n, b, bare, sep) {
