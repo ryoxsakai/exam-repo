@@ -104,6 +104,41 @@ for(const word of ['がん','におい','へき地','はしか','やけど','か
   }
 }
 
+// Screenshot regression: Kitasato 2022 VI has plain parenthesized lead references.
+const kitasatoLead='次の(A)と(B)の日本語の文の意味を表すように、それぞれ①〜⑩の語（句）を各空欄に一つずつ入れて英文を完成させ、(35)〜(42)の空欄に入るものを選びなさい。ただし、選択肢は一度しか使えません。';
+const kitasatoBody='[A] Education [[-- --]] previously [[--35--]] [[-- --]] a childhood and adolescent affair.\nHowever, learning [[--36--]] [[-- --]] affair, a case of [[--37--]] [[-- --]] [[--38--]] [[-- --]].\n((1)) considered\n((10)) been\n[B] Hence, [[--39--]] [[-- --]] now entails [[--40--]] not simply [[-- --]] specific knowledge, [[--41--]] by constantly [[--42--]] necessary knowledge.';
+const kitasatoQuestion={question_number:6,problem_text:'{{リード文}}\n'+kitasatoLead+'\n{{問題}}\n'+kitasatoBody,answer_text:Array.from({length:8},(_,i)=>'{{'+(35+i)+'}} '+(i+2)).join('\n')};
+const kitasatoExam={questions:[kitasatoQuestion]},kitasatoBefore=JSON.stringify(kitasatoExam);
+const kitasatoHtml=ctx.testPrint.buildPrintHtml(kitasatoExam,{renumber:true});
+assert(kitasatoHtml.includes('(1)〜(8)の空欄'));
+assert(!kitasatoHtml.includes('(35)〜(42)'));
+assert(kitasatoHtml.includes('①〜⑩'));
+assert(kitasatoHtml.includes('blank-badge blank-badge-wide">8</span>'));
+assert(ctx.testPrint.buildPrintHtml(kitasatoExam,{renumber:false}).includes('(35)〜(42)'));
+assert.equal(ctx.testPrint.buildPrintHtml(kitasatoExam,{renumber:true}),kitasatoHtml);
+assert.equal(JSON.stringify(kitasatoExam),kitasatoBefore);
+for(const join of ['〜','～','~','-','–','—','から',' to ']) {
+  for(const [open,close] of [['(',')'],['（','）']]) {
+    const ref=open+'35'+close+join+open+'42'+close;
+    const expected=open+'1'+close+join+open+'8'+close;
+    for(const explicit of [true,false]) {
+      const input=[...(explicit?[{type:'リード文',text:'Choose '+ref+'の空欄。'}]:[]),
+        {type:'問題',text:(explicit?'':'@@**Choose '+ref+'の空欄。**\n')+kitasatoBody}];
+      assert(renumber(input)[0].text.includes(expected));
+    }
+    const atStart=renumber([{type:'問題',text:ref+'を解け。\n[[42]] [[35]]'},
+      {type:'解説',text:ref+'を確認。'}]);
+    assert.equal(atStart[1].text,open+'2'+close+join+open+'1'+close+'を確認。','A range never allocates a question number');
+  }
+}
+const parenProtection=renumber([
+  {type:'リード文',text:'(35)〜(42); (42)〜(35); (35)〜(99); ((35))〜((42)); （（35））〜（（42））; ages 35–42; 35〜42; [35]〜[42]; (1935)〜(1942); ##word::(35)〜(42)##; !(35)\n![image (35)〜(42)](https://example.com/image.png)\n!!!!(35)〜(42)!!!!'},
+  {type:'問題',text:'[[35]] [[42]]'},
+]);
+assert.equal(parenProtection[0].text,'(1)〜(2); (2)〜(1); (35)〜(99); ((35))〜((42)); （（35））〜（（42））; ages 35–42; 35〜42; [35]〜[42]; (1935)〜(1942); ##word::(35)〜(42)##; !(35)\n![image (35)〜(42)](https://example.com/image.png)\n!!!!(35)〜(42)!!!!');
+assert.equal(renumber([{type:'リード文',text:'(7)〜(1)'},{type:'設問',text:'{{問7}} A\n{{問1}} B'}])[0].text,'(1)〜(2)','No second mapping of the newly assigned 1');
+assert.equal(renumber([{type:'問題',text:'(35)〜(42)を解け。'}])[0].text,'(35)〜(42)を解け。','Ranges without definitions stay unchanged');
+
 // Exercise the raw-section → numbering → lead-merge path used by printing.
 const rangedQuestion={exam_id:50,question_number:7,problem_text:rangeSections.map(s=>'{{'+s.type+'}}\n'+s.text).join('\n'),answer_text:'Duplicate legacy answer must not appear'};
 const rangedExam={questions:[rangedQuestion]},rangedBefore=JSON.stringify(rangedExam);
