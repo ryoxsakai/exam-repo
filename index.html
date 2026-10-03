@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+JP:wght@400;500;600;700;800&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="assets/css/main-20261003a.css" />
+  <link rel="stylesheet" href="assets/css/main-20261003d.css" />
   <link rel="stylesheet" href="assets/css/image-layout.css?v=20260923b" />
 </head>
 <body>
@@ -322,9 +322,16 @@
       </div>
       <div class="modal-body">
         <p class="hint" id="fav-add-summary" style="margin-bottom:12px"></p>
-        <label class="field"><span class="field-label">追加先フォルダ</span>
-          <select id="fav-add-folder"></select>
-        </label>
+        <div class="field"><span class="field-label" id="fav-add-folder-label">追加先フォルダ（複数選択可）</span>
+          <div id="fav-add-folder" class="fav-add-folders" role="group" aria-labelledby="fav-add-folder-label"></div>
+        </div>
+        <button class="btn ghost" id="fav-add-new-folder" aria-expanded="false" aria-controls="fav-add-create">＋新規フォルダ</button>
+        <div id="fav-add-create" class="fav-add-create" hidden>
+          <label class="field"><span class="field-label">フォルダ名</span><input type="text" id="fav-add-name" placeholder="例: 頻出テーマ" /></label>
+          <label class="field"><span class="field-label">親フォルダ（作成先）</span><select id="fav-add-parent"></select></label>
+          <p class="hint">作成したフォルダを選択します。問題は「追加」を押すまで登録されません。</p>
+          <div class="fav-add-create-actions"><button class="btn ghost" id="fav-add-create-cancel">作成をキャンセル</button><button class="btn" id="fav-add-create-save">フォルダを作成</button></div>
+        </div>
         <p class="hint" id="fav-add-status" style="margin-top:8px"></p>
       </div>
       <div class="modal-foot">
@@ -428,7 +435,7 @@
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260923a"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/viewer.js?v=20261003c"></script>
+  <script src="assets/js/viewer.js?v=20261003d"></script>
   <script src="assets/js/webmcp.js?v=20260826a"></script>
 </body>
 </html>

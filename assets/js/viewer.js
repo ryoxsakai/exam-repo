@@ -231,6 +231,10 @@
     if (el("favorite-add-modal")) {
       UI.wireModal(el("favorite-add-modal"));
       if (el("fav-add-save")) el("fav-add-save").addEventListener("click", saveFavoriteAddModal);
+      el("fav-add-folder").addEventListener("change", updateFavoriteAddControls);
+      el("fav-add-new-folder").addEventListener("click", function () { toggleFavoriteAddCreate(el("fav-add-create").hidden); });
+      el("fav-add-create-cancel").addEventListener("click", function () { toggleFavoriteAddCreate(false); });
+      el("fav-add-create-save").addEventListener("click", createFavoriteAddFolder);
     }
     initFavoritesArea();
 
@@ -1305,67 +1309,150 @@
 
   // 初回追加は選択フォルダへ直接保存し、すでに登録済みならそのフォルダへ配置を追加する。
   // コピー用モーダルと同じフォルダ候補・階層表示を用いる。
+  var favAddSession = null;
+  // A dialog owns its asynchronous work; closing/reopening cannot update the next dialog.
+  function favoriteAddActive(session) {
+    return favAddSession === session && el("favorite-add-modal").classList.contains("open");
+  }
+  function selectedFavoriteAddFolders() {
+    return $all('input:checked', el("fav-add-folder")).map(function (input) { return Number(input.value); });
+  }
+  function updateFavoriteAddControls() {
+    var session = favAddSession;
+    if (!session) return;
+    var busy = session.loading || session.creating || session.saving;
+    el("fav-add-save").disabled = busy || !selectedFavoriteAddFolders().length;
+    el("fav-add-new-folder").disabled = busy;
+    el("fav-add-create-save").disabled = busy;
+    el("fav-add-create-cancel").disabled = !!session.creating;
+    el("fav-add-name").disabled = busy;
+    el("fav-add-parent").disabled = busy;
+    $all('input', el("fav-add-folder")).forEach(function (input) { input.disabled = busy; });
+  }
+  function renderFavoriteAddFolders(session, selected) {
+    var occupied = new Set((state.favRows || []).filter(function (f) {
+      return Number(f.exam_id) === session.examId && Number(f.question_number) === session.qnum && f.folder_id != null;
+    }).map(function (f) { return Number(f.folder_id); }));
+    (session.completed || []).forEach(function (id) { occupied.add(id); });
+    var list = el("fav-add-folder");
+    list.innerHTML = "";
+    favoriteFolderParentTargets().forEach(function (target) {
+      if (occupied.has(target.id)) return;
+      var label = document.createElement("label"), input = document.createElement("input"), text = document.createElement("span");
+      input.type = "checkbox"; input.value = String(target.id); input.checked = selected.has(target.id);
+      text.textContent = target.label;
+      label.appendChild(input); label.appendChild(text); list.appendChild(label);
+    });
+    var parent = el("fav-add-parent"), previous = parent.value;
+    parent.innerHTML = '<option value="">最上位</option>';
+    favoriteFolderParentTargets().forEach(function (target) {
+      var option = document.createElement("option"); option.value = String(target.id); option.textContent = target.label; parent.appendChild(option);
+    });
+    parent.value = previous;
+    if (!parent.value) parent.value = "";
+    updateFavoriteAddControls();
+  }
   function openFavoriteAddModal() {
-    var examId = state.nav.examId, qnum = state.nav.qnum;
-    if (examId == null || qnum == null) return;
-    if (!window.Auth || !Auth.getCurrentUser()) { UI.toast("ログインが必要です", "err"); return; }
-    ensureFavoritesLoaded().then(function () {
-      var modal = el("favorite-add-modal"), select = el("fav-add-folder"), save = el("fav-add-save");
-      if (!modal || !select || !save) return;
-      var row = { exam_id: examId, question_number: qnum };
-      var existing = (state.favRows || []).some(function (f) {
-        return Number(f.exam_id) === Number(examId) && Number(f.question_number) === Number(qnum);
-      });
-      var targets = existing ? favoriteCopyTargets(row) : favoriteAddTargets();
-      select.innerHTML = "";
-      targets.forEach(function (target) {
-        var option = document.createElement("option");
-        option.value = String(target.folder.id);
-        option.textContent = new Array(target.depth + 1).join("　") + target.folder.name;
-        select.appendChild(option);
-      });
-      el("fav-add-summary").textContent = "大問" + qnum;
-      save.disabled = !targets.length;
-      el("fav-add-status").textContent = targets.length
-        ? (existing ? "選んだフォルダにも同じ問題を追加します。" : "選んだフォルダに問題を追加します。")
-        : (existing ? "追加できる別フォルダがありません。先に新しいフォルダを作成してください。" : "追加先フォルダがありません。先に新しいフォルダを作成してください。");
-      modal.dataset.examId = String(examId);
-      modal.dataset.questionNumber = String(qnum);
-      modal.dataset.existing = existing ? "1" : "0";
-      UI.openModal(modal);
-    });
-  }
-
-  function favoriteAddTargets() {
-    var targets = [];
-    (function walk(parentId, depth) {
-      favChildrenOf(parentId).forEach(function (it) {
-        if (it.kind !== "folder") return;
-        targets.push({ folder: it.folder, depth: depth });
-        walk(Number(it.folder.id), depth + 1);
-      });
-    })(null, 0);
-    return targets;
-  }
-
-  function saveFavoriteAddModal() {
-    var modal = el("favorite-add-modal"), select = el("fav-add-folder"), save = el("fav-add-save");
-    if (!modal || !select || !select.value || !save) return;
-    var examId = Number(modal.dataset.examId), qnum = Number(modal.dataset.questionNumber);
+    var examId = Number(state.nav.examId), qnum = Number(state.nav.qnum);
     if (!examId || !qnum) return;
-    save.disabled = true;
-    var action = modal.dataset.existing === "1"
-      ? Api.copyFavorite(examId, qnum, Number(select.value))
-      : Api.addFavorite(examId, qnum, Number(select.value));
-    action.then(function () { return ensureFavoritesLoaded(true); }).then(function () {
-      UI.closeModal(modal);
-      renderFavorites();
-      updateExamFavoriteButton(examId, qnum);
-      UI.toast("お気に入りに追加しました", "ok");
+    if (!window.Auth || !Auth.getCurrentUser()) { UI.toast("ログインが必要です", "err"); return; }
+    var session = {examId: examId, qnum: qnum, loading: true, completed: []};
+    favAddSession = session;
+    el("fav-add-folder").innerHTML = "";
+    el("fav-add-parent").innerHTML = '<option value="">最上位</option>';
+    el("fav-add-name").value = "";
+    el("fav-add-create").hidden = true;
+    el("fav-add-new-folder").setAttribute("aria-expanded", "false");
+    el("fav-add-summary").textContent = "大問" + qnum;
+    el("fav-add-status").textContent = "フォルダを読み込み中…";
+    UI.openModal(el("favorite-add-modal"));
+    updateFavoriteAddControls();
+    ensureFavoritesLoaded(true, true).then(function () {
+      if (!favoriteAddActive(session)) return;
+      session.loading = false;
+      renderFavoriteAddFolders(session, new Set());
+      el("fav-add-status").textContent = "追加先を選んでください。新しいフォルダも作成できます。";
     }).catch(function (e) {
-      save.disabled = false;
-      UI.toast(e.message || "追加に失敗しました", "err");
+      if (!favoriteAddActive(session)) return;
+      el("fav-add-status").textContent = "フォルダの取得に失敗しました。閉じてから再度お試しください。";
+      UI.toast(e.message || "フォルダの取得に失敗しました", "err");
     });
+  }
+  function toggleFavoriteAddCreate(show) {
+    var session = favAddSession;
+    if (!session || !favoriteAddActive(session) || session.loading || session.creating || session.saving) return;
+    el("fav-add-create").hidden = !show;
+    el("fav-add-new-folder").setAttribute("aria-expanded", String(show));
+    if (show) el("fav-add-name").focus();
+    else { el("fav-add-name").value = ""; el("fav-add-parent").value = ""; }
+  }
+  function createFavoriteAddFolder() {
+    var session = favAddSession;
+    if (!session || !favoriteAddActive(session) || session.loading || session.creating || session.saving || el("fav-add-create").hidden) return;
+    var name = el("fav-add-name").value.trim(), value = el("fav-add-parent").value, parentId = value === "" ? null : Number(value);
+    if (!name) { UI.toast("フォルダ名を入力してください", "err"); return; }
+    if (parentId !== null && !favoriteFolderParentTargets().some(function (t) { return t.id === parentId; })) {
+      UI.toast("親フォルダが見つかりません。作成先を選び直してください", "err"); return;
+    }
+    session.creating = true;
+    updateFavoriteAddControls();
+    el("fav-add-status").textContent = "フォルダを作成中…";
+    Api.createFavoriteFolder(name, parentId, "folder").then(function (data) {
+      if (!favoriteAddActive(session)) { state.favSet = null; return; }
+      var folder = data && data.folder;
+      if (!folder || !Number.isInteger(Number(folder.id)) || Number(folder.id) <= 0) {
+        // Never retry an already acknowledged creation automatically.
+        session.loading = true;
+        throw new Error("フォルダを作成しましたが、結果を取得できませんでした。閉じてから再度お試しください。");
+      }
+      var selected = new Set(selectedFavoriteAddFolders());
+      selected.add(Number(folder.id));
+      state.favFolders.push(folder);
+      renderFavoriteAddFolders(session, selected);
+      el("fav-add-create").hidden = true;
+      el("fav-add-new-folder").setAttribute("aria-expanded", "false");
+      el("fav-add-name").value = "";
+      el("fav-add-parent").value = "";
+      el("fav-add-status").textContent = "フォルダを作成し選択しました。「追加」で問題を登録します。";
+      state.favSet = null;
+    }).catch(function (e) {
+      if (!favoriteAddActive(session)) return;
+      el("fav-add-status").textContent = e.message || "フォルダの作成に失敗しました。再度お試しください。";
+      UI.toast(e.message || "フォルダの作成に失敗しました", "err");
+    }).finally(function () {
+      session.creating = false;
+      if (favoriteAddActive(session)) updateFavoriteAddControls();
+    });
+  }
+  async function saveFavoriteAddModal() {
+    var session = favAddSession;
+    if (!session || !favoriteAddActive(session) || session.loading || session.creating || session.saving) return;
+    var ids = selectedFavoriteAddFolders();
+    if (!ids.length) return;
+    session.saving = true;
+    updateFavoriteAddControls();
+    var existing = session.completed.length > 0 || (state.favRows || []).some(function (f) { return Number(f.exam_id) === session.examId && Number(f.question_number) === session.qnum; });
+    try {
+      // Remove completed destinations from selection so partial failure can be retried safely.
+      for (var i = 0; i < ids.length; i++) {
+        await (existing ? Api.copyFavorite(session.examId, session.qnum, ids[i]) : Api.addFavorite(session.examId, session.qnum, ids[i]));
+        existing = true;
+        session.completed.push(ids[i]);
+        state.favSet = null;
+        if (favoriteAddActive(session)) renderFavoriteAddFolders(session, new Set(ids.slice(i + 1)));
+      }
+      await ensureFavoritesLoaded(true, true);
+      if (favoriteAddActive(session)) UI.closeModal(el("favorite-add-modal"));
+      renderFavorites();
+      updateExamFavoriteButton(session.examId, session.qnum);
+      UI.toast("お気に入りに追加しました", "ok");
+    } catch (e) {
+      if (favoriteAddActive(session)) el("fav-add-status").textContent = e.message || "追加に失敗しました。残りの追加先へ再試行してください。";
+      UI.toast(e.message || "追加に失敗しました", "err");
+    } finally {
+      session.saving = false;
+      if (favoriteAddActive(session)) updateFavoriteAddControls();
+    }
   }
 
   function openFavoriteCopyModal(row) {
