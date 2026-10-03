@@ -786,9 +786,9 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
   display: flex; align-items: baseline; gap: .5em; margin: .3em 0; padding-left: .25em;
 }
 .answer-choice-label {
-  flex: 0 0 1.5em; width: 1.5em; min-width: 1.5em; height: 1.5em; box-sizing: border-box; padding: 0; overflow: hidden; border: 1.5px solid var(--muted);
+  flex: 0 0 1.5em; width: 1.5em; min-width: 1.5em; height: 1.5em; box-sizing: border-box; padding: 0; overflow: hidden; border: 1.25px solid var(--muted);
   border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
-  font-family: var(--sans); font-size: .65em; font-weight: 700; color: var(--muted);
+  font-family: var(--sans); font-size: .65em; font-weight: 600; color: var(--muted);
   /* 折り返し時もラベルは1行目に固定しつつ、1行目と縦中央で揃える。
      親の行高1.95em = ラベル基準で 1.95/.65 = 3em。円は1.5em。
      margin-top = (3em − 1.5em) / 2 = .75em（ラベル自身のem基準）。
@@ -810,10 +810,16 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
 .choice-inline {
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.5em; min-width: 1.5em; height: 1.5em; box-sizing: border-box; padding: 0; overflow: hidden;
-  border: 1.5px solid var(--muted); border-radius: 50%;
-  font-family: var(--sans); font-size: .65em; font-weight: 700; color: var(--muted);
+  border: 1.25px solid var(--muted); border-radius: 50%;
+  font-family: var(--sans); font-size: .65em; font-weight: 600; color: var(--muted);
   vertical-align: .08em; margin: 0 .12em; line-height: 1; text-indent: 0;
 }
+.choice-label-unicode {
+  border: 0; border-radius: 0;
+  font-family: "Noto Sans Symbols 2", "Segoe UI Symbol", "Apple Symbols", var(--sans);
+  font-size: .9em; font-weight: 400; overflow: visible;
+}
+.choice-label-unicode .choice-label-text { line-height: 1; }
 .choice-label-compact { letter-spacing: 0; }
 /* 2桁以上は Arial の字形の右側余白が大きく、機械的な中央寄せでも右寄りに見える。
    文字だけをわずかに左へ補正し、枠の幾何学的中心と視覚的中心を揃える。 */
