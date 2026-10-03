@@ -91,6 +91,7 @@
 
 ### お気に入りのフォルダ分け・並べ替え（`assets/js/viewer.js`）
 
+- 新規フォルダの作成時は「親フォルダ（作成先）」で最上位または既存フォルダを選択できる。候補は毎回取得し、階層全体のパス（同一パス名はID付き）を表示する。取得失敗時は保存を止め、開き直して再試行する。作成成功時は親・祖先を展開する。改名とセクション作成は従来どおり。回帰テスト: `node scripts/test-favorite-folder-parent-unit.cjs`、ブラウザ（合成データのみ）: `node scripts/test-favorite-folder-parent.cjs`（panelのPlaywright、必要に応じて `PLAYWRIGHT_MODULE` / `PANEL_CHROMIUM`）。
 - お気に入りタブはフォルダ・セクション・大問を1本の木構造（`#favorites-area` 内 `.fav-tree`）として描画する。並び順・所属フォルダは `favorites` / `favorite_copies` の `sort_order`/`folder_id` と `favorite_folders.sort_order`/`parent_id` で管理し、3種をまとめて1つの表示順にする（`favChildrenOf`）。
 - 各大問行のコピーボタンから、同じ問題をまだ置いていない別フォルダを選んで追加配置できる。コピー行も通常の大問と同様に並べ替え・印刷でき、「コピー」表示とゴミ箱ボタンでその配置だけを削除する。元行の星を外した場合はコピーもすべて削除する。
 - 並べ替え・フォルダ間移動・階層化（フォルダをフォルダへドロップ）は PC はネイティブ Drag and Drop API、スマホはタップ長押し（`touchstart`から一定時間後にドラッグ開始、閾値以上動いたらスクロールとみなし中止）で行い、いずれも `POST /api/favorite-folders/reorder` で確定する（ドロップ先コンテナの子要素を渡した順序で `sort_order`/`folder_id`(`parent_id`) に一括反映。移動元に残る要素の番号は詰め直さない）。

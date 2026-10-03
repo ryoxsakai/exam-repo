@@ -743,7 +743,7 @@
   }
 
   // お気に入り一覧を取得しキャッシュ（Set("examId:qnum") と生データ）。未ログイン時は空。
-  function ensureFavoritesLoaded(force) {
+  function ensureFavoritesLoaded(force, rejectOnError) {
     if (state.favSet && !force) return Promise.resolve(state.favSet);
     if (!window.Auth || !Auth.getCurrentUser()) {
       state.favSet = new Set(); state.favRows = []; state.favFolders = []; state.favSections = [];
@@ -759,7 +759,8 @@
       // 削除済みフォルダの折りたたみ状態も削除し、際限なく増えないようにする
       Store.pruneFavCollapsed(state.favFolders.map(function (f) { return f.id; }));
       return state.favSet;
-    }).catch(function () {
+    }).catch(function (e) {
+      if (rejectOnError) { state.favSet = null; throw e; }
       state.favSet = new Set();
       return state.favSet;
     });
@@ -1407,8 +1408,28 @@
      フォルダとセクションは「コンテナ内の名前つき1要素」という点で同じなので、
      作成・改名のモーダルもAPIも共通にし、opts.kind（"folder"/"section"）で文言だけ切り替える。 */
   var favFolderModalState = null;
+  // IDで選択し、同名フォルダも階層全体で区別できるようにする。
+  function favoriteFolderParentTargets() {
+    var targets = [], visited = new Set();
+    (function walk(parentId, names) {
+      favChildrenOf(parentId).forEach(function (it) {
+        if (it.kind !== "folder" || visited.has(Number(it.folder.id))) return;
+        visited.add(Number(it.folder.id));
+        var path = names.concat([it.folder.name]);
+        targets.push({ id: Number(it.folder.id), label: path.join(" / ") });
+        walk(Number(it.folder.id), path);
+      });
+    })(null, []);
+    var counts = Object.create(null);
+    targets.forEach(function (t) { counts[t.label] = (counts[t.label] || 0) + 1; });
+    targets.forEach(function (t) {
+      if (counts[t.label] > 1 || t.label === "最上位") t.label += "（ID: " + t.id + "）";
+    });
+    return targets;
+  }
   function openFavoriteFolderModal(opts) {
     if (!el("favorite-folder-modal")) return;
+    if (!window.Auth || !Auth.getCurrentUser()) { UI.toast("ログインが必要です", "err"); return; }
     favFolderModalState = opts;
     var isSection = opts.kind === "section";
     var noun = isSection ? "セクション" : "フォルダ";
@@ -1420,25 +1441,80 @@
     var input = el("fav-folder-name");
     input.placeholder = isSection ? "例: 第1章 医療・健康" : "例: 頻出テーマ";
     input.value = opts.mode === "rename" ? (opts.name || "") : "";
+    var parentField = el("fav-folder-parent-field"), select = el("fav-folder-parent");
+    var chooseParent = opts.mode === "create" && !isSection;
+    parentField.hidden = !chooseParent;
+    select.innerHTML = '<option value="">最上位</option>';
+    el("fav-folder-save").disabled = chooseParent;
+    opts.loading = chooseParent;
+    select.disabled = chooseParent;
+    el("fav-folder-parent-status").textContent = chooseParent ? "フォルダを読み込み中…" : "";
     UI.openModal(el("favorite-folder-modal"));
-    setTimeout(function () { input.focus(); }, 0);
+    if (chooseParent) ensureFavoritesLoaded(true, true).then(function () {
+      if (favFolderModalState !== opts || !el("favorite-folder-modal").classList.contains("open")) return;
+      favoriteFolderParentTargets().forEach(function (target) {
+        var option = document.createElement("option");
+        option.value = String(target.id);
+        option.textContent = target.label;
+        select.appendChild(option);
+      });
+      select.value = opts.parentId == null ? "" : String(opts.parentId);
+      opts.loading = false;
+      select.disabled = false;
+      el("fav-folder-parent-status").textContent = "選んだフォルダの直下に作成します。";
+      el("fav-folder-save").disabled = false;
+    }).catch(function (e) {
+      if (favFolderModalState !== opts || !el("favorite-folder-modal").classList.contains("open")) return;
+      el("fav-folder-parent-status").textContent = "フォルダの取得に失敗しました。閉じてから再度お試しください。";
+      UI.toast(e.message || "フォルダの取得に失敗しました", "err");
+    });
+    setTimeout(function () {
+      if (favFolderModalState === opts && el("favorite-folder-modal").classList.contains("open")) input.focus();
+    }, 0);
   }
   function saveFavoriteFolderModal() {
-    if (!favFolderModalState) return;
+    if (!favFolderModalState || !el("favorite-folder-modal").classList.contains("open")) return;
     var opts = favFolderModalState;
+    if (opts.saving || opts.loading) return;
     var noun = opts.kind === "section" ? "セクション" : "フォルダ";
     var name = (el("fav-folder-name").value || "").trim();
     if (!name) { UI.toast(noun + "名を入力してください", "err"); return; }
+    var parentId = opts.parentId;
+    if (opts.mode === "create" && opts.kind !== "section") {
+      var value = el("fav-folder-parent").value;
+      parentId = value === "" ? null : Number(value);
+      if (parentId !== null && !favoriteFolderParentTargets().some(function (t) { return t.id === parentId; })) {
+        UI.toast("親フォルダが見つかりません。作成先を選び直してください", "err"); return;
+      }
+    }
+    opts.saving = true;
+    el("fav-folder-save").disabled = true;
     var p = opts.mode === "rename"
       ? Api.renameFavoriteFolder(opts.id, name)
-      : Api.createFavoriteFolder(name, opts.parentId, opts.kind);
+      : Api.createFavoriteFolder(name, parentId, opts.kind);
     p.then(function () {
-      UI.closeModal(el("favorite-folder-modal"));
+      if (favFolderModalState === opts) UI.closeModal(el("favorite-folder-modal"));
+      if (opts.mode === "create" && opts.kind !== "section" && parentId != null) {
+        // 作成した子が見えるよう親と祖先を展開する。
+        var folderId = parentId, seen = new Set();
+        while (folderId != null && !seen.has(folderId)) {
+          seen.add(folderId);
+          state.favCollapsed[folderId] = false;
+          var folder = (state.favFolders || []).find(function (f) { return Number(f.id) === folderId; });
+          folderId = folder && folder.parent_id != null ? Number(folder.parent_id) : null;
+        }
+        Store.setFavCollapsed(state.favCollapsed);
+      }
       return ensureFavoritesLoaded(true);
     }).then(function () {
       renderFavorites();
       UI.toast(noun + (opts.mode === "rename" ? "名を変更しました" : "を作成しました"), "ok");
-    }).catch(function (e) { UI.toast(e.message || "保存に失敗しました", "err"); });
+    }).catch(function (e) {
+      UI.toast(e.message || "保存に失敗しました", "err");
+    }).finally(function () {
+      opts.saving = false;
+      if (favFolderModalState === opts) el("fav-folder-save").disabled = false;
+    });
   }
   function deleteFavoriteFolderConfirm(id) {
     var folder = (state.favFolders || []).filter(function (f) { return Number(f.id) === id; })[0];

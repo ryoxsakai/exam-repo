@@ -295,6 +295,11 @@
         <button class="icon-btn" data-close title="閉じる"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="modal-body">
+        <div id="fav-folder-parent-field" hidden><label class="field"><span class="field-label">親フォルダ（作成先）</span>
+          <select id="fav-folder-parent"><option value="">最上位</option></select>
+        </label>
+          <p class="hint" id="fav-folder-parent-status" role="status"></p>
+        </div>
         <label class="field"><span class="field-label" id="fav-folder-name-label">フォルダ名</span>
           <input type="text" id="fav-folder-name" placeholder="例: 頻出テーマ" maxlength="100" />
         </label>
@@ -423,7 +428,7 @@
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260923a"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/viewer.js?v=20261003a"></script>
+  <script src="assets/js/viewer.js?v=20261003b"></script>
   <script src="assets/js/webmcp.js?v=20260826a"></script>
 </body>
 </html>
