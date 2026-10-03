@@ -91,6 +91,8 @@
 
 ### お気に入りのフォルダ分け・並べ替え（`assets/js/viewer.js`）
 
+- 問題閲覧の「お気に入りに追加」は複数の追加先をチェックでき、同じモーダル内の「＋新規フォルダ」で名前・親（最上位含む）を指定して作成する。作成結果のIDで既存選択を保ったまま新フォルダを選択し、「追加」まで問題は登録しない。取得失敗は閉じて再試行、作成エラーは入力を保持し再試行、問題の複数追加で途中失敗した場合は成功済みの宛先を除外して残りを再試行する。合成データのMacブラウザ回帰: `node scripts/test-favorite-add-create.cjs`（Playwrightはpanelの依存、Chrome既定、`PLAYWRIGHT_MODULE` / `PANEL_CHROMIUM` / `HEADED=1`で変更可能）。
+
 - 新規フォルダの作成時は「親フォルダ（作成先）」で最上位または既存フォルダを選択できる。候補は毎回取得し、階層全体のパス（同一パス名はID付き）を表示する。取得失敗時は保存を止め、開き直して再試行する。作成成功時は親・祖先を展開する。改名とセクション作成は従来どおり。回帰テスト: `node scripts/test-favorite-folder-parent-unit.cjs`、ブラウザ（合成データのみ）: `node scripts/test-favorite-folder-parent.cjs`（panelのPlaywright、必要に応じて `PLAYWRIGHT_MODULE` / `PANEL_CHROMIUM`）。
 - お気に入りタブはフォルダ・セクション・大問を1本の木構造（`#favorites-area` 内 `.fav-tree`）として描画する。並び順・所属フォルダは `favorites` / `favorite_copies` の `sort_order`/`folder_id` と `favorite_folders.sort_order`/`parent_id` で管理し、3種をまとめて1つの表示順にする（`favChildrenOf`）。
 - 各大問行のコピーボタンから、同じ問題をまだ置いていない別フォルダを選んで追加配置できる。コピー行も通常の大問と同様に並べ替え・印刷でき、「コピー」表示とゴミ箱ボタンでその配置だけを削除する。元行の星を外した場合はコピーもすべて削除する。

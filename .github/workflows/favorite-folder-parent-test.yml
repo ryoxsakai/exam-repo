@@ -6,6 +6,7 @@ on:
       - "assets/css/**"
       - "index.html"
       - "scripts/test-favorite-folder-parent*.cjs"
+      - "scripts/test-favorite-add-create.cjs"
       - ".github/workflows/favorite-folder-parent-test.yml"
   workflow_dispatch:
 permissions:
@@ -22,3 +23,4 @@ jobs:
       - run: npm ci --prefix panel
       - run: ./panel/node_modules/.bin/playwright install --with-deps chromium
       - run: node scripts/test-favorite-folder-parent.cjs
+      - run: node scripts/test-favorite-add-create.cjs
