@@ -243,6 +243,16 @@
     if (treeRefresh) treeRefresh.addEventListener("click", function () { loadTree(true); });
 
     // 問題印刷タブ
+    if (el("pr-duration")) {
+      el("pr-duration").checked = Store.getPrintDuration();
+      el("pr-duration").addEventListener("change", function () {
+        Store.setPrintDuration(el("pr-duration").checked);
+        renderPrintPreview();
+      });
+      el("pr-duration-save-university").addEventListener("click", function () { savePrintDuration("university_minutes"); });
+      el("pr-duration-save-exam").addEventListener("click", function () { savePrintDuration("exam_minutes"); });
+      el("pr-duration-reset").addEventListener("click", function () { savePrintDuration("exam_minutes", true); });
+    }
     el("pr-cover").addEventListener("change", function () {
       if (el("pr-name-field")) el("pr-name-field").disabled = !el("pr-cover").checked;
       renderPrintPreview();
@@ -2218,7 +2228,9 @@
         html += '<div class="' + coverClass + '">' +
           '<div class="pc-year">' + esc(ex.year) + "年度</div>" +
           '<div class="pc-uni">' + esc(ex.university_name) + "</div>" +
-          '<div class="pc-sched">' + esc(ex.schedule) + "</div>" + nameField + "</div>";
+          '<div class="pc-sched">' + esc(ex.schedule) + "</div>" +
+          (opts.duration && ex.kind === "exam" && ex.duration && ex.duration.effective_minutes != null
+            ? '<div class="pc-duration">時間：' + esc(ex.duration.effective_minutes) + '分</div>' : "") + nameField + "</div>";
       }
     }
     var qs = printQuestions(ex);
@@ -2276,6 +2288,7 @@
   function printOptions() {
     return {
       cover: el("pr-cover").checked,
+      duration: el("pr-duration") ? el("pr-duration").checked : false,
       nameField: el("pr-name-field") ? el("pr-name-field").checked : false,
       hideLabels: el("pr-hide-labels") ? el("pr-hide-labels").checked : false,
       qBreakQ: el("pr-qbreak-q") ? el("pr-qbreak-q").checked : false,
@@ -2857,9 +2870,56 @@
     });
   }
 
+  var printDurationWrite = null;
+
+  function renderPrintDurationSettings(preserveInputs) {
+    var box = el("pr-duration-settings"), ex = state.printExam;
+    if (!box) return;
+    box.hidden = !ex || ex.kind !== "exam" || !ex.duration;
+    if (el("pr-duration")) el("pr-duration").disabled = !el("pr-cover").checked || (ex && ex.kind === "favFolder");
+    if (box.hidden) return;
+    var d = ex.duration;
+    el("pr-duration-context").textContent = ex.university_name + " / " + ex.year + "年度 / " + ex.schedule;
+    if (!preserveInputs) {
+      el("pr-duration-university").value = d.university_minutes == null ? "" : d.university_minutes;
+      el("pr-duration-exam").value = d.exam_minutes == null ? "" : d.exam_minutes;
+    }
+    el("pr-duration-source").textContent = d.source === "unset" ? "使用時間：未登録（表紙には表示しません）" :
+      "使用時間：" + d.effective_minutes + "分（" + (d.source === "exam" ? "この年度・方式の例外" : "大学の初期値") + "）";
+    ["pr-duration-save-university", "pr-duration-save-exam", "pr-duration-reset", "pr-duration-university", "pr-duration-exam"].forEach(function (id) { el(id).disabled = !!printDurationWrite; });
+  }
+
+  function savePrintDuration(key, reset) {
+    var ex = state.printExam;
+    if (!ex || ex.kind !== "exam" || !ex.duration || printDurationWrite) return;
+    var input = el(key === "university_minutes" ? "pr-duration-university" : "pr-duration-exam");
+    var raw = reset ? "" : input.value.trim();
+    var value = raw === "" ? null : Number(raw);
+    if ((!reset && input.validity && input.validity.badInput) || (value !== null && (!Number.isInteger(value) || value < 1 || value > 1440))) {
+      UI.toast("時間は1〜1440の整数（分）で入力してください", "err"); return;
+    }
+    var body = {}; body[key] = value;
+    printDurationWrite = Api.savePrintDuration(ex.id, body).then(function () { return Api.getPrintDuration(ex.id); }).then(function (data) {
+      ex.duration = data;
+      if (state.printExam === ex) {
+        input.value = value == null ? "" : value;
+        renderPrintDurationSettings(true);
+        renderPrintPreview();
+      }
+      UI.toast("試験時間を保存しました", "ok");
+    }).catch(function (e) { UI.toast(e.message, "err"); }).finally(function () {
+      printDurationWrite = null;
+      if (state.printExam === ex) renderPrintDurationSettings(true);
+    });
+    renderPrintDurationSettings(true);
+    return printDurationWrite;
+  }
+
   function loadPrintPreview() {
     if (!Store.getWorkerUrl()) { el("print-preview").innerHTML = noWorkerHtml(); return; }
     var sel = state.printSel || {};
+    state.printExam = null;
+    renderPrintDurationSettings();
     if (sel.kind === "favFolder" && sel.folderId != null) {
       loadPrintFavFolder(Number(sel.folderId));
       return;
@@ -2873,6 +2933,7 @@
     }
     el("print-preview").innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
     Api.getExams({ universityName: uni, year: year, schedule: sched }).then(function (data) {
+      if (state.printSel !== sel) return;
       var exams = (data.exams || []).filter(function (e) { return e.university_name === uni && String(e.year) === String(year) && e.schedule === sched; });
       if (!exams.length) {
         state.printExam = null;
@@ -2880,9 +2941,10 @@
         el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>該当する入試問題がありません。</div></div>';
         return;
       }
-      return Promise.all(exams.map(function (e) { return Api.getExam(e.id); })).then(function (results) {
+      return Promise.all([Api.getExam(exams[0].id), (printDurationWrite || Promise.resolve()).then(function () { return Api.getPrintDuration(exams[0].id); })]).then(function (results) {
+        if (state.printSel !== sel) return;
         var questions = [];
-        results.forEach(function (r) {
+        results.slice(0, 1).forEach(function (r) {
           var ex = r.exam;
           (ex.questions || []).forEach(function (q) {
             // 「大問見出しに通し番号・試験情報を入れる」で使う試験情報を添える
@@ -2891,7 +2953,8 @@
             questions.push(q);
           });
         });
-        state.printExam = { kind: "exam", year: year, university_name: uni, schedule: sched, questions: questions };
+        state.printExam = { kind: "exam", id: exams[0].id, duration: results[1], year: year, university_name: uni, schedule: sched, questions: questions };
+        renderPrintDurationSettings();
         // 大問選択を初期化（既定で全大問を印刷対象に）
         state.printQSel = {};
         questions.forEach(function (q) { state.printQSel[printQKey(q)] = true; });
@@ -2899,6 +2962,7 @@
         renderPrintPreview();
       });
     }).catch(function (e) {
+      if (state.printSel !== sel) return;
       el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div></div>";
     });
   }
@@ -2910,6 +2974,7 @@
     if (!html) { el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>印刷対象がありません。チェックや登録内容を確認してください。</div></div>'; return; }
     el("print-preview").innerHTML = '<div class="print-doc ' + printDocClasses(opts) + '">' + html + "</div>";
     wirePrintTitleEdit();
+    if (el("pr-duration")) el("pr-duration").disabled = !opts.cover || state.printExam.kind === "favFolder";
     if (opts.lineNumbers) {
       applyPrintLineNumbers(el("print-preview"));
       watchPreviewLineNumbers();

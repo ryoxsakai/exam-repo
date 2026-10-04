@@ -518,6 +518,12 @@ table.data.freq-table { min-width: 0; font-size: 13px; }
   align-items: flex-start; justify-content: center; padding: 6vh 16px 16px;
 }
 .modal-overlay.open { display: flex; }
+/* 問題閲覧モーダルを開いたまま追加先フォルダを選べるよう、常にその前面・中央に出す。 */
+#favorite-add-modal {
+  z-index: 90;
+  align-items: center;
+  padding: 16px;
+}
 .modal {
   width: 100%; max-width: 620px; background: #fff; border-radius: 18px;
   box-shadow: var(--shadow-lg); border: 1px solid var(--line);
@@ -733,20 +739,25 @@ body.sortlist-dragging-touch .sort-item * {
 /* 中身が空でもテキストのベースラインを確保し、文字入りと縦位置を揃える
    （ゼロ幅スペース。空の inline-flex はベースラインが下端になり上に浮くため） */
 .blank-badge::before { content: "\200B"; }
+/* 空所の直後に続く閉じ括弧の字面を、バッジの枠へ寄せる */
+.blank-close { display: inline-block; margin-left: -.3em; }
 /* [[-- --]] [[--A--]] … 通常空所の3倍幅の空欄。中身の空白を保持（pre） */
 .blank-badge-wide { width: 12em; white-space: pre; }
-/* 段落番号バッジ（空所と同じ丸み・正方形・右に2emマージン）
-   height と min-width を同値にして1桁は正方形を保つ。縦パディングは使わず
-   固定 height + フレックス中央寄せで高さを担保（2桁以上は横へ伸びる） */
+/* 段落番号バッジ：桁数によらず正方形にし、2桁の字間を詰める */
 .para-badge {
   display: inline-flex; align-items: center; justify-content: center; position: relative; top: 1px;
-  height: 1.5em; min-width: 1.5em; box-sizing: border-box; padding: 0 .12em; margin: 0 2em 0 0;
-  background: #fff; color: #555; border: 1px solid #999; border-radius: 3px;
-  font-size: .6em; font-family: var(--sans); font-weight: 400; vertical-align: .28em; line-height: 1;
+  width: 1.8em; height: 1.8em; min-width: 1.8em; box-sizing: border-box; padding: 0; margin: 0 2em 0 0;
+  background: #fff; color: #555; border: 1px solid #999; border-radius: 1.5px;
+  font-size: .6em; font-family: var(--sans); font-weight: 400; letter-spacing: -.08em;
+  white-space: nowrap; vertical-align: .28em; line-height: 1;
   text-indent: 0; overflow: hidden;
 }
 /* 行中（インライン）の段落番号は右の2emマージンを付けない */
 .para-badge-inline { margin-right: 0; color: #000; }
+/* ~~~語句~~~ は下付き・通常の下線と区別できる波線で表示する */
+.exam-doc .wavy-underline { text-decoration-line: underline; text-decoration-style: wavy; text-decoration-thickness: 1px; text-underline-offset: .14em; }
+.exam-doc .underline-marker { font-size: .72em; line-height: 0; vertical-align: sub; position: relative; top: calc(.14em + 2px); margin-right: -.08em; }
+.exam-doc .underline-marker .choice-inline { margin: 0; font-size: 1em; vertical-align: baseline; }
 /* 出典表記（右寄せ・グレー・小） */
 .exam-doc .cite { display: block; text-align: right; color: #94a3b8; font-size: .8em; text-indent: 0; }
 /* 本文の字数表示（注釈の下・右寄せ・グレー・小） */
@@ -835,6 +846,32 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
   display: inline; vertical-align: baseline;
 }
 .choice-label-unicode .choice-label-text { transform: none; }
+/* Unicodeがないひらがな等のフォールバックも、Unicode丸囲み文字と同じ見た目に揃える。 */
+.choice-inline:not(.choice-label-unicode) {
+  width: .96em; min-width: .96em; height: .96em;
+  border: 0; overflow: visible;
+  font-size: 1em; line-height: 1;
+  vertical-align: baseline;
+  position: relative; top: -.10em;
+}
+.answer-choice-label:not(.choice-label-unicode) {
+  flex: 0 0 .96em; width: .96em; min-width: .96em; height: .96em;
+  border: 0; overflow: visible;
+  font-size: 1em; line-height: 1;
+  align-self: baseline; margin-top: 0;
+  position: relative; top: -.10em;
+}
+.choice-inline:not(.choice-label-unicode) .choice-label-text,
+.answer-choice-label:not(.choice-label-unicode) .choice-label-text {
+  font-size: .78em; font-weight: 600;
+}
+/* 文字位置は保ったまま、フォールバックの丸枠だけを少し上へ寄せる。 */
+.choice-inline:not(.choice-label-unicode)::before,
+.answer-choice-label:not(.choice-label-unicode)::before {
+  content: ""; position: absolute; inset: 0;
+  border: .7px solid var(--muted); border-radius: 50%;
+  transform: translateY(calc(-.04em + .5px)); pointer-events: none;
+}
 .footnote-section { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); font-size: .82em; color: var(--muted); font-family: var(--sans); }
 .footnote-section ol { list-style: none; padding: 0; margin: 0; }
 .footnote-section li { display: flex; gap: 8px; margin-bottom: 4px; line-height: 1.5; }
@@ -946,6 +983,19 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 }
 .pc-name-line { flex: 1; min-width: 0; border-bottom: 1px solid currentColor; }
 .print-cover .pc-year { font-family: var(--sans); font-size: 26px; font-weight: 700; color: var(--ink-soft); margin-bottom: 22px; letter-spacing: .04em; }
+/* Favorite destinations remain usable with long paths on narrow screens. */
+#favorite-add-modal button:disabled { opacity: .5; cursor: not-allowed; }
+.fav-add-folders { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; }
+.fav-add-folders:empty { display: none; }
+.fav-add-folders label { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; cursor: pointer; }
+.fav-add-folders input { width: auto; flex-shrink: 0; margin-top: 3px; }
+.fav-add-folders span { overflow-wrap: anywhere; min-width: 0; }
+.fav-add-create { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.fav-add-create[hidden] { display: none; }
+.fav-add-create .field { margin-bottom: 10px; }
+.fav-add-create-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+
 /* お気に入りフォルダ印刷の表紙（3行構成）。上・中央・下いずれもダブルタップで編集できる。
    空の行でも確実にタップできるよう、プレビューでは薄いグレーの領域を出して位置を示す
    （印刷時は下の @media print で背景も最小高さも消すため、白紙のまま出力される）。 */
@@ -1232,6 +1282,5 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
     break-inside: avoid; page-break-inside: avoid;
   }
   @page { margin: 15mm 18mm; size: A4; }
-
 
 .print-cover .pc-duration { font-family: var(--sans); font-size: 20px; color: var(--muted); margin-top: 18px; }

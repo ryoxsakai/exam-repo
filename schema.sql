@@ -253,3 +253,13 @@ H~~2~~O は水の化学式であり、免疫細胞の培地に必須である。
 (2) 2/4 = 1/2（50%）
 (3) aa × aa → すべて aa なので 1（100%）',
   'メンデルの分離の法則の基本問題。Aa × Aa の交配では、子の遺伝子型の比は AA:Aa:aa = 1:2:1 となる。罹患する確率は aa の頻度 = 1/4。保因者（Aa）の確率は 2/4 = 1/2。罹患者同士（aa × aa）の場合、すべての子が aa となるため罹患率は 100%。');
+
+-- Saved print duration metadata. Empty settings are represented by absent rows.
+CREATE TABLE IF NOT EXISTS university_print_durations (
+  university_id INTEGER PRIMARY KEY REFERENCES universities(id) ON DELETE CASCADE,
+  minutes INTEGER NOT NULL CHECK (minutes BETWEEN 1 AND 1440)
+);
+CREATE TABLE IF NOT EXISTS exam_print_durations (
+  exam_id INTEGER PRIMARY KEY REFERENCES exams(id) ON DELETE CASCADE,
+  minutes INTEGER NOT NULL CHECK (minutes BETWEEN 1 AND 1440)
+);
