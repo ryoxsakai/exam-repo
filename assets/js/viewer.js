@@ -2871,9 +2871,18 @@
   }
 
   var printDurationWrite = null;
+  var printDurationRevision = 0;
+
+  function updatePrintDurationAvailability() {
+    var blocked = !!printDurationWrite || !!(state.printExam && state.printExam.durationUnverified);
+    ["btn-print-run", "btn-print-run-2"].forEach(function (id) {
+      if (el(id)) el(id).disabled = blocked;
+    });
+  }
 
   function renderPrintDurationSettings(preserveInputs) {
     var box = el("pr-duration-settings"), ex = state.printExam;
+    updatePrintDurationAvailability();
     if (!box) return;
     box.hidden = !ex || ex.kind !== "exam" || !ex.duration;
     if (el("pr-duration")) el("pr-duration").disabled = !el("pr-cover").checked || (ex && ex.kind === "favFolder");
@@ -2884,7 +2893,7 @@
       el("pr-duration-university").value = d.university_minutes == null ? "" : d.university_minutes;
       el("pr-duration-exam").value = d.exam_minutes == null ? "" : d.exam_minutes;
     }
-    el("pr-duration-source").textContent = d.source === "unset" ? "使用時間：未登録（表紙には表示しません）" :
+    el("pr-duration-source").textContent = printDurationWrite ? "試験時間を保存・再取得中です（印刷は停止中です）。" : ex.durationUnverified ? "時間の保存・再取得を確認できません。年度・方式を選び直してください（印刷は停止中です）。" : d.source === "unset" ? "使用時間：未登録（表紙には表示しません）" :
       "使用時間：" + d.effective_minutes + "分（" + (d.source === "exam" ? "この年度・方式の例外" : "大学の初期値") + "）";
     ["pr-duration-save-university", "pr-duration-save-exam", "pr-duration-reset", "pr-duration-university", "pr-duration-exam"].forEach(function (id) { el(id).disabled = !!printDurationWrite; });
   }
@@ -2899,8 +2908,11 @@
       UI.toast("時間は1〜1440の整数（分）で入力してください", "err"); return;
     }
     var body = {}; body[key] = value;
+    printDurationRevision += 1;
+    ex.durationUnverified = true;
     printDurationWrite = Api.savePrintDuration(ex.id, body).then(function () { return Api.getPrintDuration(ex.id); }).then(function (data) {
       ex.duration = data;
+      ex.durationUnverified = false;
       if (state.printExam === ex) {
         input.value = value == null ? "" : value;
         renderPrintDurationSettings(true);
@@ -2910,6 +2922,7 @@
     }).catch(function (e) { UI.toast(e.message, "err"); }).finally(function () {
       printDurationWrite = null;
       if (state.printExam === ex) renderPrintDurationSettings(true);
+      updatePrintDurationAvailability();
     });
     renderPrintDurationSettings(true);
     return printDurationWrite;
@@ -2968,6 +2981,7 @@
   }
 
   function renderPrintPreview() {
+    updatePrintDurationAvailability();
     if (!state.printExam) return;
     var opts = printOptions();
     var html = buildPrintHtml(state.printExam, opts, true);
@@ -3150,6 +3164,10 @@
   }
 
   function runPrint() {
+    if (printDurationWrite || (state.printExam && state.printExam.durationUnverified)) {
+      UI.toast("試験時間の保存・再取得が完了してから印刷してください。確認できない場合は年度・方式を選び直してください。", "err"); return;
+    }
+    var selected = state.printExam, durationRevision = printDurationRevision;
     if (!state.printExam) { UI.toast("印刷対象がありません", "err"); return; }
     var opts = printOptions();
     var html = buildPrintHtml(state.printExam, opts, false);
@@ -3165,6 +3183,9 @@
         return img.decode ? img.decode().catch(function () {}) : Promise.resolve();
       }));
     }).then(function () {
+      if (printDurationWrite || durationRevision !== printDurationRevision || state.printExam !== selected || selected.durationUnverified) {
+        UI.toast("印刷準備中に設定が変わりました。保存・再取得完了後に印刷し直してください。", "err"); return;
+      }
       if (opts.lineNumbers) applyPrintLineNumbers(area, true);
       window.print();
     });

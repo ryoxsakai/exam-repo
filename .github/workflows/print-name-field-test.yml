@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "worker/print-duration.ts"
+      - "worker/index.ts"
       - "assets/js/**"
       - "assets/css/**"
       - "index.html"
@@ -28,6 +29,7 @@ jobs:
       - name: Verify existing print behavior
         run: |
           node scripts/test-print-duration.cjs
+          node scripts/test-print-duration-merges.cjs
           node scripts/test-print-renumber.cjs
           node scripts/test-print-writing-space.cjs
           node scripts/test-print-line-numbers.cjs
