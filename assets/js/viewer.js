@@ -2195,7 +2195,7 @@
           var isSizeMenuOpen = sizeMenuOpen && String(sizeMenuOpen.folderId) === String(ex.folderId) && Number(sizeMenuOpen.line) === index;
           return '<div class="pc-title-row">' +
             '<div class="' + cls + ' pc-title-edit' + (sizes[index] ? ' pc-title-size-' + sizes[index] : '') + (colors[index] ? ' pc-title-color-' + colors[index] : '') + '" data-print-title="' + esc(String(ex.folderId)) +
-              '" data-line="' + index + '" title="ダブルタップ（ダブルクリック）で編集">' + esc(text) + "</div>" +
+              '" data-line="' + index + '" tabindex="0" role="textbox" aria-label="表紙タイトル' + (index + 1) + '行目" title="空欄はクリック、文字のある行はダブルクリックで編集">' + esc(text) + "</div>" +
             '<button type="button" class="pc-title-settings-toggle" data-print-title-size-toggle="' + esc(String(ex.folderId)) + '" data-line="' + index + '" aria-label="この行の文字設定" aria-expanded="' + (isSizeMenuOpen ? 'true' : 'false') + '"><i class="fa-solid fa-gear"></i></button>' +
             '<div class="pc-title-size-menu" data-print-title-size-menu="' + esc(String(ex.folderId)) + '" data-line="' + index + '"' + (isSizeMenuOpen ? '' : ' hidden') + '>' +
               '<div class="pc-title-setting-line"><span>文字サイズ</span>' + [1,2,3,4,5].map(function (n) { return '<button type="button" data-print-title-size="' + esc(String(ex.folderId)) + '" data-line="' + index + '" data-size="' + n + '"' + (sizes[index] === n ? ' class="selected"' : '') + '>' + n + '</button>'; }).join("") + '</div>' +
@@ -2948,14 +2948,16 @@
         node.classList.add("editing");
         node.focus();
         // 中身があるときは全選択して置き換えやすくする（空のときはそのままカーソルを置く）
-        if ((node.textContent || "").length) {
-          var r = document.createRange();
-          r.selectNodeContents(node);
-          var s = window.getSelection();
-          s.removeAllRanges();
-          s.addRange(r);
-        }
+        var r = document.createRange();
+        r.selectNodeContents(node);
+        if (!(node.textContent || "").length) r.collapse(true);
+        var s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
       }
+      node.addEventListener("click", function () {
+        if (!(node.textContent || "").trim()) beginEdit();
+      });
       node.addEventListener("dblclick", beginEdit);
       // スマホ: 一部ブラウザで dblclick が出ないことがあるため、タップ2回を自前でも判定する
       var lastTap = 0;
@@ -2967,6 +2969,12 @@
       node.addEventListener("input", syncDraft);
       node.addEventListener("blur", function () { node.classList.remove("editing"); });
       node.addEventListener("keydown", function (e) {
+        if (e.isComposing || e.keyCode === 229) return;
+        if (node.getAttribute("contenteditable") !== "true" && (e.key === "Enter" || e.key === "F2")) {
+          e.preventDefault();
+          beginEdit();
+          return;
+        }
         if (e.key === "Enter") { e.preventDefault(); node.blur(); }
         if (e.key === "Escape") {
           e.preventDefault();

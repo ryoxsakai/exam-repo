@@ -177,9 +177,48 @@ async function browserTest() {
           t.renderPrintPreview();
         }, {ex, titles: fixture.titles});
       };
+      // Empty cover lines must accept a click across their full width in Chrome,
+      // including after deleting all text or adding a new line.
+      const verifyCoverFocus = async () => {
+        await setFixture(fixture.folder);
+        await page.evaluate(() => {
+          Store.setPrintFolderTitleLines(55, ['', '演習フォルダ', '']);
+          window.__printTest.renderPrintPreview();
+        });
+        const empty = page.locator('#print-preview [data-print-title][data-line="0"]');
+        await empty.click({position: {x: 20, y: 10}});
+        assert.equal(await empty.evaluate(n => document.activeElement === n && n.isContentEditable), true, 'Empty line accepts one click');
+        assert.ok(await empty.evaluate(n => n.getBoundingClientRect().height >= 20), 'CSS preserves empty hit area');
+        await page.keyboard.insertText('表紙タイトル');
+        assert.equal(await empty.evaluate(n => n.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', isComposing: true, bubbles: true, cancelable: true}))), true, 'IME confirmation is not prevented');
+        assert.equal(await empty.evaluate(n => document.activeElement === n), true, 'IME confirmation retains focus');
+        assert.equal(await empty.textContent(), '表紙タイトル');
+        await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+        await page.keyboard.press('Backspace');
+        await page.locator('#print-preview [data-print-title-add]').click();
+        const added = page.locator('#print-preview [data-print-title][data-line="3"]');
+        await added.click({position: {x: 20, y: 10}});
+        await page.keyboard.insertText('追加行');
+        assert.equal(await added.textContent(), '追加行');
+        await page.locator('#print-preview [data-print-title][data-line="0"]').click();
+        await page.keyboard.insertText('再入力');
+        assert.equal(await page.locator('#print-preview [data-print-title][data-line="0"]').textContent(), '再入力');
+        const populated = page.locator('#print-preview [data-print-title][data-line="1"]');
+        await populated.dblclick();
+        await page.keyboard.insertText('置き換え');
+        assert.equal(await populated.textContent(), '置き換え', 'Existing title remains replaceable by double click');
+        await page.keyboard.press('Escape');
+        assert.equal(await page.locator('#print-preview [data-print-title][data-line="1"]').textContent(), '演習フォルダ', 'Escape cancels drafts');
+        await page.locator('#print-preview [data-print-title][data-line="0"]').focus();
+        await page.keyboard.press('Enter');
+        await page.keyboard.insertText('キーボード入力');
+        assert.equal(await page.locator('#print-preview [data-print-title][data-line="0"]').textContent(), 'キーボード入力');
+        await page.keyboard.press('Enter');
+      };
       const nameBox = page.locator('#pr-name-field');
       const coverBox = page.locator('#pr-cover');
       await openPage();
+      await verifyCoverFocus();
       assert.equal(await nameBox.isChecked(), false, `${device}: starts OFF`);
       await setFixture(fixture.exam);
       await nameBox.check();
@@ -247,7 +286,7 @@ async function browserTest() {
       await context.close();
     }
     fs.writeFileSync('/tmp/exam-print-name-results.json', JSON.stringify(results, null, 2));
-    console.log('PASS: real init/change/reload wiring, desktop/mobile, cover toggle retention, preview/runPrint parity, lower-right geometry/underline, unchanged title layout and ON/OFF A4 page counts');
+    console.log('PASS: empty cover click/type/delete/retype/add, keyboard edit/cancel, IME guard, real init/change/reload wiring, desktop/mobile, cover toggle retention, preview/runPrint parity, lower-right geometry/underline, unchanged title layout and ON/OFF A4 page counts');
     console.log(JSON.stringify(results, null, 2));
   } finally {
     await browser.close();
