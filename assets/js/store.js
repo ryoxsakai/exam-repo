@@ -24,6 +24,7 @@
     printLineHeight: "exam_print_lineheight", // 問題印刷の行間（表紙以外。1〜5）
     regDraft:      "exam_reg_draft",         // 問題登録フォームの下書き（リロードしても保持）
     printSections: "exam_print_sections",    // 印刷対象セクション {種別: bool}（全問題で共有）
+    printDuration: "exam_print_duration",
     printNameField: "exam_print_name_field", // 印刷の表紙右下に氏名記入欄を追加する
     printHideLabels: "exam_print_hide_labels", // 印刷時に「問題」「本文」「設問」のセクション名を出さない
     printQPageBreak: "exam_print_qbreak",    // （旧）印刷時に大問ごとに改ページする。下の面別キーへ移行済み
@@ -304,6 +305,9 @@
       m[type] = !!on;
       write(KEYS.printSections, m);
     },
+
+    getPrintDuration: function () { return read(KEYS.printDuration, true) !== false; },
+    setPrintDuration: function (v) { write(KEYS.printDuration, !!v); },
 
     /* 問題印刷タブ: 表紙に氏名記入欄を追加する（既定は追加しない、この端末のみ）。 */
     getPrintNameField: function () { return read(KEYS.printNameField, false) === true; },

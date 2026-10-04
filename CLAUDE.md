@@ -198,3 +198,11 @@
 - **Worker(D1) config**: サイトタイトル / 方式(schedules) / 年度(year_presets) … 全端末で共有
 - **Worker(D1) user_settings**: タブ順 / お気に入りフォルダ印刷の表紙タイトル（Googleログイン時のみ。`GET/PUT /api/user-settings`）… ログインアカウントに紐づけて端末をまたいで共有
 - **localStorage**: Worker URL / タブ順（未ログイン時、またはログイン時もこの端末用のフォールバックとして常に保存） / 最後に開いたタブ / ストップワード・語彙リスト / セクション種別候補 / 長文難易度の語彙:文長の重み(`difficulty_vocab_weight`, 0〜1既定0.5) / お気に入り試験のキャッシュ(`exam_fav_cache`) / お気に入りフォルダの折りたたみ状態(`exam_fav_collapsed`) / 印刷オプション（文字サイズ・行間・対象セクション、ラベルを外す(`exam_print_hide_labels`)・大問ごとに改ページ(`exam_print_qbreak_q`/`exam_print_qbreak_a`)・セクションごとに改ページ(`exam_print_sbreak_q`/`exam_print_sbreak_a`)・パート見出しを外す(`exam_print_hide_head_q`/`exam_print_hide_head_a`)・通し番号つき見出し(`exam_print_qsubtitle`)・5行ごとの行番号(`exam_print_linenum`)） / お気に入りフォルダ印刷の表紙タイトル(`exam_print_folder_titles`。ログイン時はアカウントにも保存)
+
+### 印刷表紙の試験時間
+
+印刷設定の「試験時間を表示」は既定ONで端末に保存（`exam_print_duration`）。通常の大学・年度・方式表紙に、登録済み時間だけ4行目「時間：60分」と表示する。お気に入り表紙・タイトル・ユーザー設定には適用しない。
+
+大学初期値と試験ID（年度・方式）の例外は、印刷設定からそれぞれ保存する。`GET/PUT /api/exams/:id/print-duration` は `university_minutes` / `exam_minutes`（1〜1440の整数、解除はnull）を部分更新し、`effective_minutes` と `source`（exam/university/unset）を返す。例外優先、未登録なら大学初期値、両方未登録なら非表示。実大学の時間は自動補完しない。D1の専用追加テーブル `university_print_durations` / `exam_print_durations` は最初のAPI利用時に冪等作成し、既存問題・お気に入りを変更しない。
+
+保存中は入力を無効化し、年度・方式の切替先取得は保存完了を待つ。片方の保存で他方の未保存入力を消さない。テスト：`node scripts/test-print-duration.cjs`（実SQLite再open含む）、`node scripts/test-print-duration-browser.cjs`（合成データのみ、desktop/mobile・実印刷HTML・PDF）。

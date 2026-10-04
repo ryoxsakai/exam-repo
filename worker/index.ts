@@ -1,3 +1,4 @@
+import { handlePrintDuration } from "./print-duration";
 import { handleMcpRoute, safeEqual, type McpEnv } from "./mcp";
 import { extractZenyakuTitle, readUniversityIndex, safeRefreshUniversityIndex, invalidateAllUniversityIndexes } from "./university-index";
 
@@ -1029,6 +1030,12 @@ export default {
 
       // 後方互換マイグレーションのみ通常アクセスで確認する。
       await ensureMigrations(env);
+
+      const durationMatch = path.match(/^\/api\/exams\/(\d+)\/print-duration$/);
+      if (durationMatch) {
+        const result = await handlePrintDuration(request, env.DB, Number(durationMatch[1]));
+        return json(result.body, result.status, origin);
+      }
 
       // ── GET /api/universities ──────────────────────────────────────
       if (path === "/api/universities" && request.method === "GET") {
