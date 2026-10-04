@@ -1,0 +1,17 @@
+name: Test dialogue speaker labels
+on:
+  pull_request:
+    paths:
+      - "assets/js/markup*.js"
+      - "index.html"
+      - "scripts/test-dialogue-speakers.cjs"
+      - ".github/workflows/dialogue-speakers-test.yml"
+jobs:
+  dialogue-speakers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/test-dialogue-speakers.cjs
