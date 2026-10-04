@@ -29,9 +29,9 @@ let handleMcpRoute;
 function fixture() {
   const db = new DatabaseSync(':memory:');
   const env = { EXAM_API_KEY: KEY, EXAM_SESSION_SECRET: 'test-only-signing-secret', DB: { prepare(sql) {
-    const s = { values: [], bind(...values) { this.values = values; return this; }, async first() { return db.prepare(sql).get(...this.values) || null; }, async all() { return { results: db.prepare(sql).all(...this.values) }; }, async run() { return db.prepare(sql).run(...this.values); } };
+    const s = { values: [], bind(...values) { this.values = values; return this; }, async first() { return db.prepare(sql).get(...this.values) || null; }, async all() { return { results: db.prepare(sql).all(...this.values) }; }, async run() { const result = db.prepare(sql).run(...this.values); return { ...result, meta: { changes: Number(result.changes) } }; } };
     return s;
-  }, async batch(statements) { return Promise.all(statements.map(s => s.run())); } } };
+  }, async batch(statements) { db.exec('BEGIN'); try { const result = statements.map(statement => statement.run()); db.exec('COMMIT'); return Promise.all(result); } catch (error) { db.exec('ROLLBACK'); throw error; } } } };
   const jar = new Map();
   const request = async (pathname, { method = 'GET', body, origin = ROOT, cookies = true, headers = {} } = {}) => {
     const res = await handleMcpRoute(new Request(ROOT + pathname, { method, headers: { ...(cookies && jar.size ? { Cookie: [...jar].map(([k,v]) => `${k}=${v}`).join('; ') } : {}), ...(method === 'POST' ? { 'Content-Type': 'application/x-www-form-urlencoded', ...(origin ? { Origin: origin } : {}) } : {}), ...headers }, ...(body !== undefined ? { body: String(body) } : {}) }), env);
@@ -60,9 +60,9 @@ async function main() {
   await check('unchecked successful login does not retain identity and PKCE/access TTL unchanged', async f => {
     const { html } = await f.authorize(); const r = await f.submit(html); assert.equal(r.status, 302); assert.equal(f.jar.has(SESSION), false); assert.equal(f.count('mcp_oauth_browser_sessions'), 0); assert.match((await f.authorize()).html, /type="password"/);
     const dest = new URL(r.headers.get('Location')); assert.equal(dest.origin, 'https://client.test'); assert.equal(dest.searchParams.get('state'), FIELDS.state);
-    const code = dest.searchParams.get('code'); const p = new URLSearchParams({ code, client_id: FIELDS.client_id, redirect_uri: FIELDS.redirect_uri, code_verifier: VERIFIER });
+    const code = dest.searchParams.get('code'); const p = new URLSearchParams({ grant_type: 'authorization_code', code, client_id: FIELDS.client_id, redirect_uri: FIELDS.redirect_uri, code_verifier: VERIFIER });
     const bad = new URLSearchParams(p); bad.set('code_verifier', 'wrong'); assert.equal((await f.request('/oauth/token', { method: 'POST', body: bad })).status, 400);
-    const token = await f.request('/oauth/token', { method: 'POST', body: p }); const data = await token.json(); assert.equal(token.status, 200); assert.equal(data.expires_in, 86400); assert.equal(data.scope, FIELDS.scope); assert.equal((await f.request('/oauth/token', { method: 'POST', body: p })).status, 400);
+    const token = await f.request('/oauth/token', { method: 'POST', body: p }); const data = await token.json(); assert.equal(token.status, 200); assert.ok(data.expires_in >= 86399 && data.expires_in <= 86400); assert.equal(data.scope, FIELDS.scope); assert.equal((await f.request('/oauth/token', { method: 'POST', body: p })).status, 400);
   });
   await check('remember on, random hashed session, repeated consent without sliding expiry', async f => {
     const r = await f.remembered(); assert.match(r.headers.get('Set-Cookie'), /^__Host-exam_oauth_login=[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000$/); assert.doesNotMatch(r.headers.get('Set-Cookie'), /Domain=|test-only/);
