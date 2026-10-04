@@ -1,3 +1,4 @@
+import { refreshSchema, newFamily, rotate, revoke, activeFamily } from "./oauth-refresh";
 import { safeRefreshUniversityIndexForExam } from "./university-index";
 
 import { PANEL_HTML } from "./panel-resource";
@@ -58,6 +59,7 @@ export async function safeEqual(left: string, right: string) {
   return diff === 0;
 }
 async function ensureSchema(env: McpEnv) {
+  await refreshSchema(env);
   await env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS mcp_oauth_clients (client_id TEXT PRIMARY KEY, redirect_uris TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS mcp_oauth_codes (code TEXT PRIMARY KEY, client_id TEXT NOT NULL, redirect_uri TEXT NOT NULL, code_challenge TEXT NOT NULL, scope TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')))"),
@@ -75,7 +77,7 @@ async function registerClient(request: Request, env: McpEnv) {
   if (!uris.length || uris.some((uri) => !validRedirectUri(uri))) return response({ error: "invalid_client_metadata" }, 400);
   const id = crypto.randomUUID();
   await env.DB.prepare("INSERT INTO mcp_oauth_clients (client_id, redirect_uris) VALUES (?, ?)").bind(id, JSON.stringify(uris)).run();
-  return response({ client_id: id, token_endpoint_auth_method: "none", grant_types: ["authorization_code"], response_types: ["code"] }, 201);
+  return response({ client_id: id, token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] }, 201);
 }
 async function clientUris(env: McpEnv, id: string): Promise<string[]> {
   await ensureSchema(env); const row = await env.DB.prepare("SELECT redirect_uris FROM mcp_oauth_clients WHERE client_id = ?").bind(id).first<{ redirect_uris: string }>();
@@ -103,7 +105,7 @@ async function authForm(request: Request, env: McpEnv, params: URLSearchParams, 
   const permissionText = writeRequested
     ? "大学・試験・登録問題の読み取りと、監査・確認を完了した問題への画像追加、および監査・差分確認を完了した問題だけの修正を許可します。削除は行いません。"
     : "大学・試験・登録問題の読み取りを許可します。編集や削除は行いません。";
-  return html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>医学部入試DBを接続</title><body style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans JP',sans-serif;max-width:560px;margin:48px auto;padding:0 20px"><h1>医学部入試DBをChatGPTに接続</h1><p>${permissionText}</p><p style="overflow-wrap:anywhere">接続先: ${escapeHtml(params.get("redirect_uri"))}</p>${message ? `<p role="alert" style="color:#b91c1c">${escapeHtml(message)}</p>` : ""}<form method="post" action="/oauth/authorize">${remembered ? `<p>このブラウザのログイン状態を保持しています（期限: ${new Date(remembered.expiresAt).toISOString().slice(0, 10)} UTC）。接続先と権限を確認して許可してください。</p>` : `<label for="api-key" style="display:block;margin:24px 0 8px">EXAM APIキー</label><input id="api-key" name="api_key" type="password" autocomplete="off" required style="box-sizing:border-box;width:100%;padding:12px;font-size:16px">`}${hidden}<input type="hidden" name="csrf_token" value="${escapeHtml(form.token)}"><label style="display:flex;gap:8px;align-items:flex-start;margin-top:20px"><input type="checkbox" name="remember_login" value="1"${checked ? " checked" : ""}>ログイン状態を30日間保持する</label><p style="font-size:14px;color:#555">APIキーは保存しません。共有端末ではチェックを外してください。保持中も、接続の許可は毎回確認します。</p><button type="submit" style="margin-top:12px;padding:12px 18px;font-size:16px">接続を許可</button></form>${logout ? `<form method="post" action="/oauth/logout" style="margin-top:24px">${hidden}<input type="hidden" name="csrf_token" value="${escapeHtml(logout.token)}"><button type="submit">このブラウザのログイン保持を解除</button><p style="font-size:14px;color:#555">接続済みアプリのアクセストークンは期限まで有効です。</p></form>` : ""}</body></html>`, message ? 401 : 200, { "Set-Cookie": form.cookie, "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${new URL(params.get("redirect_uri")!).origin}; frame-ancestors 'none'; base-uri 'none'` });
+  return html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>医学部入試DBを接続</title><body style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans JP',sans-serif;max-width:560px;margin:48px auto;padding:0 20px"><h1>医学部入試DBをChatGPTに接続</h1><p>${permissionText}</p><p>許可した接続は自動更新により最長30日間有効です。30日後は再接続が必要です。ブラウザのログイン保持とは別の設定です。</p><p style="overflow-wrap:anywhere">接続先: ${escapeHtml(params.get("redirect_uri"))}</p>${message ? `<p role="alert" style="color:#b91c1c">${escapeHtml(message)}</p>` : ""}<form method="post" action="/oauth/authorize">${remembered ? `<p>このブラウザのログイン状態を保持しています（期限: ${new Date(remembered.expiresAt).toISOString().slice(0, 10)} UTC）。接続先と権限を確認して許可してください。</p>` : `<label for="api-key" style="display:block;margin:24px 0 8px">EXAM APIキー</label><input id="api-key" name="api_key" type="password" autocomplete="off" required style="box-sizing:border-box;width:100%;padding:12px;font-size:16px">`}${hidden}<input type="hidden" name="csrf_token" value="${escapeHtml(form.token)}"><label style="display:flex;gap:8px;align-items:flex-start;margin-top:20px"><input type="checkbox" name="remember_login" value="1"${checked ? " checked" : ""}>ログイン状態を30日間保持する</label><p style="font-size:14px;color:#555">APIキーは保存しません。共有端末ではチェックを外してください。保持中も、接続の許可は毎回確認します。</p><button type="submit" style="margin-top:12px;padding:12px 18px;font-size:16px">接続を許可</button></form>${logout ? `<form method="post" action="/oauth/logout" style="margin-top:24px">${hidden}<input type="hidden" name="csrf_token" value="${escapeHtml(logout.token)}"><button type="submit">このブラウザのログイン保持を解除</button><p style="font-size:14px;color:#555">接続済みアプリの接続は最長30日間有効です。解除する場合は接続先で切断してください。</p></form>` : ""}</body></html>`, message ? 401 : 200, { "Set-Cookie": form.cookie, "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${new URL(params.get("redirect_uri")!).origin}; frame-ancestors 'none'; base-uri 'none'` });
 }
 async function authorize(request: Request, env: McpEnv, url: URL) {
   if (url.protocol !== "https:") return authError("認証にはHTTPS接続が必要です。");
@@ -131,7 +133,7 @@ async function logout(request: Request, env: McpEnv, url: URL) {
   await ensureBrowserSessionSchema(env);
   if (request.method === "GET") {
     const form = await loginFormToken(request, env, "logout", authContext(new URLSearchParams()));
-    return html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ログイン保持の解除</title><body style="font-family:sans-serif;max-width:560px;margin:48px auto;padding:0 20px"><h1>このブラウザのログイン保持を解除</h1><p>次回の接続ではAPIキーの入力が必要になります。接続済みアプリのアクセストークンは期限まで有効です。</p><form method="post" action="/oauth/logout"><input type="hidden" name="csrf_token" value="${escapeHtml(form.token)}"><button type="submit">ログイン保持を解除する</button></form></body></html>`, 200, { "Set-Cookie": form.cookie });
+    return html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ログイン保持の解除</title><body style="font-family:sans-serif;max-width:560px;margin:48px auto;padding:0 20px"><h1>このブラウザのログイン保持を解除</h1><p>次回の接続ではAPIキーの入力が必要になります。接続済みアプリの接続は最長30日間有効です。解除する場合は接続先で切断してください。</p><form method="post" action="/oauth/logout"><input type="hidden" name="csrf_token" value="${escapeHtml(form.token)}"><button type="submit">ログイン保持を解除する</button></form></body></html>`, 200, { "Set-Cookie": form.cookie });
   }
   const p = new URLSearchParams(await request.text());
   const hasAuthorization = AUTH_FIELDS.some((name) => p.has(name));
@@ -143,22 +145,41 @@ async function logout(request: Request, env: McpEnv, url: URL) {
   return new Response(null, { status: 303, headers: { "Location": dest.toString(), "Cache-Control": "no-store", "Referrer-Policy": "same-origin", "Set-Cookie": sessionCookie } });
 }
 async function sha256(value: string) { return toBase64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))); }
+async function tokenResponse(env: McpEnv, family: { id: string; client_id: string; scope: string; expires: number; raw: string }) {
+  const expires = Math.min(Date.now() + TOKEN_AGE_MS, family.expires);
+  const payload = toBase64Url(new TextEncoder().encode(JSON.stringify({ aud: "medical-exam-mcp", client_id: family.client_id, scope: family.scope, exp: expires, family_id: family.id })));
+  return response({ access_token: `${payload}.${await sign(env, payload)}`, token_type: "Bearer", expires_in: Math.max(0, Math.floor((expires - Date.now()) / 1000)), scope: family.scope, refresh_token: family.raw, refresh_token_expires_in: Math.max(0, Math.floor((family.expires - Date.now()) / 1000)) });
+}
 async function token(request: Request, env: McpEnv) {
-  await ensureSchema(env); const p = new URLSearchParams(await request.text()); const code = p.get("code") || "";
+  await ensureSchema(env);
+  const p = new URLSearchParams(await request.text());
+  if ([...p.keys()].some(key => p.getAll(key).length > 1)) return response({ error: "invalid_request" }, 400);
+  if (p.has("resource") && p.get("resource") !== new URL(request.url).origin + "/mcp") return response({ error: "invalid_target" }, 400);
+  if (!env.EXAM_API_KEY || !env.EXAM_SESSION_SECRET) return response({ error: "temporarily_unavailable" }, 503);
+  if (p.get("grant_type") === "refresh_token") {
+    const family = await rotate(env, p, new URL(request.url).origin);
+    return family ? tokenResponse(env, family) : response({ error: "invalid_grant" }, 400);
+  }
+  if (p.get("grant_type") !== "authorization_code") return response({ error: "unsupported_grant_type" }, 400);
+  const code = p.get("code") || "";
   const row = await env.DB.prepare("SELECT * FROM mcp_oauth_codes WHERE code = ?").bind(code).first<Record<string, any>>();
   const verifier = p.get("code_verifier") || "";
-  if (!row || row.client_id !== p.get("client_id") || row.redirect_uri !== p.get("redirect_uri") || Number(row.expires_at) < Date.now() || !verifier || !(await safeEqual(await sha256(verifier), row.code_challenge))) return response({ error: "invalid_grant" }, 400);
-  await env.DB.prepare("DELETE FROM mcp_oauth_codes WHERE code = ?").bind(code).run();
-  const payload = toBase64Url(new TextEncoder().encode(JSON.stringify({ aud: "medical-exam-mcp", client_id: row.client_id, scope: row.scope, exp: Date.now() + TOKEN_AGE_MS })));
-  return response({ access_token: `${payload}.${await sign(env, payload)}`, token_type: "Bearer", expires_in: TOKEN_AGE_MS / 1000, scope: row.scope });
+  if (!row || row.client_id !== p.get("client_id") || row.redirect_uri !== p.get("redirect_uri") || Number(row.expires_at) <= Date.now() || !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier) || !(await safeEqual(await sha256(verifier), row.code_challenge))) return response({ error: "invalid_grant" }, 400);
+  const family = await newFamily(env, row.client_id, row.scope, new URL(request.url).origin);
+  // Authorization code is consumed atomically before issuing its single family.
+  const consumed = await env.DB.prepare("DELETE FROM mcp_oauth_codes WHERE code = ? AND expires_at > ? RETURNING code").bind(code, Date.now()).first();
+  if (!consumed) return response({ error: "invalid_grant" }, 400);
+  await env.DB.batch(family.statements);
+  return tokenResponse(env, { ...family, client_id: row.client_id, scope: row.scope });
 }
 type McpAuth = { client_id: string; scope: string; exp: number };
 async function verify(request: Request, env: McpEnv): Promise<McpAuth | null> {
   const match = (request.headers.get("Authorization") || "").match(/^Bearer (.+)$/); if (!match) return null;
-  const [payload, sig] = match[1].split("."); if (!payload || !sig || sig !== await sign(env, payload)) return null;
+  const [payload, sig] = match[1].split("."); if (!payload || !sig || !(await safeEqual(sig, await sign(env, payload)))) return null;
   try {
     const data = JSON.parse(fromBase64Url(payload));
-    if (data.aud !== "medical-exam-mcp" || data.exp < Date.now() || !String(data.scope || "").split(" ").includes(MCP_SCOPE)) return null;
+    if (data.aud !== "medical-exam-mcp" || !Number.isFinite(data.exp) || data.exp <= Date.now() || !String(data.scope || "").split(" ").includes(MCP_SCOPE)) return null;
+    if (data.family_id && !(await activeFamily(env, String(data.family_id), String(data.client_id), new URL(request.url).origin))) return null;
     return { client_id: String(data.client_id || ""), scope: String(data.scope || ""), exp: Number(data.exp) };
   } catch { return null; }
 }
@@ -2074,10 +2095,11 @@ async function mcp(request: Request, env: McpEnv, url: URL) {
 export async function handleMcpRoute(request: Request, env: McpEnv): Promise<Response | null> {
   const url = new URL(request.url), path = url.pathname, root = baseUrl(url);
   if (path === "/.well-known/oauth-protected-resource" && request.method === "GET") return response({ resource: `${root}/mcp`, authorization_servers: [root], scopes_supported: MCP_SUPPORTED_SCOPES });
-  if (path === "/.well-known/oauth-authorization-server" && request.method === "GET") return response({ issuer: root, authorization_endpoint: `${root}/oauth/authorize`, token_endpoint: `${root}/oauth/token`, registration_endpoint: `${root}/oauth/register`, response_types_supported: ["code"], grant_types_supported: ["authorization_code"], token_endpoint_auth_methods_supported: ["none"], code_challenge_methods_supported: ["S256"], scopes_supported: MCP_SUPPORTED_SCOPES });
+  if (path === "/.well-known/oauth-authorization-server" && request.method === "GET") return response({ issuer: root, authorization_endpoint: `${root}/oauth/authorize`, token_endpoint: `${root}/oauth/token`, registration_endpoint: `${root}/oauth/register`, response_types_supported: ["code"], grant_types_supported: ["authorization_code", "refresh_token"], revocation_endpoint: `${root}/oauth/revoke`, revocation_endpoint_auth_methods_supported: ["none"], token_endpoint_auth_methods_supported: ["none"], code_challenge_methods_supported: ["S256"], scopes_supported: MCP_SUPPORTED_SCOPES });
   if (path === "/oauth/register" && request.method === "POST") return registerClient(request, env);
   if (path === "/oauth/authorize" && (request.method === "GET" || request.method === "POST")) return authorize(request, env, url);
   if (path === "/oauth/logout" && (request.method === "GET" || request.method === "POST")) return logout(request, env, url);
+  if (path === "/oauth/revoke" && request.method === "POST") { await ensureSchema(env); await revoke(env, new URLSearchParams(await request.text())); return new Response(null, { status: 200, headers: { "Cache-Control": "no-store" } }); }
   if (path === "/oauth/token" && request.method === "POST") return token(request, env);
   if (path === "/mcp") return mcp(request, env, url);
   return null;

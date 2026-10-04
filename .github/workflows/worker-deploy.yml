@@ -26,6 +26,8 @@ jobs:
           npm ci --prefix panel
           npm run build --prefix panel
           npm test --prefix panel
+          node scripts/test-oauth-browser-session.cjs
+          node scripts/test-oauth-refresh.cjs
 
       - name: Deploy Worker to Cloudflare
         uses: cloudflare/wrangler-action@v3
