@@ -1,4 +1,4 @@
-import { handlePrintDuration } from "./print-duration";
+import { handlePrintDuration, planUniversityPrintDurationMerge, planExamPrintDurationMerge, planExamPrintDurationMove } from "./print-duration";
 import { handleMcpRoute, safeEqual, type McpEnv } from "./mcp";
 import { extractZenyakuTitle, readUniversityIndex, safeRefreshUniversityIndex, invalidateAllUniversityIndexes } from "./university-index";
 
@@ -288,6 +288,9 @@ async function mergeUniversityAliases(env: Env) {
       continue;
     }
 
+    const durationTransfer = await planUniversityPrintDurationMerge(env.DB, src.id, dst.id);
+    if (!durationTransfer) continue; // Keep conflicting defaults and both universities intact.
+    const mergeWrites = [durationTransfer];
     const { results: dstExams } = await env.DB.prepare(
       "SELECT year, schedule FROM exams WHERE university_id = ?"
     ).bind(dst.id).all<{ year: number; schedule: string }>();
@@ -301,21 +304,22 @@ async function mergeUniversityAliases(env: Env) {
     for (const ex of srcExams) {
       const key = `${ex.year}::${ex.schedule}`;
       if (dstKeys.has(key)) { allMoved = false; continue; } // 年度・方式が競合するため移動しない
-      await env.DB.prepare("UPDATE exams SET university_id = ? WHERE id = ?").bind(dst.id, ex.id).run();
+      mergeWrites.push(env.DB.prepare("UPDATE exams SET university_id = ? WHERE id = ?").bind(dst.id, ex.id));
       dstKeys.add(key);
     }
 
     if (allMoved) {
       if (!dst.reading && src.reading) {
-        await env.DB.prepare("UPDATE universities SET reading = ? WHERE id = ?").bind(src.reading, dst.id).run();
+        mergeWrites.push(env.DB.prepare("UPDATE universities SET reading = ? WHERE id = ?").bind(src.reading, dst.id));
       }
       if (!dst.abbreviation && src.abbreviation) {
-        await env.DB.prepare("UPDATE universities SET abbreviation = ? WHERE id = ?").bind(src.abbreviation, dst.id).run();
+        mergeWrites.push(env.DB.prepare("UPDATE universities SET abbreviation = ? WHERE id = ?").bind(src.abbreviation, dst.id));
       }
-      await env.DB.prepare("DELETE FROM universities WHERE id = ?").bind(src.id).run();
+      mergeWrites.push(env.DB.prepare("DELETE FROM universities WHERE id = ?").bind(src.id));
     } else {
-      await env.DB.prepare("UPDATE universities SET hidden = 1 WHERE id = ?").bind(src.id).run();
+      mergeWrites.push(env.DB.prepare("UPDATE universities SET hidden = 1 WHERE id = ?").bind(src.id));
     }
+    await env.DB.batch(mergeWrites);
   }
 }
 
@@ -609,11 +613,15 @@ async function mergeDuplicateUniversities(env: Env) {
       const collide = dupExams.some((e) => canonKeys.has(`${e.year}::${e.schedule}`));
       if (collide) continue;  // 年度・方式が衝突する場合は自動判断が難しいため統合しない
 
-      await env.DB.prepare("UPDATE exams SET university_id = ? WHERE university_id = ?")
-        .bind(canonical.id, dup.id).run();
+      const durationTransfer = await planUniversityPrintDurationMerge(env.DB, dup.id, canonical.id);
+      if (!durationTransfer) continue;
+      await env.DB.batch([
+        durationTransfer,
+        env.DB.prepare("UPDATE exams SET university_id = ? WHERE university_id = ?").bind(canonical.id, dup.id),
+        env.DB.prepare("DELETE FROM universities WHERE id = ?").bind(dup.id),
+      ]);
       if (!reading && dup.reading) reading = dup.reading;
       if (!abbreviation && dup.abbreviation) abbreviation = dup.abbreviation;
-      await env.DB.prepare("DELETE FROM universities WHERE id = ?").bind(dup.id).run();
       dupExams.forEach((e) => canonKeys.add(`${e.year}::${e.schedule}`));
     }
     // 正規化した表記に統一し、よみがな・略称は統合元から補完
@@ -1315,12 +1323,26 @@ export default {
         const targetYear = body.year !== undefined ? body.year : existing.year;
         const targetSchedule = body.schedule !== undefined ? body.schedule : existing.schedule;
 
+        // 変更後の (大学・年度・方式) が別の試験と重複するか判定
+        const conflict = await env.DB.prepare(
+          "SELECT id FROM exams WHERE university_id = ? AND year = ? AND schedule = ? AND id != ?"
+        ).bind(targetUniId, targetYear, targetSchedule, examId).first<{ id: number }>();
+
+        const durationTransfer = conflict
+          ? await planExamPrintDurationMerge(env.DB, examId, conflict.id)
+          : targetUniId !== existing.university_id
+            ? await planExamPrintDurationMove(env.DB, examId, targetUniId) : null;
+        if (conflict && !durationTransfer) {
+          return json({ error: "試験時間が競合しています。統合元・統合先の初期値・例外を確認し、使用時間を一致させるか登録を解除してから統合してください。" }, 409, origin);
+        }
+
+        const questionWrites = [];
         if (body.questions !== undefined) {
           // DELETE ALL + INSERT の代わりに UPSERT で各大問を個別更新
           // （他の大問を消さないようにするため）
           for (const q of body.questions) {
             const qnum = Math.max(1, Number(q.questionNumber) || 1);
-            await env.DB.prepare(`
+            questionWrites.push(env.DB.prepare(`
               INSERT INTO questions (exam_id, question_number, label, category, problem_text, answer_text, commentary_text)
               VALUES (?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(exam_id, question_number) DO UPDATE SET
@@ -1330,14 +1352,10 @@ export default {
                 answer_text = excluded.answer_text,
                 commentary_text = excluded.commentary_text,
                 updated_at = datetime('now')
-            `).bind(examId, qnum, q.label || "", q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || "").run();
+            `).bind(examId, qnum, q.label || "", q.category || "", q.problemText || "", q.answerText || "", q.commentaryText || ""));
           }
         }
 
-        // 変更後の (大学・年度・方式) が別の試験と重複するか判定
-        const conflict = await env.DB.prepare(
-          "SELECT id FROM exams WHERE university_id = ? AND year = ? AND schedule = ? AND id != ?"
-        ).bind(targetUniId, targetYear, targetSchedule, examId).first<{ id: number }>();
 
         let merged = false;
         if (conflict) {
@@ -1353,22 +1371,28 @@ export default {
             "SELECT id, question_number FROM questions WHERE exam_id = ? ORDER BY question_number ASC"
           ).bind(examId).all<{ id: number; question_number: number }>();
 
-          for (const q of srcQs.results) {
-            let n = q.question_number;
+          const mergeWrites = [...questionWrites, durationTransfer!];
+          const sourceNumbers = new Set(srcQs.results.map(q => q.question_number));
+          (body.questions || []).forEach(q => sourceNumbers.add(Math.max(1, Number(q.questionNumber) || 1)));
+          for (const sourceNumber of [...sourceNumbers].sort((a, b) => a - b)) {
+            let n = sourceNumber;
             if (taken.has(n)) { maxNum += 1; n = maxNum; }   // 番号が衝突したら上書きせず空き番号へずらす
             else if (n > maxNum) { maxNum = n; }
             taken.add(n);
-            await env.DB.prepare("UPDATE questions SET exam_id = ?, question_number = ? WHERE id = ?")
-              .bind(targetId, n, q.id).run();
+            mergeWrites.push(env.DB.prepare("UPDATE questions SET exam_id = ?, question_number = ? WHERE exam_id = ? AND question_number = ?")
+              .bind(targetId, n, examId, sourceNumber));
           }
           // 空になった元の試験を削除し、以降は統合先を対象にする
-          await env.DB.prepare("DELETE FROM exams WHERE id = ?").bind(examId).run();
+          mergeWrites.push(env.DB.prepare("DELETE FROM exams WHERE id = ?").bind(examId));
+          await env.DB.batch(mergeWrites);
           examId = targetId;
           merged = true;
         } else {
           // 重複なし: メタ情報を通常どおり更新
-          await env.DB.prepare("UPDATE exams SET university_id = ?, year = ?, schedule = ? WHERE id = ?")
-            .bind(targetUniId, targetYear, targetSchedule, examId).run();
+          const moveWrites = [...questionWrites, ...(durationTransfer ? [durationTransfer] : [])];
+          moveWrites.push(env.DB.prepare("UPDATE exams SET university_id = ?, year = ?, schedule = ? WHERE id = ?")
+            .bind(targetUniId, targetYear, targetSchedule, examId));
+          await env.DB.batch(moveWrites);
         }
 
         const updated = await env.DB.prepare(
