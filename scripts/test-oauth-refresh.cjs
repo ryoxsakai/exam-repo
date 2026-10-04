@@ -29,7 +29,7 @@ let handleMcpRoute;
 function fixture() {
   const db = new DatabaseSync(':memory:');
   const env = { EXAM_API_KEY: KEY, EXAM_SESSION_SECRET: 'test-only-signing-secret', DB: { prepare(sql) {
-    const s = { values: [], bind(...values) { this.values = values; return this; }, async first() { return db.prepare(sql).get(...this.values) || null; }, async all() { return { results: db.prepare(sql).all(...this.values) }; }, async run() { const result = db.prepare(sql).run(...this.values); return { ...result, meta: { changes: Number(result.changes) } }; } };
+    const s = { values: [], bind(...values) { this.values = values; return this; }, async first() { return db.prepare(sql).get(...this.values) || null; }, async all() { return { results: db.prepare(sql).all(...this.values) }; }, run() { const result = db.prepare(sql).run(...this.values); return { ...result, meta: { changes: Number(result.changes) } }; } };
     return s;
   }, async batch(statements) { db.exec('BEGIN'); try { const result = statements.map(statement => statement.run()); db.exec('COMMIT'); return Promise.all(result); } catch (error) { db.exec('ROLLBACK'); throw error; } } } };
   const jar = new Map();
@@ -47,10 +47,13 @@ function fixture() {
 }
 let groups = 0;
 async function check(name, run) { const f = fixture(); await f.ready(); try { await run(f); groups++; console.log(`PASS: ${name}`); } finally { f.db.close(); } }
-async function issue(f, scope = FIELDS.scope) {
+async function codeRequest(f, scope = FIELDS.scope) {
   const a = await f.authorize({ scope }); const r = await f.submit(a.html);
   const p = new URLSearchParams({ grant_type: 'authorization_code', code: new URL(r.headers.get('Location')).searchParams.get('code'), client_id: FIELDS.client_id, redirect_uri: FIELDS.redirect_uri, code_verifier: VERIFIER });
-  const res = await f.request('/oauth/token', { method: 'POST', body: p }); assert.equal(res.status,200); return res.json();
+  return p;
+}
+async function issue(f, scope = FIELDS.scope) {
+  const res = await f.request('/oauth/token', { method: 'POST', body: await codeRequest(f, scope) }); assert.equal(res.status,200); return res.json();
 }
 async function refresh(f, raw, extra = {}) { return f.request('/oauth/token', { method:'POST', body:new URLSearchParams({ grant_type:'refresh_token', client_id:FIELDS.client_id, refresh_token:raw, ...extra }) }); }
 async function access(f, raw) { return f.request('/mcp', { method:'POST', body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'list_universities',arguments:{}} }),headers:{Authorization:'Bearer '+raw,'Content-Type':'application/json'} }); }
@@ -59,6 +62,21 @@ async function main() {
  try {
  await build({entryPoints:[path.resolve(__dirname,'../worker/mcp.ts')],bundle:true,platform:'node',format:'esm',outfile:path.join(tmp,'mcp.mjs')});
  ({ handleMcpRoute } = await import(pathToFileURL(path.join(tmp,'mcp.mjs'))));
+ await check('issuance failure rolls code back and retry succeeds without affecting live grants',async f=>{
+  const live=await issue(f); const p=await codeRequest(f); const families=f.count('mcp_oauth_families'), refreshes=f.count('mcp_oauth_refresh');
+  f.db.exec("CREATE TRIGGER fail_refresh_insert BEFORE INSERT ON mcp_oauth_refresh BEGIN SELECT RAISE(ABORT, 'Injected refresh persistence failure'); END");
+  await assert.rejects(()=>f.request('/oauth/token',{method:'POST',body:p}),/Injected refresh persistence failure/);
+  assert.equal(f.count('mcp_oauth_codes'),1,'Failed issuance must preserve authorization code');
+  assert.equal(f.count('mcp_oauth_families'),families);assert.equal(f.count('mcp_oauth_refresh'),refreshes);
+  assert.equal((await access(f,live.access_token)).status,200);
+  f.db.exec('DROP TRIGGER fail_refresh_insert');
+  const retry=await f.request('/oauth/token',{method:'POST',body:p});assert.equal(retry.status,200);assert.ok((await retry.json()).refresh_token);assert.equal(f.count('mcp_oauth_codes'),0);
+  assert.equal((await refresh(f,live.refresh_token)).status,200);
+ });
+ await check('parallel authorization code exchange issues exactly one family',async f=>{
+  const p=await codeRequest(f);const results=await Promise.all([f.request('/oauth/token',{method:'POST',body:p}),f.request('/oauth/token',{method:'POST',body:p})]);
+  assert.deepEqual(results.map(r=>r.status).sort(),[200,400]);assert.equal(f.count('mcp_oauth_codes'),0);assert.equal(f.count('mcp_oauth_families'),1);assert.equal(f.count('mcp_oauth_refresh'),1);
+ });
  await check('opaque hashed refresh, fixed 30 days, short access, anonymous rejection',async f=>{
   const t = await issue(f);assert.match(t.refresh_token,/^[A-Za-z0-9_-]{43}$/);assert.ok(t.refresh_token_expires_in<=2592000);assert.ok(t.expires_in<=86400);assert.equal((await access(f,t.access_token)).status,200);assert.equal((await access(f,'invalid')).status,401);
   const stored=f.db.prepare('SELECT * FROM mcp_oauth_refresh').get();assert.notEqual(stored.token_hash,t.refresh_token);assert.equal(stored.token_hash,crypto.createHash('sha256').update(t.refresh_token).digest('base64url'));

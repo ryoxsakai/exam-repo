@@ -166,10 +166,13 @@ async function token(request: Request, env: McpEnv) {
   const verifier = p.get("code_verifier") || "";
   if (!row || row.client_id !== p.get("client_id") || row.redirect_uri !== p.get("redirect_uri") || Number(row.expires_at) <= Date.now() || !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier) || !(await safeEqual(await sha256(verifier), row.code_challenge))) return response({ error: "invalid_grant" }, 400);
   const family = await newFamily(env, row.client_id, row.scope, new URL(request.url).origin);
-  // Authorization code is consumed atomically before issuing its single family.
-  const consumed = await env.DB.prepare("DELETE FROM mcp_oauth_codes WHERE code = ? AND expires_at > ? RETURNING code").bind(code, Date.now()).first();
-  if (!consumed) return response({ error: "invalid_grant" }, 400);
-  await env.DB.batch(family.statements);
+  // One D1 transaction consumes the code and persists its single refresh family.
+  // A persistence failure rolls back consumption; changes() gates both inserts.
+  const issued = await env.DB.batch([
+    env.DB.prepare("DELETE FROM mcp_oauth_codes WHERE code = ? AND expires_at > ? RETURNING code").bind(code, Date.now()),
+    ...family.statements,
+  ]);
+  if (!issued[0].meta.changes) return response({ error: "invalid_grant" }, 400);
   return tokenResponse(env, { ...family, client_id: row.client_id, scope: row.scope });
 }
 type McpAuth = { client_id: string; scope: string; exp: number };

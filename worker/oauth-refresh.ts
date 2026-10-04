@@ -24,8 +24,8 @@ export async function refreshSchema(env: Env) {
 export async function newFamily(env: Env, client: string, scope: string, issuer: string) {
   const id = crypto.randomUUID(), raw = encoded(crypto.getRandomValues(new Uint8Array(32)).buffer), expires = Date.now() + REFRESH_AGE_MS;
   return { id, raw, expires, statements: [
-    env.DB.prepare('INSERT INTO mcp_oauth_families (id, client_id, scope, expires_at, credential_version, issuer) VALUES (?, ?, ?, ?, ?, ?)').bind(id, client, scope, expires, await credentials(env), issuer),
-    env.DB.prepare('INSERT INTO mcp_oauth_refresh (token_hash, family_id, scope) VALUES (?, ?, ?)').bind(await hash(raw), id, scope),
+    env.DB.prepare('INSERT INTO mcp_oauth_families (id, client_id, scope, expires_at, credential_version, issuer) SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1').bind(id, client, scope, expires, await credentials(env), issuer),
+    env.DB.prepare('INSERT INTO mcp_oauth_refresh (token_hash, family_id, scope) SELECT ?, ?, ? WHERE changes() = 1').bind(await hash(raw), id, scope),
   ] };
 }
 export async function activeFamily(env: Env, id: string, client: string, issuer: string) {
