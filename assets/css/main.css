@@ -719,6 +719,11 @@ body.sortlist-dragging-touch .sort-item * {
   font-size: .82em; font-family: var(--sans); font-weight: 700; vertical-align: .04em; line-height: 1;
   text-indent: 0; white-space: nowrap; flex-shrink: 0; letter-spacing: .03em;
 }
+/* リード文中の参照は左右均等の小さな余白。本文・問題の表示は変更しない。 */
+.exam-doc .lead-line .question-badge,
+.exam-doc .lead-line .choice-inline,
+.exam-doc .lead-line .blank-badge { margin: 0 .2em; }
+
 .blank-badge {
   display: inline-flex; align-items: center; justify-content: center;
   /* 左の間隔はマージンでなく描画時に挿入するスペース文字で確保する。
