@@ -62,3 +62,26 @@ for (const file of ['assets/js/markup.js', active]) {
   assert.doesNotMatch(render('マスク：内容', '{{本文}}\nNote: heading\nAnswer: answer'), /dialogue-speaker/);
 }
 console.log('PASS: translated names/colons and source-derived aliases; non-dialogue/headings/markup remain unchanged');
+for (const file of ['assets/js/markup.js', active]) {
+ const ctx={window:{}};vm.runInNewContext(fs.readFileSync(path.join(root,file),'utf8'),ctx);
+ const render=(text,source='')=>ctx.window.Markup.render(text,{zenyaku:true,dialogueSource:source}).html;
+ for(const label of ['A：','B：','Alex：','Mr. Lee：','K. Swisher：','Q (Christiane Amanpour)：','A ：']) {
+  assert.ok(render(label+' 発話').includes('<strong class="dialogue-speaker">'+label+'</strong>'));
+ }
+ for(const label of ['Question：','Answer：','Note：','Source：','Question ：','NASA：','U.S.：']) assert.doesNotMatch(render(label+' 説明'),/dialogue-speaker/);
+ for(const [english,japanese] of [['Woman','女性'],['Man','男性'],['Doctor','医師'],['Patient','患者'],['Teacher','先生'],['Female Reporter','女性レポーター'],['TV Anchor','テレビキャスター'],['Prof. Gable','ゲーブル教授'],['Dr. Wadman','ウォドマン医師'],['Mr. Whitaker','ホイッティカー氏'],['Dr. Taylor','テイラー博士'],['Prof.','教授']]) {
+  const source='{{問題}}\n@@'+english+': Hello.\n@@Alex: Hi.';
+  for(const colon of [':','：']) assert.ok(render(japanese+colon+' 発話',source).includes('dialogue-speaker'),japanese+colon);
+  assert.doesNotMatch(render(japanese+'：説明','{{本文}}\nNote: info\nAnswer: response'),/dialogue-speaker/);
+ }
+ const source='{{問題}}\n{{ア}}\n@@Kate: Hi.\n@@Nancy: Hello.\n{{イ}}\n@@Jack: Hi.\n@@Tom: Hello.\n{{解説}}\nNote: heading';
+ assert.match(render('ケイト ： 発話',source),/dialogue-speaker/);
+ assert.match(render('ナンシー：発話',source),/dialogue-speaker/);
+ const prefixed=render('(ア) ケイト：発話',source);
+ assert.match(prefixed,/\(ア\) <strong class="dialogue-speaker">ケイト：<\/strong>/);
+ assert.doesNotMatch(render('注：説明',source),/dialogue-speaker/);
+ const named='{{本文}}\nSusan: Hi.\nBarry: Hello.';
+ assert.match(render('スーザン(以下S)：発話',named),/dialogue-speaker/);
+ assert.doesNotMatch(render('**Alex：** 発話'),/dialogue-speaker|<strong[^>]*>[^<]*<strong/);
+}
+console.log('PASS: both colon widths, source-backed Japanese roles/titles, dialogue subheadings, and protected ordinary headings');
