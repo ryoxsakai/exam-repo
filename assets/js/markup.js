@@ -109,6 +109,14 @@
       var m;
       out = maybeWidenTrailingSpace(out, rem[0]);
 
+      // 括弧付き空所は1つのまとまりにし、前後の空白を均等なCSS余白へ置き換える。
+      // 行の両端揃えでも、空所と括弧の間だけが広がらないようにする。
+      if ((m = rem.match(/^([（(])[ \t\u3000]*(\[\[[^\]\r\n]*\]\])[ \t\u3000]*([）)])/))) {
+        out += '<span class="blank-parentheses">' + esc(m[1]) +
+               inline(m[2], footnotes, true) + esc(m[3]) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+
       // [[N]] 空所
       // 左右の間隔はどちらもスペース文字で確保（行頭・行末ではブラウザが
       // スペースを消すため CSS マージンより自然に揃う）
