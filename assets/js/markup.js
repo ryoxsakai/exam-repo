@@ -102,7 +102,7 @@
   }
 
   // インライン記法をHTMLへ。footnotes は配列で受け取り副作用で追加。
-  function inline(text, footnotes) {
+  function inline(text, footnotes, leadLine) {
     var out = "";
     var rem = text;
     while (rem.length > 0) {
@@ -113,7 +113,7 @@
       // 左右の間隔はどちらもスペース文字で確保（行頭・行末ではブラウザが
       // スペースを消すため CSS マージンより自然に揃う）
       if ((m = rem.match(/^\[\[([^\]]*)\]\]/))) {
-        if (out && !/[\s(\[{「『（【]$/.test(out)) out += " ";
+        if (!leadLine && out && !/[\s(\[{「『（【]$/.test(out)) out += " ";
         // 先頭が -- のもの（[[--]] [[----]] [[-- --]] [[--A--]] 等）は3倍幅の空欄。
         // 前後のダッシュのみ除いた中身をラベルとして表示する（空白は保持。
         // [[-- --]]=半角スペース / [[--　--]]=全角スペース が中に入る）。
@@ -124,7 +124,7 @@
           out += '<span class="blank-badge">' + esc(m[1]) + "</span>";
         }
         rem = rem.slice(m[0].length);
-        if (rem.length && !/^[\s.,;:!?\]）」』】。、！？]/.test(rem)) out += " ";
+        if (!leadLine && rem.length && !/^[\s.,;:!?\]）」』】。、！？]/.test(rem)) out += " ";
         continue;
       }
       // [N] 段落番号バッジ（行中。空所 [[ ]] とは別の単角括弧。[[ は上で処理済み）
@@ -134,7 +134,7 @@
         // 選択肢群などの単一角括弧は記号そのものを残す。ただし中に ((a)) 等の
         // インライン記法が含まれる場合は、角括弧内でも通常どおり表示変換する。
         if (/^\s*$/.test(m[1]) || m[1].length >= 3) {
-          out += "[" + inline(m[1], footnotes) + "]";
+          out += "[" + inline(m[1], footnotes, leadLine) + "]";
           rem = rem.slice(m[0].length); continue;
         }
         out += '<span class="para-badge para-badge-inline">' + esc(m[1]) + "</span>";
@@ -167,28 +167,28 @@
       }
       // !!!!出典!!!!（右寄せ・グレー・小）
       if ((m = rem.match(/^!!!!([\s\S]+?)!!!!/))) {
-        out += '<span class="cite">' + inline(m[1], footnotes) + "</span>";
+        out += '<span class="cite">' + inline(m[1], footnotes, leadLine) + "</span>";
         rem = rem.slice(m[0].length); continue;
       }
       // ||||斜字||||
       if ((m = rem.match(/^\|\|\|\|([\s\S]+?)\|\|\|\|/))) {
-        out += "<em>" + inline(m[1], footnotes) + "</em>";
+        out += "<em>" + inline(m[1], footnotes, leadLine) + "</em>";
         rem = rem.slice(m[0].length); continue;
       }
       // ==語==:色
       if ((m = rem.match(/^==([^=]+)==:(\w+)/))) {
         var c = VALID_COLORS.indexOf(m[2]) >= 0 ? m[2] : "yellow";
-        out += '<mark class="hl hl-' + c + '">' + inline(m[1], footnotes) + "</mark>";
+        out += '<mark class="hl hl-' + c + '">' + inline(m[1], footnotes, leadLine) + "</mark>";
         rem = rem.slice(m[0].length); continue;
       }
       // ==語==
       if ((m = rem.match(/^==([^=]+)==(?!:\w)/))) {
-        out += '<mark class="hl hl-yellow">' + inline(m[1], footnotes) + "</mark>";
+        out += '<mark class="hl hl-yellow">' + inline(m[1], footnotes, leadLine) + "</mark>";
         rem = rem.slice(m[0].length); continue;
       }
       // __下線__
       if ((m = rem.match(/^__([^_]+)__/))) {
-        out += "<u>" + inline(m[1], footnotes) + "</u>";
+        out += "<u>" + inline(m[1], footnotes, leadLine) + "</u>";
         rem = rem.slice(m[0].length); continue;
       }
       // ~~下付き~~
@@ -203,7 +203,7 @@
       }
       // **太字**
       if ((m = rem.match(/^\*\*([^*]+)\*\*/))) {
-        out += "<strong>" + inline(m[1], footnotes) + "</strong>";
+        out += "<strong>" + inline(m[1], footnotes, leadLine) + "</strong>";
         rem = rem.slice(m[0].length); continue;
       }
       // {{問N}}（行中）
@@ -381,6 +381,8 @@
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
       var trimmed = line.trim();
+      // mergeLeadSections が生成するリード文（旧保存形式も同じ）を表示用に識別する。
+      var leadLine = /^@@\*\*[\s\S]+\*\*$/.test(trimmed);
 
       if (trimmed === "") { html += '<div style="height:.6em"></div>'; paraStart = true; continue; }
       if (trimmed === "----") { html += '<hr class="exam-hr">'; paraStart = true; continue; }
@@ -454,8 +456,8 @@
       var content = speaker
         ? '<strong class="dialogue-speaker">' + esc(speaker[1] + speaker[2]) + '</strong>' +
           inline(trimmed.slice(speaker[0].length), footnotes)
-        : inline(line, footnotes);
-      html += '<span class="blk' + (indent ? " indent" : "") + (speaker ? " dialogue-line" : "") + '">' + prefix + content + "</span>";
+        : inline(line, footnotes, leadLine);
+      html += '<span class="blk' + (indent ? " indent" : "") + (speaker ? " dialogue-line" : "") + (leadLine ? " lead-line" : "") + '">' + prefix + content + "</span>";
       paraStart = false;
     }
 
