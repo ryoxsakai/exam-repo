@@ -7,6 +7,7 @@
      ##語::訳##     … 脚注（語注）。語中の ^ は注のみ直前文字を小文字化（M^isdiagnosis → 本文Misdiagnosis/注misdiagnosis）
      ==語== :色     … ハイライト（色: yellow/blue/red/purple/pink/green/aqua）
      __語__         … 下線
+     ~~語~~         … 波線（直前の (1) / ((1)) は下付き）
      **語**         … 太字
      ~~x~~          … 下付き
      ^^x^^          … 上付き
@@ -124,7 +125,11 @@
           out += '<span class="blank-badge">' + esc(m[1]) + "</span>";
         }
         rem = rem.slice(m[0].length);
-        if (!leadLine && rem.length && !/^[\s.,;:!?\]）」』】。、！？]/.test(rem)) out += " ";
+        // 括弧で囲んだ空所 ([[3]]) は閉じ括弧をバッジの直後へ寄せる。
+        if (rem[0] === ")" || rem[0] === "）") {
+          out += '<span class="blank-close">' + rem[0] + "</span>";
+          rem = rem.slice(1);
+        } else if (!leadLine && rem.length && !/^[\s.,;:!?\]）」』】。、！？]/.test(rem)) out += " ";
         continue;
       }
       // [N] 段落番号バッジ（行中。空所 [[ ]] とは別の単角括弧。[[ は上で処理済み）
@@ -191,9 +196,21 @@
         out += "<u>" + inline(m[1], footnotes, leadLine) + "</u>";
         rem = rem.slice(m[0].length); continue;
       }
-      // ~~下付き~~
+      // 下線・波線に隣接する番号・単独記号は下付き。旧 ~~(1)~~ 記法も解釈する。
+      if ((m = rem.match(/^(?:~~(\([^~)]*\))~~|(\([^)]*\))|\(\(([^)]+)\)\)|([A-Z0-9]))[ \t]*(?=__[^_]+__|~~(?!~)[^~]+~~)/))) {
+        var marker = m[1] || m[2];
+        out += '<sub class="underline-marker">' +
+          (m[3] ? choiceLabelHtml(m[3], "choice-inline") : esc(marker || m[4])) + "</sub>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ~~~ の旧波線も既存データの表示用に保持する。
+      if ((m = rem.match(/^~~~([^~]+)~~~/))) {
+        out += '<span class="wavy-underline">' + inline(m[1], footnotes, leadLine) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ~~波線~~
       if ((m = rem.match(/^~~([^~]+)~~/))) {
-        out += "<sub>" + esc(m[1]) + "</sub>";
+        out += '<span class="wavy-underline">' + inline(m[1], footnotes, leadLine) + "</span>";
         rem = rem.slice(m[0].length); continue;
       }
       // ^^上付き^^
@@ -221,6 +238,9 @@
       var end = 1;
       while (end < rem.length) {
         var ch = rem[end];
+        // 文中の A__語__ / 1__語__ でも記号の直前で区切り、下付きとして処理する。
+        if (/[A-Z0-9]/.test(ch) && /\s/.test(rem[end - 1]) &&
+            (rem.slice(end + 1, end + 3) === "__" || rem.slice(end + 1, end + 3) === "~~")) break;
         if (ch === "[" || ch === "#" || ch === "=" || ch === "_" ||
             ch === "~" || ch === "^" || ch === "{" || ch === "(" || ch === "*" ||
             ch === "!" || ch === "|") break;
@@ -426,7 +446,7 @@
       // ブロック化せず通常行として描画し、先頭も含めて全てインライン丸ラベルにする。
       var cm = line.match(/^\s*\(\(([^)]+)\)\)\s*([\s\S]*)/);
       var choiceCount = (line.match(/\(\([^)]+\)\)/g) || []).length;
-      if (cm && choiceCount === 1) {
+      if (cm && choiceCount === 1 && !/^\(\([^)]+\)\)(?:__[^_]+__|~~(?!~)[^~]+~~)/.test(trimmed)) {
         html += '<div class="answer-choice">' + choiceLabelHtml(cm[1], "answer-choice-label") +
                 '<span class="answer-choice-text">' +
                 (cm[2] ? inline(cm[2], footnotes) : "") + "</span></div>";
@@ -502,7 +522,8 @@
     t = t.replace(/==([^=]+)==/g, "$1");            // ハイライト
     t = t.replace(/__([^_]+)__/g, "$1");            // 下線
     t = t.replace(/\*\*([^*]+)\*\*/g, "$1");       // 太字
-    t = t.replace(/~~([^~]+)~~/g, "$1");            // 下付き
+    t = t.replace(/~~~([^~]+)~~~/g, "$1");       // 旧波線
+    t = t.replace(/~~([^~]+)~~/g, "$1");            // 波線
     t = t.replace(/\^\^([^^]+)\^\^/g, "$1");        // 上付き
     t = t.replace(/\(\(([^)]+)\)\)/g, " ");         // 選択肢ラベル
     t = t.replace(/<[^>]*>/g, " ");                 // HTML タグ
@@ -535,8 +556,8 @@
   // 「リード文」セクションは独立したセクションにせず、直後のセクションへ統合する
   // （太字・字下げなし @@** ** で先頭に付け、空行を1つ挟んで元のセクション内容を続ける）。
   // 連続する「リード文」はまとめて統合。直後にセクションが無いまま終わる場合はデータを失わないよう
-  // 「リード文」のまま残す。プレビュー・表示・印刷・コーパス分析用の共通ロジック。
-  // 保存には使わず、編集できるよう元の独立セクションを保持する。
+  // 「リード文」のまま残す。登録・取り込み保存時（settings.js）と表示・印刷・コーパス分析時
+  // （viewer.js）の両方で使う共通ロジック。
   function mergeLeadSections(sections) {
     var out = [], pendingLead = [];
     (sections || []).forEach(function (sec) {
