@@ -85,3 +85,30 @@ for (const file of ['assets/js/markup.js', active]) {
  assert.doesNotMatch(render('**Alex：** 発話'),/dialogue-speaker|<strong[^>]*>[^<]*<strong/);
 }
 console.log('PASS: both colon widths, source-backed Japanese roles/titles, dialogue subheadings, and protected ordinary headings');
+for (const file of ['assets/js/markup.js', active]) {
+  const ctx = {window: {}};
+  vm.runInNewContext(fs.readFileSync(path.join(root, file), 'utf8'), ctx);
+  const render = (text, opts) => ctx.window.Markup.render(text, opts).html;
+  const named = 'In this interview, Cory describes his life.\nQuestion: How?\nCory Friedman: Fine.\nQ: Why?\nCF: Because with [[A]] and __evidence__.\nQ: When?\nCF: Today.\nAnswer: Enough.\nNASA: Space.';
+  for (const separator of [':', '：', ' ：', '\t：']) {
+    const text = named.replaceAll(':', separator);
+    const html = render(text, {paraNum: true});
+    assert.equal((html.match(/dialogue-speaker/g) || []).length, 7, separator);
+    for (const label of ['Question', 'Answer', 'CF']) assert.ok(html.includes('dialogue-speaker">' + label + separator + '</strong>'));
+    assert.doesNotMatch(html, /dialogue-speaker">NASA/);
+    assert.match(html, /blank-badge/); assert.match(html, /<u>evidence<\/u>/);
+    assert.doesNotMatch(render(text.replace('In this interview', 'In this exercise')), /dialogue-speaker">(?:Question|Answer|CF)/);
+    assert.doesNotMatch(render(text.replaceAll('CF' + separator, 'ZZ' + separator)), /dialogue-speaker">ZZ/);
+    const qa = '次のインタビューを読みなさい。\nQuestion: How?\nAnswer: Fine.\nQ: Why?\nA: Because.\nQ: When?\nA: Today.';
+    assert.equal((render(qa.replaceAll(':', separator)).match(/dialogue-speaker/g) || []).length, 6);
+    const translation = render('CF：内容\nQuestion：質問\nAnswer：返答\n問：質問', {zenyaku: true, dialogueSource:'{{本文}}\n' + text});
+    assert.equal((translation.match(/dialogue-speaker/g) || []).length, 4);
+  }
+  const mixed = named.replace('Q: Why?', 'Q： Why?').replace('CF: Because', 'CF ： Because').replace('Question:', 'Question：').replace('Answer:', 'Answer ：');
+  assert.equal((render(mixed).match(/dialogue-speaker/g) || []).length, 7);
+  const insufficient = '次のインタビュー\nQuestion： Heading\nQ： One?\nA： One.';
+  assert.doesNotMatch(render(insufficient), /dialogue-speaker">Question/);
+  for (const line of ['Question： Heading','Answer ： Key','CF： Abbreviation','NASA： Agency','Note： Important','U.S.： Country']) assert.doesNotMatch(render(line), /dialogue-speaker/);
+  assert.doesNotMatch(render('**CF：** Content\n**Question：** Question'), /dialogue-speaker|<strong[^>]*>[^<]*<strong/);
+}
+console.log('PASS: guarded interview aliases use either colon width in source, translation and mixed-width dialogue');
