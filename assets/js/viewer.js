@@ -1831,7 +1831,7 @@
       if (q.answer_text && q.answer_text.trim() && !hasAnswerSection) sections.push({ type: "解答", text: q.answer_text });
       if (q.commentary_text && q.commentary_text.trim() && !hasCommentarySection) sections.push({ type: "解説", text: q.commentary_text });
       sections.forEach(function (sec) {
-        if (sec.text.trim()) fields.push(renderField(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text, sec.metricText));
+        if (sec.text.trim()) fields.push(renderField(sec.type, SECTION_ICONS[sec.type] || "fa-circle-question", sec.text, sec.metricText, q.problem_text));
       });
       var head = showQHead ? '<div class="modal-qhead">大問' + esc(qLabel(q)) + "</div>" : "";
       body += head + '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
@@ -1958,13 +1958,13 @@
   function isBodySection(label) { return label === "本文" || /全訳|和訳|訳/.test(label); }
   // 英単語数は共有モジュール Difficulty を使用
   function wordCount(text) { return Difficulty.wordCount(text); }
-  function markupOpts(label) {
+  function markupOpts(label, dialogueSource) {
     var body = isBodySection(label);
-    return { paraNum: body, zenyaku: /全訳|和訳/.test(label) };
+    return { paraNum: body, zenyaku: /全訳|和訳/.test(label), dialogueSource: dialogueSource };
   }
-  function renderField(label, icon, text, metricText) {
+  function renderField(label, icon, text, metricText, dialogueSource) {
     var body = isBodySection(label);
-    var r = Markup.render(text, markupOpts(label));
+    var r = Markup.render(text, markupOpts(label, dialogueSource));
     var checked = Store.isPrintSection(label) ? " checked" : "";
     var wc = "";
     if (label === "本文") {
@@ -2007,7 +2007,7 @@
   // どのセクションか分からなくなると困るため常にラベルを出す。
   var LABEL_HIDABLE = ["問題", "本文", "設問"];
 
-  function printField(label, text, opts) {
+  function printField(label, text, opts, dialogueSource) {
     var body = isBodySection(label);
     var hideLabel = opts && opts.hideLabels && LABEL_HIDABLE.indexOf(label) >= 0;
     // 本文セクションのみ、5行ごとの行番号の対象にする（renderPrintPreview/runPrint 側で
@@ -2022,7 +2022,7 @@
         return quote + phrase + closeQuote + prep + token;
       });
     }
-    var rendered = Markup.render(text, markupOpts(label)).html;
+    var rendered = Markup.render(text, markupOpts(label, dialogueSource)).html;
     refs.forEach(function (ref) {
       rendered = rendered.replace(ref.token, '<span class="print-line-ref" data-phrase="' + esc(ref.phrase) + '" data-original="' + esc(ref.original) + '">' + esc(ref.original) + "</span>");
     });
@@ -2265,7 +2265,7 @@
           pendingSection = null;
         }
         inner += '<div class="print-q"><div class="print-q-head">' + esc(printQHeading(q, seqOf[printQKey(q)], opts)) + "</div>";
-        secs.forEach(function (s) { inner += printField(s.type, s.text, opts); });
+        secs.forEach(function (s) { inner += printField(s.type, s.text, opts, q.problem_text); });
         if (!answerSide && opts.writingSpace && q.category === "英作文") {
           var lines = [5, 10, 15, 20, 25].indexOf(Number(opts.writingLines)) >= 0 ? Number(opts.writingLines) : 10;
           inner += '<div class="print-writing-space" role="img" aria-label="英作文の解答欄（' + lines + '行）">';
