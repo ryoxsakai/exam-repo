@@ -326,7 +326,7 @@
   // 名前のイニシャルと、Q (Full Name) の初出表記を受け付ける。
   // 複数大文字の略称や Question/Answer は、明示されたインタビューの
   // 複数の Q: 発話と、氏名から作られる略称（または A:）がある時だけ扱う。
-  var SPEAKER = /^(?!(?:Question|Answer|Note|Example|Source|Instructions|Directions|Explanation)[ \t]*[:：])((?:TV Anchor|[A-Z]|(?:Mr|Mrs|Ms|Dr|Prof)\.(?:\s+[A-Z][a-z]+)?|(?:[A-Z]\.\s+){1,3}[A-Z][a-z]+|[A-Z][a-z]+(?:\s+(?:[A-Z][a-z]+|[A-Z]|\d+)){0,3})(?:\s+\((?:[A-Z]\.\s+|[A-Z][a-z]+\s+){0,3}[A-Z][a-z]+\))?)([ \t]*[:：])/;
+  var SPEAKER = /^(?!(?:Question|Answer|Note|Example|Source|Instructions|Directions|Explanation):)((?:[A-Z]|(?:Mr|Mrs|Ms|Dr|Prof)\.\s+[A-Z][a-z]+|(?:[A-Z]\.\s+){1,3}[A-Z][a-z]+|[A-Z][a-z]+(?:\s+(?:[A-Z][a-z]+|[A-Z]|\d+)){0,3})(?:\s+\((?:[A-Z]\.\s+|[A-Z][a-z]+\s+){0,3}[A-Z][a-z]+\))?)(:)/;
 
   function interviewSpeakers(lines) {
     var text = lines.join("\n");
@@ -351,7 +351,7 @@
   function sourceDialogueLabels(source) {
     var labels = Object.create(null);
     mergeLeadSections(parseSections(source || "")).forEach(function (sec) {
-      if (sec.type !== "本文" && sec.type !== "問題" && !/^[ア-ン]$/.test(sec.type)) return;
+      if (sec.type !== "本文" && sec.type !== "問題") return;
       var lines = sec.text.split("\n"), aliases = interviewSpeakers(lines);
       lines.forEach(function (line) {
         var trimmed = line.trim().replace(/^@@\s*/, "");
@@ -370,28 +370,14 @@
 
   function translatedSpeaker(line, labels) {
     if (Object.keys(labels).length < 2) return null;
-    var prefix = line.match(/^[（(][ア-ン][）)]\s*/);
-    var m = (prefix ? line.slice(prefix[0].length) : line).match(/^([^:：]{1,60})([:：])/);
-    if (m && prefix) { m[0] = prefix[0] + m[0]; m.prefix = prefix[0]; }
+    var m = line.match(/^([^:：]{1,60})([:：])/);
     if (!m) return null;
     var name = m[1].trim();
     if (labels[name]) return m;
     if (/^(?:注|注記|例|出典|問題|設問|解答|解説|ポイント|テーマ|タイトル|ヒント|まとめ)$/.test(name)) return null;
     // カタカナ氏名（イニシャル・中点・姓の区切りも保持）。普通の文章は一致させない。
-    var roleSources = {
-      "女性": ["Woman", "Female"], "男性": ["Man", "Male"],
-      "医師": ["Doctor", "Dr."], "患者": ["Patient"], "先生": ["Teacher"],
-      "女性レポーター": ["Female Reporter"], "男性レポーター": ["Male Reporter"],
-      "テレビキャスター": ["TV Anchor", "Television Anchor", "Anchor", "Newscaster"]
-    };
-    if (Array.isArray(roleSources[name]) && roleSources[name].some(function (source) { return labels[source]; })) return m;
-    var named = name.match(/^((?:[A-Z]\.\s*){0,3}[ァ-ヶー]{2,}(?:[・＝=\s][ァ-ヶー]{2,})*)(教授|医師|博士|氏|先生)?(?:[（(]以下[A-Z]{1,4}[）)])?$/);
-    if (named) {
-      var titleSources = { "教授": /^(?:Prof\.|Professor)(?:\s|$)/, "医師": /^(?:Dr\.|Doctor)(?:\s|$)/,
-        "博士": /^(?:Dr\.|Doctor)(?:\s|$)/, "氏": /^(?:Mr\.|Mrs\.|Ms\.)(?:\s|$)/, "先生": /^(?:Prof\.|Professor|Teacher|Dr\.)(?:\s|$)/ };
-      if (!named[2] || Object.keys(labels).some(function (label) { return titleSources[named[2]].test(label); })) return m;
-    }
-    if (name === "教授" && (labels.Professor || labels["Prof."])) return m;
+    if (/^(?:[A-Z]\.\s*){0,3}[ァ-ヶー]{2,}(?:[・＝=\s][ァ-ヶー]{2,})*$/.test(name)) return m;
+    if (name === "教授" && labels.Professor) return m;
     if (/^(?:学生|生徒)$/.test(name) && labels.Student) return m;
     if (name === "司会者" && (labels.Host || labels.Moderator || labels.Interviewer)) return m;
     if (/^(?:問|質問)$/.test(name) && (labels.Q || labels.Question)) return m;
@@ -488,7 +474,7 @@
         : (paraStart && (paraNum ? (!badgeNum && /^["'“‘]?[A-Za-z]/.test(trimmed)) : /^["'“‘]?[A-Z]/.test(trimmed))));
       var prefix = badgeNum ? '<span class="para-badge">' + esc(badgeNum) + "</span>" : "";
       var content = speaker
-        ? esc(speaker.prefix || "") + '<strong class="dialogue-speaker">' + esc(speaker[1] + speaker[2]) + '</strong>' +
+        ? '<strong class="dialogue-speaker">' + esc(speaker[1] + speaker[2]) + '</strong>' +
           inline(trimmed.slice(speaker[0].length), footnotes)
         : inline(line, footnotes, leadLine);
       html += '<span class="blk' + (indent ? " indent" : "") + (speaker ? " dialogue-line" : "") + (leadLine ? " lead-line" : "") + '">' + prefix + content + "</span>";
