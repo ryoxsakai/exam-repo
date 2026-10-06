@@ -263,3 +263,11 @@ CREATE TABLE IF NOT EXISTS exam_print_durations (
   exam_id INTEGER PRIMARY KEY REFERENCES exams(id) ON DELETE CASCADE,
   minutes INTEGER NOT NULL CHECK (minutes BETWEEN 1 AND 1440)
 );
+
+-- Print sets retain references to unavailable exams for explicit user repair.
+CREATE TABLE IF NOT EXISTS print_sets (
+  uid TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL,
+  exam_ids TEXT NOT NULL, cover TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1, archived INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL, PRIMARY KEY (uid, id)
+);

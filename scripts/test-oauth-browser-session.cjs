@@ -138,6 +138,14 @@ async function browserTest() {
       try {
         const target=new URL(request.url); let result;
         if(target.origin==='https://client.test') {
+          // Chrome may request the callback site's favicon with a same-origin
+          // Referer. The redirect itself must still carry no external Referer.
+          if (target.pathname === '/favicon.ico') {
+            assert.equal(new Headers(request.headers).get('Cookie'),null);
+            await session.send('Fetch.fulfillRequest',{requestId,responseCode:204,responseHeaders:[]});
+            return;
+          }
+          assert.equal(target.pathname, '/callback');
           assert.equal(new Headers(request.headers).get('Referer'),null);
           assert.equal(new Headers(request.headers).get('Cookie'),null);
           result=new Response(`<p>OAuth callback received</p><a href="${ROOT}/oauth/authorize?${new URLSearchParams(FIELDS)}">認証画面を開く</a>`,{headers:{'Content-Type':'text/html; charset=utf-8'}});

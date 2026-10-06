@@ -38,6 +38,15 @@
   }
 
   var Api = {
+    printSets: async function (id, data) {
+      var token = await Auth.getIdToken();
+      if (!token) throw new Error("印刷セットの保存・読込にはGoogleログインが必要です。");
+      return call("/api/print-sets" + (id ? "/" + encodeURIComponent(id) : ""), {
+        method: data ? (id ? "PUT" : "POST") : "GET",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+        ...(data ? {body: JSON.stringify(data)} : {})
+      });
+    },
     getConfig:        function () { return call("/api/config"); },
     updateConfig:     function (data) { return call("/api/config", { method: "PUT", body: JSON.stringify(data) }); },
     getUniversities:  function () { return call("/api/universities"); },

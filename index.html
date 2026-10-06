@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+JP:wght@400;500;600;700;800&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="assets/css/main-20261005paren.css" />
+  <link rel="stylesheet" href="assets/css/main-20261006printsets.css" />
   <link rel="stylesheet" href="assets/css/image-layout.css?v=20260923b" />
 </head>
 <body>
@@ -122,7 +122,23 @@
         <div class="card-head">
           <h3><i class="fa-solid fa-print ic"></i> 問題印刷</h3>
           <span class="spacer"></span>
+          <label class="check-inline"><input type="checkbox" id="pr-multi"> <span>複数選択</span></label>
           <button class="icon-btn primary" id="btn-print-run" title="印刷"><i class="fa-solid fa-print"></i></button>
+        </div>
+        <div id="pr-multi-panel" class="print-set-panel" hidden>
+          <div class="toolbar"><strong id="pr-multi-count">0試験を選択</strong><button type="button" class="btn ghost sm" id="pr-multi-clear">全て解除</button></div>
+          <ol id="pr-multi-selection" class="print-set-selection"></ol>
+          <div class="print-set-fields">
+            <label class="field"><span>印刷セット名</span><input id="pr-set-name" maxlength="120" placeholder="例：授業用の過去問"></label>
+            <label class="field"><span>表紙 上段</span><input data-set-cover="0" maxlength="120"></label>
+            <label class="field"><span>表紙 中央</span><input data-set-cover="1" maxlength="120"></label>
+            <label class="field"><span>表紙 下段</span><input data-set-cover="2" maxlength="120"></label>
+            <label class="field"><span>共通表紙の時間（任意）</span><input data-set-cover="time" maxlength="120" placeholder="例：各試験60分 / 合計120分"></label>
+          </div>
+          <p class="hint">共通表紙の時間は入力した文字のみ表示します。各試験の登録時間は変更しません。</p>
+          <div class="toolbar"><button type="button" class="btn primary sm" id="pr-set-save">印刷セットを保存</button><button type="button" class="btn ghost sm" id="pr-set-new">新規セットに切替</button><button type="button" class="btn ghost sm" id="pr-set-archive" hidden>アーカイブ</button></div>
+          <div class="toolbar"><select id="pr-set-list" aria-label="保存済み印刷セット"><option value="">印刷セットを選択</option></select><button type="button" class="btn ghost sm" id="pr-set-open">読込</button><button type="button" class="btn ghost sm" id="pr-set-refresh">一覧を更新</button></div>
+          <p class="hint" id="pr-set-status" role="status" aria-live="polite"></p>
         </div>
         <div id="pr-tree" class="pr-tree-box"></div>
         <details class="print-settings">
@@ -443,15 +459,14 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="assets/js/store.js?v=20261004duration"></script>
   <script src="assets/js/auth.js?v=20260706a"></script>
-  <script src="assets/js/api.js?v=20261004duration"></script>
+  <script src="assets/js/api.js?v=20261006printsets"></script>
   <script src="assets/js/ui.js?v=20260726a"></script>
   <script src="assets/js/markup-20261005aliases.js"></script>
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260923a"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/viewer.js?v=20261005a"></script>
+  <script src="assets/js/viewer.js?v=20261006printsets"></script>
   <script src="assets/js/webmcp.js?v=20260826a"></script>
 </body>
 </html>
-
 

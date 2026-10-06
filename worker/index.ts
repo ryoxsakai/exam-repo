@@ -1,4 +1,5 @@
 import { handlePrintDuration, planUniversityPrintDurationMerge, planExamPrintDurationMerge, planExamPrintDurationMove } from "./print-duration";
+import { handlePrintSets } from "./print-sets";
 import { handleMcpRoute, safeEqual, type McpEnv } from "./mcp";
 import { extractZenyakuTitle, readUniversityIndex, safeRefreshUniversityIndex, invalidateAllUniversityIndexes } from "./university-index";
 
@@ -1034,6 +1035,13 @@ export default {
         const index = await readUniversityIndex(env, Number(universityIndexMatch[1]));
         if (!index) return json({ error: "University not found" }, 404, origin);
         return json(index, 200, origin);
+      }
+
+      // Print sets use only their additive table, with the existing Firebase identity.
+      const printSetMatch = path.match(/^\/api\/print-sets(?:\/([^/]+))?$/);
+      if (printSetMatch) {
+        const result = await handlePrintSets(request, env.DB, await getAuthUid(request), printSetMatch[1]);
+        return json(result.body, result.status, origin);
       }
 
       // 後方互換マイグレーションのみ通常アクセスで確認する。
