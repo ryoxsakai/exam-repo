@@ -47,7 +47,18 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   const page=await context.newPage();page.setDefaultTimeout(10000);page.setDefaultNavigationTimeout(15000);console.log('QA started',width);await page.goto(origin,{waitUntil:'networkidle'});await page.locator('[data-multi-exam="11"]').waitFor({state:'attached'});
   const waitReady=()=>page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='printSet'&&!window.__setsTest.multiPrint.loading);
   const toggle=async()=>{await page.locator('#pr-multi').check();await page.locator('.tree-row-uni').filter({hasText:'合成大学'}).click();await page.locator('.tree-row-uni').filter({hasText:'別大学'}).click();await page.locator('.tree-row-year').filter({hasText:'2026年度'}).nth(0).click();await page.locator('.tree-row-year').filter({hasText:'2026年度'}).nth(1).click();};
-  console.log('QA initial loaded');await toggle();assert.equal(await page.locator('#btn-print-run').isDisabled(),true,'Zero selection cannot print');
+  console.log('QA initial loaded');
+  assert.equal(await page.locator('#pr-multi-panel').isVisible(),false,'OFF hides print-set controls');
+  await toggle();
+  assert.equal(await page.locator('#pr-multi-panel').isVisible(),true,'ON shows print-set controls');
+  assert.equal(await page.locator('#pr-set-archive').isVisible(),false,'A new set has no archive action');
+  assert.equal(await page.locator('[data-multi-exam="11"]').isVisible(),true,'Multi tree checkbox is visible on screen');
+  assert.equal(await page.locator('.tree-row-sched[data-uni="合成大学"][data-year="2026"][data-sched="前期"]').isVisible(),false,'ON hides the single-exam row');
+  const fieldLayout=await page.locator('.print-set-fields').evaluate(e=>({display:getComputedStyle(e).display,columns:getComputedStyle(e).gridTemplateColumns.split(' ').length,inputs:[...e.querySelectorAll('input')].map(input=>({type:input.type,width:input.getBoundingClientRect().width,parentWidth:input.parentElement.getBoundingClientRect().width}))}));
+  assert.equal(fieldLayout.display,'grid','Screen controls are outside print-only media');assert.equal(fieldLayout.columns,width===1280?2:1,'Responsive field columns');
+  for(const input of fieldLayout.inputs){assert.equal(input.type,'text');assert.ok(input.width>250&&input.width<=input.parentWidth+1,'Readable input fills its field without overflow');}
+  await page.locator('#pr-multi-panel').screenshot({path:path.join(evidence,`print-set-controls-${width}.png`)});
+  assert.equal(await page.locator('#btn-print-run').isDisabled(),true,'Zero selection cannot print');
   await page.locator('[data-multi-exam="11"]').check();await waitReady();
   await page.locator('[data-multi-exam="13"]').check();await waitReady();
   await page.locator('[data-multi-exam="21"]').check();await waitReady();
@@ -70,7 +81,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   assert.equal(await page.locator('#pr-multi').isDisabled(),true);assert.equal(await page.locator('#btn-print-run').isDisabled(),true);assert.equal(await page.locator('#btn-print-run-2').isDisabled(),true);
   await page.evaluate(()=>window.__setsTest.runPrint());assert.equal(await page.evaluate(()=>window.__prints||0),0);
   holdSave=false;releaseSave();await page.waitForFunction(()=>window.__setsTest.multiPrint.revision===1&&!window.__setsTest.multiPrint.busy);
-  console.log('QA saved');const id=await page.evaluate(()=>window.__setsTest.multiPrint.id);assert.equal(f.sql.prepare('SELECT count(*) n FROM print_sets').get().n,1);
+  console.log('QA saved');assert.equal(await page.locator('#pr-set-archive').isVisible(),true,'Saved set exposes archive');const id=await page.evaluate(()=>window.__setsTest.multiPrint.id);assert.equal(f.sql.prepare('SELECT count(*) n FROM print_sets').get().n,1);
   f.reopen();
   const second=await context.newPage();await second.goto(origin,{waitUntil:'networkidle'});await second.locator('#pr-multi').check();await second.locator(`#pr-set-list option[value="${id}"]`).waitFor({state:'attached'});await second.locator('#pr-set-list').selectOption(id);await second.locator('#pr-set-open').click();await second.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='printSet'&&!window.__setsTest.multiPrint.busy);
   assert.deepEqual(await second.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21,13]);assert.equal(await second.locator('[data-set-cover="1"]').inputValue(),'COMMON COVER');
@@ -121,7 +132,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await page.locator('[data-multi-year="[11,13]"]').uncheck();await waitReady();assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[21]);
   await page.locator('#pr-multi-clear').click();assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
   // OFF returns to existing single exam and favorite output with no shared cover.
-  await page.locator('#pr-multi').uncheck();await page.locator('.tree-row-sched[data-uni="合成大学"][data-year="2026"][data-sched="前期"]').click();await page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='exam');assert.equal(await page.locator('#print-preview .pc-duration').innerText(),'時間：60分');assert.equal(await page.locator('#print-preview .print-cover').count(),1);
+  await page.locator('#pr-multi').uncheck();assert.equal(await page.locator('#pr-multi-panel').isVisible(),false);assert.equal(await page.locator('[data-multi-exam="11"]').isVisible(),false,'OFF hides multi checkboxes');await page.locator('.tree-row-sched[data-uni="合成大学"][data-year="2026"][data-sched="前期"]').click();await page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='exam');assert.equal(await page.locator('#print-preview .pc-duration').innerText(),'時間：60分');assert.equal(await page.locator('#print-preview .print-cover').count(),1);
   await page.locator('.tree-row-fav').click();await page.locator('[data-favfolder="1"]').click();await page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='favFolder');assert.equal(await page.locator('#print-preview .pc-uni').innerText(),'Fixture favorites');
   await page.locator('#pr-multi').check();await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&window.__setsTest.multiPrint.revision);
   await page.evaluate(()=>Auth.switchUser('user-b'));await page.waitForFunction(()=>window.__setsTest.multiPrint.uid==='user-b');
