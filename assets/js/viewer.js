@@ -350,6 +350,7 @@
         renderPrintPreview();
       });
     }
+    wireMultiPrint();
     el("btn-print-run").addEventListener("click", runPrint);
     el("btn-print-run-2").addEventListener("click", runPrint);
 
@@ -719,6 +720,19 @@
     });
     Auth.onChange(function (user) {
       updateAuthUI(user);
+      var nextUid = user ? user.uid : null;
+      if (nextUid !== multiPrint.uid) {
+        var wasSignedIn = !!multiPrint.uid;
+        multiPrint.uid = nextUid;
+        multiPrint.accountEpoch++; multiPrint.epoch++; multiPrint.list = [];
+        multiPrint.id = null; multiPrint.revision = null; multiPrint.archived = false; multiPrint.busy = false;
+        if (wasSignedIn) {
+          multiPrint.ids = []; multiPrint.name = ""; multiPrint.cover = {lines: ["", "印刷セット", ""], time: ""};
+          state.printQSel = {};
+        }
+        if (el("pr-set-list")) el("pr-set-list").innerHTML = "";
+        if (multiPrint.enabled) { loadMultiPrint(); refreshPrintSets(); }
+      }
       state.favSet = null;  // ログイン状態が変わったらキャッシュ破棄
       state.favRows = [];
       state.favFolders = [];
@@ -2061,7 +2075,7 @@
   // 試験単位は大問番号順）で返す。
   function printQuestions(ex) {
     var qs = (ex.questions || []).slice();
-    if (ex.kind !== "favFolder") {
+    if (ex.kind !== "favFolder" && ex.kind !== "printSet") {
       qs.sort(function (a, b) {
         return (Number(a.question_number) || 0) - (Number(b.question_number) || 0);
       });
@@ -2181,6 +2195,7 @@
   }
 
   function buildPrintHtml(ex, opts, useDraftTitles) {
+    if (ex.kind === "printSet") return buildMultiPrintHtml(ex, opts);
     var html = "";
     if (opts.cover) {
       var coverClass = "print-cover" + (opts.nameField ? " has-name-field" : "");
@@ -2280,8 +2295,8 @@
         (hideHead ? "" : '<div class="print-part-head">' + esc(title) + "</div>") +
         inner + "</div>";
     }
-    html += part("問題", false);
-    html += part("解答・解説", true);
+    if (opts.side !== "answer") html += part("問題", false);
+    if (opts.side !== "question") html += part("解答・解説", true);
     return html;
   }
 
@@ -2612,7 +2627,7 @@
     function qgroup() {
       var ex = state.printExam;
       var qs = (ex.questions || []).slice();
-      if (ex.kind !== "favFolder") {
+      if (ex.kind !== "favFolder" && ex.kind !== "printSet") {
         qs.sort(function (a, b) {
           return (Number(a.question_number) || 0) - (Number(b.question_number) || 0);
         });
@@ -2624,7 +2639,7 @@
         var ck = isPrintQ(q) ? " checked" : "";
         // お気に入りフォルダの印刷ではどの試験の大問か分かるよう試験情報も添える
         var c = q._ctx || {};
-        var label = (ex.kind === "favFolder" && c.university_name)
+        var label = ((ex.kind === "favFolder" || ex.kind === "printSet") && c.university_name)
           ? [c.year, c.university_name, c.schedule].filter(Boolean).join(" ") + " 大問" + qLabel(q)
           : "大問" + qLabel(q);
         h += '<label class="check-inline"><input type="checkbox" data-prq="' + esc(printQKey(q)) + '"' + ck +
@@ -2739,9 +2754,11 @@
 
   // 選択したお気に入りフォルダの大問を集めてプレビュー用データを作る
   function loadPrintFavFolder(folderId) {
+    var selection = state.printSel;
     var box = el("print-preview");
     box.innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
     ensureFavoritesLoaded().then(function () {
+      if (multiPrint.enabled || state.printSel !== selection) return;
       var entries = favEntriesInFolder(folderId);
       var favs = entries.filter(function (e) { return e.kind === "favorite"; }).map(function (e) { return e.favorite; });
       if (!favs.length) {
@@ -2755,6 +2772,7 @@
       return Promise.all(examIds.map(function (id) {
         return Api.getExam(id).catch(function () { return null; });
       })).then(function (results) {
+        if (multiPrint.enabled || state.printSel !== selection) return;
         var byExam = {};
         results.forEach(function (r) { if (r && r.exam) byExam[r.exam.id] = r.exam; });
         // お気に入りの並び順のまま、対応する大問データを引き当てる（試験情報を _ctx に添える）。
@@ -2809,6 +2827,7 @@
     box.innerHTML = '<div class="tree-msg"><span class="spinner"></span> 読み込み中…</div>';
     Api.getExams({}).then(function (data) {
       var exams = data.exams || [];
+      exams.forEach(function (e) { multiPrint.catalog[e.id] = e; });
       if (!exams.length) { box.innerHTML = '<div class="tree-msg">登録された入試問題がありません。</div>'; return; }
       var unis = {};
       exams.forEach(function (e) {
@@ -2816,18 +2835,20 @@
         if (e.university_reading) state.uniReading[u] = e.university_reading;
         if (!unis[u]) unis[u] = {};
         if (!unis[u][y]) unis[u][y] = {};
-        unis[u][y][s] = true;
+        unis[u][y][s] = e;
       });
-      var html = '<div class="tree">' + printFavTreeHtml();
+      var html = '<div class="tree">' + '<div class="print-single-only">' + printFavTreeHtml() + '</div>';
       Object.keys(unis).sort(uniCmp).forEach(function (u) {
         html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
         Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
-          html += '<div class="tree-node">' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
+          var yearIds = Object.keys(unis[u][y]).sort(schedCompare).map(function (s) { return unis[u][y][s].id; });
+          html += '<div class="tree-node"><label class="print-multi-only print-year-check"><input type="checkbox" data-multi-year="' + esc(JSON.stringify(yearIds)) + '"> '+esc(y)+'年度を全選択 / 解除</label>' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
           Object.keys(unis[u][y]).sort(schedCompare).forEach(function (s) {
             var picked = (state.printSel.uni === u && state.printSel.year === y && state.printSel.sched === s);
-            html += '<button type="button" class="tree-row tree-row-sched tree-row-pick' + (picked ? " selected" : "") + '"' +
+            html += '<button type="button" class="tree-row tree-row-sched tree-row-pick print-single-only' + (picked ? " selected" : "") + '"' +
               ' data-uni="' + esc(u) + '" data-year="' + esc(y) + '" data-sched="' + esc(s) + '">' +
               '<i class="fa-solid fa-layer-group tree-ic"></i><span class="tree-label">' + esc(s) + "</span></button>";
+            html += '<label class="print-multi-only print-exam-check"><input type="checkbox" data-multi-exam="' + unis[u][y][s].id + '"> <span>' + esc(s) + '</span></label>';
           });
           html += "</div></div>";
         });
@@ -2837,6 +2858,7 @@
       box.innerHTML = html;
       state.printTreeLoaded = true;
       wirePrintTree();
+      wireMultiTree();
     }).catch(function (e) {
       box.innerHTML = '<div class="tree-msg">' + esc(e.message) + "</div>";
     });
@@ -2870,11 +2892,206 @@
     });
   }
 
+  // A print set is a draft of stable exam IDs, independent of favorite questions.
+  var multiPrint = {enabled: false, ids: [], cover: {lines: ["", "印刷セット", ""], time: ""}, name: "", id: null, revision: null, archived: false, catalog: {}, list: [], epoch: 0, accountEpoch: 0, listEpoch: 0, loading: false, busy: false, error: ""};
+  var printRenderRevision = 0, printPreparing = false;
+
+  function multiPayload() {
+    return {name: multiPrint.name, exam_ids: multiPrint.ids.slice(), cover: {lines: multiPrint.cover.lines.slice(), time: multiPrint.cover.time}, archived: multiPrint.archived};
+  }
+  function multiChanged() {
+    printRenderRevision++;
+    multiPrint.error = "";
+    if (state.printExam && state.printExam.kind === "printSet") state.printExam.cover = multiPayload().cover;
+    renderMultiControls();
+    renderPrintPreview();
+  }
+  function wireMultiPrint() {
+    el("pr-multi").addEventListener("change", function () {
+      multiPrint.enabled = this.checked;
+      state.printQSel = {};
+      multiPrint.epoch++;
+      state.printSel = Object.assign({}, state.printSel);
+      state.printExam = null;
+      renderMultiControls();
+      loadPrintPreview();
+      if (multiPrint.enabled) refreshPrintSets();
+    });
+    el("pr-multi-clear").addEventListener("click", function () { multiPrint.ids = []; loadMultiPrint(); });
+    el("pr-set-new").addEventListener("click", function () {
+      multiPrint.id = null; multiPrint.revision = null; multiPrint.archived = false; multiChanged();
+    });
+    el("pr-set-save").addEventListener("click", function () { savePrintSet(); });
+    el("pr-set-refresh").addEventListener("click", refreshPrintSets);
+    el("pr-set-open").addEventListener("click", function () { openPrintSet(el("pr-set-list").value); });
+    el("pr-set-archive").addEventListener("click", function () { savePrintSet(!multiPrint.archived); });
+    el("pr-set-name").addEventListener("input", function () { multiPrint.name = this.value; multiChanged(); });
+    $all("[data-set-cover]").forEach(function (input) {
+      input.addEventListener("input", function () {
+        if (this.dataset.setCover === "time") multiPrint.cover.time = this.value;
+        else multiPrint.cover.lines[Number(this.dataset.setCover)] = this.value;
+        multiChanged();
+      });
+    });
+  }
+  function renderMultiControls() {
+    var panel = el("pr-multi-panel");
+    if (!panel) return;
+    panel.hidden = !multiPrint.enabled;
+    el("pr-tree").classList.toggle("multi-print", multiPrint.enabled);
+    el("pr-multi").disabled = multiPrint.busy;
+    el("pr-multi-count").textContent = multiPrint.ids.length + "試験を選択";
+    el("pr-set-name").value = multiPrint.name;
+    $all("[data-set-cover]").forEach(function (input) { input.value = input.dataset.setCover === "time" ? multiPrint.cover.time : multiPrint.cover.lines[Number(input.dataset.setCover)]; });
+    el("pr-set-archive").hidden = !multiPrint.revision;
+    el("pr-set-archive").textContent = multiPrint.archived ? "復元して保存" : "アーカイブ";
+    el("pr-set-status").textContent = multiPrint.busy ? "保存・確認中です…" : multiPrint.error || (multiPrint.archived ? "アーカイブ済みです。復元すると印刷できます。" : multiPrint.revision ? "版" + multiPrint.revision + "を読込済み。変更した内容は「保存」で更新します。" : "新しい印刷セット。保存・読込にはGoogleログインが必要です。");
+    $all("input,button,select", panel).forEach(function (node) { node.disabled = multiPrint.busy; });
+    el("pr-set-save").disabled = multiPrint.busy || multiPrint.archived || !multiPrint.ids.length;
+    $all("[data-multi-exam]", el("pr-tree")).forEach(function (cb) { cb.checked = multiPrint.ids.indexOf(Number(cb.dataset.multiExam)) >= 0; cb.disabled = multiPrint.busy; });
+    $all("[data-multi-year]", el("pr-tree")).forEach(function (cb) {
+      var ids = JSON.parse(cb.dataset.multiYear), n = ids.filter(function (id) { return multiPrint.ids.indexOf(id) >= 0; }).length;
+      cb.checked = n === ids.length; cb.indeterminate = n > 0 && n < ids.length; cb.disabled = multiPrint.busy;
+    });
+    el("pr-multi-selection").innerHTML = multiPrint.ids.map(function (id, i) {
+      var e = multiPrint.catalog[id], title = e ? [e.university_name, e.year + "年度", e.schedule].join(" / ") : "試験ID " + id + "（選択一覧に見つかりません）";
+      return '<li><span>' + esc(title) + '</span><div class="toolbar"><button type="button" class="btn ghost sm" data-set-move="' + i + '" data-step="-1" aria-label="' + esc(title) + 'を上へ"' + (i === 0 || multiPrint.busy ? ' disabled' : '') + '>↑</button><button type="button" class="btn ghost sm" data-set-move="' + i + '" data-step="1" aria-label="' + esc(title) + 'を下へ"' + (i === multiPrint.ids.length - 1 || multiPrint.busy ? ' disabled' : '') + '>↓</button><button type="button" class="btn ghost sm" data-set-remove="' + id + '"' + (multiPrint.busy ? ' disabled' : '') + '>解除</button></div></li>';
+    }).join("");
+    $all("[data-set-move]", panel).forEach(function (b) { b.addEventListener("click", function () {
+      if (multiPrint.busy) return;
+      var i = Number(b.dataset.setMove), j = i + Number(b.dataset.step), ids = multiPrint.ids;
+      if (j < 0 || j >= ids.length) return;
+      var x = ids[i]; ids[i] = ids[j]; ids[j] = x; loadMultiPrint();
+    }); });
+    $all("[data-set-remove]", panel).forEach(function (b) { b.addEventListener("click", function () { chooseMultiExam(Number(b.dataset.setRemove), false); }); });
+    updatePrintDurationAvailability();
+  }
+  function chooseMultiExam(id, checked) {
+    if (multiPrint.busy) return;
+    var ids = multiPrint.ids.filter(function (x) { return x !== id; });
+    if (checked) ids.push(id);
+    if (ids.length > 100) { UI.toast("選択できるのは100試験までです", "err"); renderMultiControls(); return; }
+    multiPrint.ids = ids; loadMultiPrint();
+  }
+  function wireMultiTree() {
+    $all("[data-multi-exam]", el("pr-tree")).forEach(function (cb) { cb.addEventListener("change", function () { chooseMultiExam(Number(cb.dataset.multiExam), cb.checked); }); });
+    $all("[data-multi-year]", el("pr-tree")).forEach(function (cb) { cb.addEventListener("change", function () {
+      if (multiPrint.busy) return;
+      var ids = JSON.parse(cb.dataset.multiYear), next = multiPrint.ids.filter(function (id) { return ids.indexOf(id) < 0; });
+      if (cb.checked) next = next.concat(ids);
+      if (next.length > 100) { UI.toast("選択できるのは100試験までです", "err"); renderMultiControls(); return; }
+      multiPrint.ids = next; loadMultiPrint();
+    }); });
+    renderMultiControls();
+  }
+  function loadMultiPrint() {
+    var token = ++multiPrint.epoch, ids = multiPrint.ids.slice();
+    state.printExam = null;
+    multiPrint.error = "";
+    multiPrint.loading = !!ids.length;
+    printRenderRevision++;
+    renderMultiControls(); renderPrintDurationSettings(); renderPrintSectionControls();
+    el("print-preview").innerHTML = '<div class="card">' + (ids.length ? "選択試験を読み込み中…" : "ツリーから試験を選択してください。") + '</div>';
+    if (!ids.length) return Promise.resolve();
+    return Promise.all(ids.map(function (id) {
+      return Api.getExam(id).then(function (r) {
+        if (!r.exam || Number(r.exam.id) !== id || !Array.isArray(r.exam.questions) || !r.exam.questions.length) throw new Error("試験データがありません");
+        var seen = {};
+        r.exam.questions.forEach(function (q) {
+          if (!Number.isInteger(q.question_number) || q.question_number < 1 || seen[q.question_number]) throw new Error("大問番号が不正です");
+          seen[q.question_number] = true;
+        });
+        return r.exam;
+      }).catch(function (e) { throw new Error("試験ID " + id + "：" + e.message + "。印刷を停止しました。選択を見直すか再読込してください。"); });
+    })).then(function (exams) {
+      if (token !== multiPrint.epoch || !multiPrint.enabled) return;
+      var questions = [];
+      exams.forEach(function (ex) {
+        multiPrint.catalog[ex.id] = ex;
+        ex.questions = ex.questions.slice().sort(function (a,b) { return a.question_number - b.question_number; }).map(function (q) {
+          var copy = Object.assign({}, q, {exam_id: ex.id, _ctx: {university_name: ex.university_name, year: ex.year, schedule: ex.schedule}});
+          questions.push(copy); return copy;
+        });
+      });
+      multiPrint.loading = false;
+      state.printExam = {kind: "printSet", exams: exams, questions: questions, cover: multiPayload().cover};
+      renderMultiControls(); renderPrintSectionControls(); renderPrintPreview();
+    }).catch(function (e) {
+      if (token !== multiPrint.epoch || !multiPrint.enabled) return;
+      multiPrint.loading = false; multiPrint.error = e.message; state.printExam = null;
+      renderMultiControls(); renderPrintSectionControls();
+      el("print-preview").innerHTML = '<div class="card">' + esc(e.message) + '<button type="button" class="btn ghost" id="pr-multi-retry">再読込</button></div>';
+      el("pr-multi-retry").addEventListener("click", loadMultiPrint);
+    });
+  }
+  async function refreshPrintSets() {
+    var account = multiPrint.accountEpoch, requestId = ++multiPrint.listEpoch;
+    try {
+      var result = await Api.printSets();
+      if (account !== multiPrint.accountEpoch || requestId !== multiPrint.listEpoch) return;
+      multiPrint.list = result.print_sets || [];
+      el("pr-set-list").innerHTML = '<option value="">印刷セットを選択</option>' + multiPrint.list.map(function (s) { return '<option value="' + esc(s.id) + '">' + esc(s.name) + (s.archived ? "（アーカイブ）" : "") + '</option>'; }).join("");
+    } catch (e) { if (account === multiPrint.accountEpoch && requestId === multiPrint.listEpoch) UI.toast(e.message, "err"); }
+  }
+  async function openPrintSet(id) {
+    if (!id || multiPrint.busy) return;
+    var account = multiPrint.accountEpoch;
+    multiPrint.busy = true; renderMultiControls();
+    try {
+      var result = await Api.printSets(id);
+      if (account !== multiPrint.accountEpoch) return;
+      var s = result.print_set;
+      multiPrint.id = s.id; multiPrint.revision = s.revision; multiPrint.name = s.name;
+      multiPrint.ids = s.exam_ids.slice(); multiPrint.cover = s.cover; multiPrint.archived = s.archived;
+      state.printQSel = {};
+      await loadMultiPrint();
+    } catch (e) { if (account === multiPrint.accountEpoch) multiPrint.error = e.message; }
+    finally { if (account === multiPrint.accountEpoch) { multiPrint.busy = false; renderMultiControls(); } }
+  }
+  async function savePrintSet(archived) {
+    if (multiPrint.busy) return;
+    if (archived === undefined && (multiPrint.loading || !state.printExam || state.printExam.kind !== "printSet" || multiPrint.archived)) return;
+    if (!multiPrint.name.trim()) { UI.toast("印刷セット名を入力してください", "err"); return; }
+    var account = multiPrint.accountEpoch, body = multiPayload();
+    if (archived !== undefined) body.archived = archived;
+    multiPrint.id = multiPrint.id || crypto.randomUUID();
+    body.id = multiPrint.id;
+    if (multiPrint.revision) body.revision = multiPrint.revision;
+    multiPrint.busy = true; multiPrint.error = ""; printRenderRevision++; renderMultiControls();
+    try {
+      var result = await Api.printSets(multiPrint.revision ? multiPrint.id : null, body);
+      // Verify the committed version. Never claim a save from a stale local draft.
+      var checked = await Api.printSets(multiPrint.id);
+      if (account !== multiPrint.accountEpoch) return;
+      if (checked.print_set.revision !== result.print_set.revision) throw new Error("保存後に別端末で更新されました。保存一覧から読み直してください。");
+      multiPrint.revision = checked.print_set.revision; multiPrint.archived = checked.print_set.archived;
+      UI.toast("印刷セットを保存しました", "ok");
+      await refreshPrintSets();
+    } catch (e) { if (account === multiPrint.accountEpoch) { multiPrint.error = e.message; UI.toast(e.message, "err"); } }
+    finally { if (account === multiPrint.accountEpoch) { multiPrint.busy = false; renderMultiControls(); } }
+  }
+  function buildMultiPrintHtml(ex, opts) {
+    var html = '', c = ex.cover || {lines: [], time: ''};
+    if (!Array.isArray(c.lines) || c.lines.length !== 3 || c.lines.some(function (s) { return typeof s !== 'string' || s.length > 120; }) || typeof c.time !== 'string' || c.time.length > 120) return '';
+    var compact = c.lines.join('').length + c.time.length > 120;
+    if (opts.cover) html += '<div class="print-cover print-set-cover' + (opts.nameField ? ' has-name-field' : '') + '">' +
+      c.lines.map(function (line,i) { return '<div class="' + ['pc-year','pc-uni','pc-sched'][i] + (compact || line.length > 30 ? ' pc-cover-small' : '') + '">' + esc(line) + '</div>'; }).join('') +
+      (c.time ? '<div class="pc-duration' + (compact || c.time.length > 30 ? ' pc-cover-small' : '') + '">時間：' + esc(c.time) + '</div>' : '') +
+      (opts.nameField ? '<div class="pc-name-field"><span>氏名:</span><span class="pc-name-line"></span></div>' : '') + '</div>';
+    [false,true].forEach(function (answerSide) {
+      ex.exams.forEach(function (exam) {
+        var body = buildPrintHtml(Object.assign({}, exam, {kind:'exam'}), Object.assign({},opts,{cover:false,side:answerSide ? 'answer' : 'question'}));
+        if (body) html += '<section class="print-exam-block"><h2 class="print-exam-head">' + esc([exam.university_name,exam.year + '年度',exam.schedule].join(' / ')) + '</h2>' + body + '</section>';
+      });
+    });
+    return html;
+  }
+
   var printDurationWrite = null;
   var printDurationRevision = 0;
 
   function updatePrintDurationAvailability() {
-    var blocked = !!printDurationWrite || !!(state.printExam && state.printExam.durationUnverified);
+    var blocked = !state.printExam || printPreparing || !!printDurationWrite || !!(state.printExam && state.printExam.durationUnverified) || (multiPrint.enabled && (multiPrint.loading || multiPrint.busy || multiPrint.archived || !!multiPrint.error || !multiPrint.ids.length));
     ["btn-print-run", "btn-print-run-2"].forEach(function (id) {
       if (el(id)) el(id).disabled = blocked;
     });
@@ -2885,7 +3102,7 @@
     updatePrintDurationAvailability();
     if (!box) return;
     box.hidden = !ex || ex.kind !== "exam" || !ex.duration;
-    if (el("pr-duration")) el("pr-duration").disabled = !el("pr-cover").checked || (ex && ex.kind === "favFolder");
+    if (el("pr-duration")) el("pr-duration").disabled = !el("pr-cover").checked || (ex && ex.kind !== "exam");
     if (box.hidden) return;
     var d = ex.duration;
     el("pr-duration-context").textContent = ex.university_name + " / " + ex.year + "年度 / " + ex.schedule;
@@ -2929,6 +3146,7 @@
   }
 
   function loadPrintPreview() {
+    if (multiPrint.enabled) { loadMultiPrint(); return; }
     if (!Store.getWorkerUrl()) { el("print-preview").innerHTML = noWorkerHtml(); return; }
     var sel = state.printSel || {};
     state.printExam = null;
@@ -2981,6 +3199,7 @@
   }
 
   function renderPrintPreview() {
+    printRenderRevision++;
     updatePrintDurationAvailability();
     if (!state.printExam) return;
     var opts = printOptions();
@@ -2988,7 +3207,7 @@
     if (!html) { el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>印刷対象がありません。チェックや登録内容を確認してください。</div></div>'; return; }
     el("print-preview").innerHTML = '<div class="print-doc ' + printDocClasses(opts) + '">' + html + "</div>";
     wirePrintTitleEdit();
-    if (el("pr-duration")) el("pr-duration").disabled = !opts.cover || state.printExam.kind === "favFolder";
+    if (el("pr-duration")) el("pr-duration").disabled = !opts.cover || state.printExam.kind !== "exam";
     if (opts.lineNumbers) {
       applyPrintLineNumbers(el("print-preview"));
       watchPreviewLineNumbers();
@@ -3164,10 +3383,11 @@
   }
 
   function runPrint() {
+    if (printPreparing || (multiPrint.enabled && (multiPrint.busy || multiPrint.loading || multiPrint.error || multiPrint.archived || !multiPrint.ids.length))) return;
     if (printDurationWrite || (state.printExam && state.printExam.durationUnverified)) {
       UI.toast("試験時間の保存・再取得が完了してから印刷してください。確認できない場合は年度・方式を選び直してください。", "err"); return;
     }
-    var selected = state.printExam, durationRevision = printDurationRevision;
+    var selected = state.printExam, durationRevision = printDurationRevision, renderRevision = printRenderRevision;
     if (!state.printExam) { UI.toast("印刷対象がありません", "err"); return; }
     var opts = printOptions();
     var html = buildPrintHtml(state.printExam, opts, false);
@@ -3177,18 +3397,19 @@
     area.className = "print-out " + printDocClasses(opts);
     area.innerHTML = html;
     // Webフォントや画像の読み込み後に確定した折り返しを計測する。
+    printPreparing = true; updatePrintDurationAvailability();
     var ready = document.fonts ? document.fonts.ready : Promise.resolve();
     ready.then(function () {
       return Promise.all($all("img", area).map(function (img) {
         return img.decode ? img.decode().catch(function () {}) : Promise.resolve();
       }));
     }).then(function () {
-      if (printDurationWrite || durationRevision !== printDurationRevision || state.printExam !== selected || selected.durationUnverified) {
+      if (printDurationWrite || durationRevision !== printDurationRevision || state.printExam !== selected || selected.durationUnverified || renderRevision !== printRenderRevision || (multiPrint.enabled && (multiPrint.busy || multiPrint.loading || multiPrint.archived))) {
         UI.toast("印刷準備中に設定が変わりました。保存・再取得完了後に印刷し直してください。", "err"); return;
       }
       if (opts.lineNumbers) applyPrintLineNumbers(area, true);
       window.print();
-    });
+    }).finally(function () { printPreparing = false; updatePrintDurationAvailability(); });
   }
 
   /* ---------------- コーパス対象絞り込み ---------------- */
@@ -3649,4 +3870,3 @@
   var global = window;
   document.addEventListener("DOMContentLoaded", init);
 })();
-
