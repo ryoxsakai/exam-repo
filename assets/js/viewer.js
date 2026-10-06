@@ -2195,7 +2195,7 @@
   }
 
   function buildPrintHtml(ex, opts, useDraftTitles) {
-    if (ex.kind === "printSet") return buildMultiPrintHtml(ex, opts);
+    if (ex.kind === "printSet") return buildMultiPrintHtml(ex, opts, useDraftTitles);
     var html = "";
     if (opts.cover) {
       var coverClass = "print-cover" + (opts.nameField ? " has-name-field" : "");
@@ -2842,13 +2842,13 @@
         html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
         Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
           var yearIds = Object.keys(unis[u][y]).sort(schedCompare).map(function (s) { return unis[u][y][s].id; });
-          html += '<div class="tree-node"><label class="print-multi-only print-year-check"><input type="checkbox" data-multi-year="' + esc(JSON.stringify(yearIds)) + '"> '+esc(y)+'年度を全選択 / 解除</label>' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '<div class="tree-children" hidden>';
+          html += '<div class="tree-node"><div class="print-year-row"><input type="checkbox" class="print-multi-only print-year-check" data-multi-year="' + esc(JSON.stringify(yearIds)) + '" aria-label="' + esc(y) + '年度を全選択 / 解除">' + treeRow("year", "fa-calendar-days", esc(y) + "年度") + '</div><div class="tree-children" hidden>';
           Object.keys(unis[u][y]).sort(schedCompare).forEach(function (s) {
             var picked = (state.printSel.uni === u && state.printSel.year === y && state.printSel.sched === s);
             html += '<button type="button" class="tree-row tree-row-sched tree-row-pick print-single-only' + (picked ? " selected" : "") + '"' +
               ' data-uni="' + esc(u) + '" data-year="' + esc(y) + '" data-sched="' + esc(s) + '">' +
               '<i class="fa-solid fa-layer-group tree-ic"></i><span class="tree-label">' + esc(s) + "</span></button>";
-            html += '<label class="print-multi-only print-exam-check"><input type="checkbox" data-multi-exam="' + unis[u][y][s].id + '"> <span>' + esc(s) + '</span></label>';
+            html += '<label class="tree-row print-multi-only print-exam-check"><input type="checkbox" data-multi-exam="' + unis[u][y][s].id + '"> <i class="fa-solid fa-layer-group tree-ic"></i><span class="tree-label">' + esc(s) + '</span></label>';
           });
           html += "</div></div>";
         });
@@ -2883,7 +2883,7 @@
           loadPrintPreview();
           return;
         }
-        var children = row.nextElementSibling;
+        var children = (row.closest(".print-year-row") || row).nextElementSibling;
         if (!children || !children.classList.contains("tree-children")) return;
         var willOpen = children.hidden;
         children.hidden = !willOpen;
@@ -2908,7 +2908,9 @@
   }
   function wireMultiPrint() {
     el("pr-multi").addEventListener("change", function () {
+      if (multiPrint.busy) { this.checked = multiPrint.enabled; return; }
       multiPrint.enabled = this.checked;
+      if (!multiPrint.enabled) closePrintSetModal();
       state.printQSel = {};
       multiPrint.epoch++;
       state.printSel = Object.assign({}, state.printSel);
@@ -2916,6 +2918,21 @@
       renderMultiControls();
       loadPrintPreview();
       if (multiPrint.enabled) refreshPrintSets();
+    });
+    el("pr-set-manage").addEventListener("click", openPrintSetModal);
+    var modal = el("pr-set-modal");
+    $all("[data-set-close]", modal).forEach(function (b) { b.addEventListener("click", closePrintSetModal); });
+    modal.addEventListener("mousedown", function (e) { if (e.target === modal) { e.preventDefault(); closePrintSetModal(); } });
+    modal.addEventListener("keydown", function (e) {
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closePrintSetModal(); }
+      if (e.key === "Tab") {
+        var nodes = $all('button,input,select,[tabindex="0"]', modal).filter(function (n) { return !n.disabled && n.getClientRects().length; });
+        if (!nodes.length) { e.preventDefault(); return; }
+        var first = nodes[0], last = nodes[nodes.length - 1];
+        if (e.shiftKey && (document.activeElement === first || nodes.indexOf(document.activeElement) < 0)) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && (document.activeElement === last || nodes.indexOf(document.activeElement) < 0)) { e.preventDefault(); first.focus(); }
+      }
     });
     el("pr-multi-clear").addEventListener("click", function () { multiPrint.ids = []; loadMultiPrint(); });
     el("pr-set-new").addEventListener("click", function () {
@@ -2926,32 +2943,46 @@
     el("pr-set-open").addEventListener("click", function () { openPrintSet(el("pr-set-list").value); });
     el("pr-set-archive").addEventListener("click", function () { savePrintSet(!multiPrint.archived); });
     el("pr-set-name").addEventListener("input", function () { multiPrint.name = this.value; multiChanged(); });
-    $all("[data-set-cover]").forEach(function (input) {
-      input.addEventListener("input", function () {
-        if (this.dataset.setCover === "time") multiPrint.cover.time = this.value;
-        else multiPrint.cover.lines[Number(this.dataset.setCover)] = this.value;
-        multiChanged();
-      });
-    });
+  }
+  function openPrintSetModal() {
+    if (!multiPrint.enabled || multiPrint.busy) return;
+    renderMultiControls(); UI.openModal(el("pr-set-modal"));
+    el("pr-set-name").focus(); refreshPrintSets();
+  }
+  function closePrintSetModal() {
+    if (multiPrint.busy) return;
+    var modal = el("pr-set-modal");
+    if (!modal.classList.contains("open")) return;
+    UI.closeModal(modal); multiPrint.listEpoch++;
+    if (multiPrint.enabled) el("pr-set-manage").focus();
   }
   function renderMultiControls() {
-    var panel = el("pr-multi-panel");
+    var panel = el("pr-set-modal");
     if (!panel) return;
-    panel.hidden = !multiPrint.enabled;
+    el("pr-set-manage").hidden = !multiPrint.enabled;
+    el("pr-set-manage").disabled = multiPrint.busy;
+    el("pr-set-manage").title = "印刷セット（" + multiPrint.ids.length + "試験）";
     el("pr-tree").classList.toggle("multi-print", multiPrint.enabled);
     el("pr-multi").disabled = multiPrint.busy;
     el("pr-multi-count").textContent = multiPrint.ids.length + "試験を選択";
     el("pr-set-name").value = multiPrint.name;
-    $all("[data-set-cover]").forEach(function (input) { input.value = input.dataset.setCover === "time" ? multiPrint.cover.time : multiPrint.cover.lines[Number(input.dataset.setCover)]; });
     el("pr-set-archive").hidden = !multiPrint.revision;
     el("pr-set-archive").textContent = multiPrint.archived ? "復元して保存" : "アーカイブ";
-    el("pr-set-status").textContent = multiPrint.busy ? "保存・確認中です…" : multiPrint.error || (multiPrint.archived ? "アーカイブ済みです。復元すると印刷できます。" : multiPrint.revision ? "版" + multiPrint.revision + "を読込済み。変更した内容は「保存」で更新します。" : "新しい印刷セット。保存・読込にはGoogleログインが必要です。");
+    el("pr-set-status").textContent = multiPrint.busy ? "保存・確認中です…" : multiPrint.error || (multiPrint.archived ? "アーカイブ済みです。復元すると印刷できます。" : multiPrint.revision ? "版" + multiPrint.revision + "を読込済み。変更した内容は「保存」で更新します。" : (window.Auth && Auth.getCurrentUser() ? "新しい印刷セット。保存するまで下書きとして保持します。" : "保存・読込にはGoogleログインが必要です。"));
     $all("input,button,select", panel).forEach(function (node) { node.disabled = multiPrint.busy; });
     el("pr-set-save").disabled = multiPrint.busy || multiPrint.archived || !multiPrint.ids.length;
-    $all("[data-multi-exam]", el("pr-tree")).forEach(function (cb) { cb.checked = multiPrint.ids.indexOf(Number(cb.dataset.multiExam)) >= 0; cb.disabled = multiPrint.busy; });
+    $all("[data-multi-exam]", el("pr-tree")).forEach(function (cb) { cb.checked = multiPrint.ids.indexOf(Number(cb.dataset.multiExam)) >= 0; cb.disabled = multiPrint.busy; cb.closest("label").classList.toggle("selected", cb.checked); });
     $all("[data-multi-year]", el("pr-tree")).forEach(function (cb) {
       var ids = JSON.parse(cb.dataset.multiYear), n = ids.filter(function (id) { return multiPrint.ids.indexOf(id) >= 0; }).length;
       cb.checked = n === ids.length; cb.indeterminate = n > 0 && n < ids.length; cb.disabled = multiPrint.busy;
+    });
+    $all(".tree-row-uni,.tree-row-year", el("pr-tree")).forEach(function (row) {
+      var selected = $all("[data-multi-exam]", row.closest(".tree-node")).some(function (cb) { return cb.checked; });
+      row.classList.toggle("selected", multiPrint.enabled && selected);
+    });
+    $all('[data-print-title="print-set"]', el("print-preview")).forEach(function (node) {
+      node.setAttribute("aria-disabled", String(multiPrint.busy));
+      if (multiPrint.busy) node.setAttribute("contenteditable", "false");
     });
     el("pr-multi-selection").innerHTML = multiPrint.ids.map(function (id, i) {
       var e = multiPrint.catalog[id], title = e ? [e.university_name, e.year + "年度", e.schedule].join(" / ") : "試験ID " + id + "（選択一覧に見つかりません）";
@@ -3030,7 +3061,9 @@
       var result = await Api.printSets();
       if (account !== multiPrint.accountEpoch || requestId !== multiPrint.listEpoch) return;
       multiPrint.list = result.print_sets || [];
+      var selected = el("pr-set-list").value;
       el("pr-set-list").innerHTML = '<option value="">印刷セットを選択</option>' + multiPrint.list.map(function (s) { return '<option value="' + esc(s.id) + '">' + esc(s.name) + (s.archived ? "（アーカイブ）" : "") + '</option>'; }).join("");
+      el("pr-set-list").value = selected;
     } catch (e) { if (account === multiPrint.accountEpoch && requestId === multiPrint.listEpoch) UI.toast(e.message, "err"); }
   }
   async function openPrintSet(id) {
@@ -3067,16 +3100,22 @@
       multiPrint.revision = checked.print_set.revision; multiPrint.archived = checked.print_set.archived;
       UI.toast("印刷セットを保存しました", "ok");
       await refreshPrintSets();
+      if (account !== multiPrint.accountEpoch) return;
+      multiPrint.busy = false; closePrintSetModal();
     } catch (e) { if (account === multiPrint.accountEpoch) { multiPrint.error = e.message; UI.toast(e.message, "err"); } }
     finally { if (account === multiPrint.accountEpoch) { multiPrint.busy = false; renderMultiControls(); } }
   }
-  function buildMultiPrintHtml(ex, opts) {
+  function buildMultiPrintHtml(ex, opts, editable) {
     var html = '', c = ex.cover || {lines: [], time: ''};
     if (!Array.isArray(c.lines) || c.lines.length !== 3 || c.lines.some(function (s) { return typeof s !== 'string' || s.length > 120; }) || typeof c.time !== 'string' || c.time.length > 120) return '';
     var compact = c.lines.join('').length + c.time.length > 120;
+    function line(text, i, cls) {
+      var small = compact || text.length > 30 ? ' pc-cover-small' : '';
+      return '<div class="' + cls + small + (editable ? ' pc-title-edit' : '') + '"' + (editable ? ' data-print-title="print-set" data-set-cover="' + i + '" data-line="' + i + '" tabindex="0" role="textbox" aria-label="' + (i === 'time' ? '共通表紙の時間（任意）' : '表紙タイトル' + (i+1) + '行目') + '" title="空欄はクリック、文字のある行はダブルクリックで編集"' : '') + '>' + esc(text) + '</div>';
+    }
     if (opts.cover) html += '<div class="print-cover print-set-cover' + (opts.nameField ? ' has-name-field' : '') + '">' +
-      c.lines.map(function (line,i) { return '<div class="' + ['pc-year','pc-uni','pc-sched'][i] + (compact || line.length > 30 ? ' pc-cover-small' : '') + '">' + esc(line) + '</div>'; }).join('') +
-      (c.time ? '<div class="pc-duration' + (compact || c.time.length > 30 ? ' pc-cover-small' : '') + '">時間：' + esc(c.time) + '</div>' : '') +
+      c.lines.map(function (text,i) { return line(text, i, ['pc-year','pc-uni','pc-sched'][i]); }).join('') +
+      (c.time || editable ? '<div class="pc-duration">' + (c.time ? '時間：' : '') + line(c.time, 'time', 'pc-set-time') + '</div>' : '') +
       (opts.nameField ? '<div class="pc-name-field"><span>氏名:</span><span class="pc-name-line"></span></div>' : '') + '</div>';
     [false,true].forEach(function (answerSide) {
       ex.exams.forEach(function (exam) {
@@ -3220,14 +3259,31 @@
   function wirePrintTitleEdit() {
     $all("[data-print-title]", el("print-preview")).forEach(function (node) {
       var folderId = node.getAttribute("data-print-title");
+      var isSet = folderId === "print-set", original, editingExam;
 
       function getDraft() {
+        if (isSet) return multiPrint.cover.lines;
         state.printTitleDrafts = state.printTitleDrafts || {};
         var key = String(folderId);
         if (!Array.isArray(state.printTitleDrafts[key])) state.printTitleDrafts[key] = favFolderTitleLines(folderId).slice();
         return state.printTitleDrafts[key];
       }
       function syncDraft() {
+        if (isSet) {
+          if (multiPrint.busy || !multiPrint.enabled || state.printExam !== editingExam) return;
+          var text = node.textContent || "", index = node.getAttribute("data-line");
+          if (text.length > 120) {
+            text = text.slice(0,120).replace(/[\uD800-\uDBFF]$/, ""); node.textContent = text;
+            var range = document.createRange(); range.selectNodeContents(node); range.collapse(false);
+            var selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+            UI.toast("表紙は各行120文字までです", "err");
+          }
+          if (index === "time") multiPrint.cover.time = text;
+          else multiPrint.cover.lines[Number(index)] = text;
+          state.printExam.cover = multiPayload().cover;
+          multiPrint.error = ""; printRenderRevision++; renderMultiControls();
+          return;
+        }
         var lines = [];
         $all('[data-print-title="' + folderId + '"]', el("print-preview")).forEach(function (item) {
           lines[Number(item.getAttribute("data-line"))] = (item.textContent || "").trim();
@@ -3238,8 +3294,10 @@
       }
 
       function beginEdit() {
+        if (isSet && (multiPrint.busy || !multiPrint.enabled)) return;
         if (node.getAttribute("contenteditable") === "true") return;
         getDraft();
+        if (isSet) { original = node.textContent || ""; editingExam = state.printExam; }
         var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
         if (save) save.hidden = false;
         node.setAttribute("contenteditable", "true");
@@ -3264,8 +3322,9 @@
         if (now - lastTap < 350) { beginEdit(); lastTap = 0; return; }
         lastTap = now;
       });
-      node.addEventListener("input", syncDraft);
-      node.addEventListener("blur", function () { node.classList.remove("editing"); });
+      node.addEventListener("input", function (e) { if (isSet && e.isComposing) printRenderRevision++; else syncDraft(); });
+      if (isSet) node.addEventListener("compositionend", syncDraft);
+      node.addEventListener("blur", function () { node.classList.remove("editing"); if (isSet && editingExam && state.printExam === editingExam && node.isConnected && !multiPrint.busy) { syncDraft(); node.setAttribute("contenteditable", "false"); renderPrintPreview(); } });
       node.addEventListener("keydown", function (e) {
         if (e.isComposing || e.keyCode === 229) return;
         if (node.getAttribute("contenteditable") !== "true" && (e.key === "Enter" || e.key === "F2")) {
@@ -3276,6 +3335,10 @@
         if (e.key === "Enter") { e.preventDefault(); node.blur(); }
         if (e.key === "Escape") {
           e.preventDefault();
+          if (isSet) {
+            if (node.getAttribute("contenteditable") !== "true") return;
+            node.textContent = original; syncDraft(); editingExam = null; renderPrintPreview(); return;
+          }
           delete state.printTitleDrafts[String(folderId)];
           if (state.printTitleSizeDrafts) delete state.printTitleSizeDrafts[String(folderId)];
           if (state.printTitleColorDrafts) delete state.printTitleColorDrafts[String(folderId)];
