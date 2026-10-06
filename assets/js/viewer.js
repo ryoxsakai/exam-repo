@@ -2941,10 +2941,10 @@
     el("pr-set-name").addEventListener("input", function () { multiPrint.name = this.value; multiChanged(); });
   }
   // All three print dialogs share a lifecycle; their controls remain in the DOM.
-  var printModalSession = null, printModalNavigating = false, printModalReturnScroll = null;
+  var printModalSession = null, printModalNavigating = false, printModalReturnScroll = null, printModalDefaultRestoration = null;
   var printModalPage = Math.random().toString(36).slice(2);
   function printModalMarker(id) {
-    return Object.assign({}, history.state, {examPrintModal: {page: printModalPage, id: id, account: multiPrint.accountEpoch, scroll: printModalSession.scroll}});
+    return Object.assign({}, history.state, {examPrintModal: {page: printModalPage, id: id, account: multiPrint.accountEpoch, scroll: printModalSession.scroll, restoration: printModalSession.restoration}});
   }
   function updatePrintModalViewport() {
     if (!printModalSession) return;
@@ -2956,8 +2956,9 @@
     if (printModalSession || printModalNavigating || multiPrint.busy) return;
     if (id === "pr-set-modal" && !multiPrint.enabled) return;
     var overlay = el(id), trigger = el(id === "pr-set-modal" ? "pr-set-manage" : id === "pr-settings-modal" ? "pr-settings-open" : "pr-questions-open");
+    if (printModalDefaultRestoration === null) printModalDefaultRestoration = history.scrollRestoration;
     var marker = fromHistory && history.state && history.state.examPrintModal;
-    var restoration = printModalReturnScroll ? printModalReturnScroll.restoration : history.scrollRestoration;
+    var restoration = marker ? marker.restoration : printModalReturnScroll ? printModalReturnScroll.restoration : history.scrollRestoration;
     printModalReturnScroll = null;
     printModalSession = {id: id, trigger: trigger, scroll: marker ? marker.scroll : window.scrollY, restoration: restoration, top: document.body.style.top, overflow: document.body.style.overflow, inert: []};
     $all("body > *").forEach(function (node) { if (node === overlay) return; printModalSession.inert.push({node: node, value: node.inert}); node.inert = true; });
@@ -3025,12 +3026,21 @@
       });
     });
     window.addEventListener("popstate", function () {
+      var marker = history.state && history.state.examPrintModal;
+      var ownMarker = marker && marker.page === printModalPage;
+      if (!printModalSession && !printModalReturnScroll && !ownMarker && (printModalDefaultRestoration === null || history.scrollRestoration !== "manual")) return;
       printModalNavigating = false;
       if (printModalSession && multiPrint.busy) { history.pushState(printModalMarker(printModalSession.id), ""); return; }
-      var marker = history.state && history.state.examPrintModal;
       dismissPrintModal();
       if (marker && marker.page === printModalPage && marker.account === multiPrint.accountEpoch) openPrintModal(marker.id, true);
-      else restorePrintModalScroll();
+      if (!printModalSession) {
+        if (!printModalReturnScroll) printModalReturnScroll = {
+          scroll: marker && marker.page === printModalPage ? marker.scroll : window.scrollY,
+          restoration: marker && marker.page === printModalPage ? marker.restoration : printModalDefaultRestoration || history.scrollRestoration
+        };
+        if (marker && marker.page === printModalPage) history.replaceState(Object.assign({}, history.state, {examPrintModal: null}), "");
+        restorePrintModalScroll();
+      }
     });
     window.addEventListener("resize", updatePrintModalViewport);
     if (window.visualViewport) {

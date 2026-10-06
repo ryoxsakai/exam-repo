@@ -61,6 +61,11 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   const cover=async(index,text,p=page)=>{await closeAny(p);const n=p.locator(`[data-set-cover="${index}"]`);await n.dblclick();await n.fill(text);await n.press('Enter');};
   const move=async(selector)=>{await openModal();await page.locator(selector).click();await waitReady();await closeModal();};
   const checkPrint=async(selector,checked=true)=>{await openDialog(selector.startsWith('[data-pr')?'pr-questions-modal':'pr-settings-modal');await page.locator(selector).setChecked(checked);await closeAny();};
+  const checkOtherHistory=async()=>{
+   await page.evaluate(()=>{const spacer=document.createElement('div');spacer.id='fixture-history-space';spacer.style.height='1600px';document.body.appendChild(spacer);window.scrollTo(0,150);history.pushState(Object.assign({},history.state,{fixtureHistory:true}),"");window.scrollTo(0,400);});
+   await page.goBack();await page.waitForFunction(()=>window.scrollY===150);assert.equal(await page.evaluate(()=>history.scrollRestoration),'auto','Unrelated history keeps native restoration');
+   await page.goForward();await page.waitForFunction(()=>window.scrollY===400);await page.evaluate(()=>document.getElementById('fixture-history-space').remove());
+  };
   console.log('QA initial loaded');
   assert.equal(await page.locator('#pr-multi-panel').count(),0,'No permanent added panel');
   assert.equal(await page.locator('#pr-set-modal').isVisible(),false);
@@ -69,6 +74,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   assert.equal(await page.locator('#pr-set-modal').isVisible(),false,'ON only changes tree selection');
   assert.equal(await page.locator('[data-multi-exam="11"]').isVisible(),true);
   assert.equal(await page.locator('.tree-row-sched[data-uni="合成大学"][data-year="2026"][data-sched="前期"]').isVisible(),false);
+  await checkOtherHistory();
   await openModal();assert.equal(await page.locator('#pr-set-archive').isVisible(),false);
   assert.equal(await page.locator('#pr-set-modal [data-set-cover]').count(),0,'Cover has no duplicate inputs');
   const input=await page.locator('#pr-set-name').evaluate(e=>({width:e.getBoundingClientRect().width,parent:e.parentElement.getBoundingClientRect().width}));assert.ok(input.width>250&&input.width<=input.parent+1);
@@ -86,6 +92,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   }
   assert.equal(f.sql.prepare("SELECT count(*) n FROM sqlite_master WHERE name='print_sets'").get().n,1);
   assert.equal(f.sql.prepare('SELECT count(*) n FROM print_sets').get().n,0,'Closing does not save');
+  const initialRestoration=await page.evaluate(()=>history.scrollRestoration);assert.equal(initialRestoration,"auto");
   // Each dialog isolates background focus/scroll and keeps a single history entry.
   for(const [id,trigger] of [['pr-settings-modal','pr-settings-open'],['pr-questions-modal','pr-questions-open'],['pr-set-modal','pr-set-manage']]) {
    for(const way of ['close','escape','background','back']) {
@@ -103,9 +110,11 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
     await page.locator('#'+id).waitFor({state:'hidden'});
     assert.equal(await page.locator('.shell').evaluate(n=>n.inert),false);
     assert.equal(await page.evaluate(()=>document.activeElement.id),trigger);
-    await page.goForward();await page.locator('#'+id).waitFor({state:'visible'});await closeAny();
+    await page.goForward();await page.locator('#'+id).waitFor({state:'visible'});await closeAny();assert.equal(await page.evaluate(()=>history.scrollRestoration),initialRestoration,'Forward close restores the original history mode');
    }
   }
+  await page.locator('#pr-multi').uncheck();await page.goForward();await page.waitForFunction(mode=>history.scrollRestoration===mode,initialRestoration);assert.equal(await page.locator('.print-modal.open').count(),0,'OFF rejects set-history reopening');await page.locator('#pr-multi').check();
+  await checkOtherHistory();
   await openDialog('pr-settings-modal');
   await page.locator('#pr-fontsize').selectOption('sm');await closeAny();await openDialog('pr-settings-modal');assert.equal(await page.locator('#pr-fontsize').inputValue(),'sm');await page.locator('#pr-fontsize').selectOption('md');await closeAny();
   await openModal();await page.locator('#pr-set-name').fill('Caret');await page.locator('#pr-set-name').press('ArrowLeft');await page.keyboard.insertText('X');assert.equal(await page.locator('#pr-set-name').inputValue(),'CareXt','Input rerenders retain caret');
@@ -259,7 +268,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await page.locator('#pr-multi').check();await openModal();await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&window.__setsTest.multiPrint.revision);await closeModal();
   await openModal();await page.evaluate(()=>Auth.switchUser('user-b'));await page.waitForFunction(()=>window.__setsTest.multiPrint.uid==='user-b');
   assert.equal(await page.locator('.print-modal.open').count(),0);assert.equal(await page.locator('.shell').evaluate(n=>n.inert),false);
-  await page.goBack();await page.goForward();assert.equal(await page.locator('.print-modal.open').count(),0,'Old account modal cannot reopen');
+  await page.goBack();await page.waitForFunction(mode=>history.scrollRestoration===mode,initialRestoration);await page.goForward();await page.waitForFunction(mode=>history.scrollRestoration===mode,initialRestoration);assert.equal(await page.locator('.print-modal.open').count(),0,'Old account modal cannot reopen');
   assert.equal(await page.locator('#pr-set-name').inputValue(),'');assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[]);assert.equal(await page.locator('[data-set-cover="1"]').count(),0);assert.equal(await page.evaluate(()=>window.__setsTest.multiPrint.cover.lines[1]),'印刷セット');assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
   assert.deepEqual(errors,[]);assert.equal(f.sql.prepare('SELECT count(*) n FROM favorites').get().n,1);assert.equal(f.sql.prepare('SELECT problem_text FROM questions').get().problem_text,'source');
   console.log(`PASS ${width}px: selection/year/order, shared cover, SQLite re-open/second device/conflict, archive/restore, failures/stale fetch, single/favorite regressions, 7-page A4 PDF`);
