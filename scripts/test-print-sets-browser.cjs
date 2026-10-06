@@ -124,6 +124,12 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   assert.match(await page.locator('#pr-multi-count').innerText(),/3試験/);
   await page.locator('.tree-row-uni').filter({hasText:'合成大学'}).click();await page.locator('.tree-row-uni').filter({hasText:'合成大学'}).click();
   assert.equal(await page.locator('[data-multi-exam="11"]').isChecked(),true,'Selections survive university navigation');
+  for(const [id,trigger] of [['pr-settings-modal','pr-settings-open'],['pr-questions-modal','pr-questions-open'],['pr-set-modal','pr-set-manage']]) {
+   await page.evaluate(()=>window.scrollTo(0,150));const scroll=await page.evaluate(()=>window.scrollY);const restoration=await page.evaluate(()=>history.scrollRestoration);
+   await page.locator('#'+trigger).evaluate(n=>n.click());assert.equal(await page.evaluate(()=>document.body.style.top),-scroll+'px');
+   await closeAny();assert.equal(await page.evaluate(()=>window.scrollY),scroll,'Close restores background scroll');assert.equal(await page.evaluate(()=>history.scrollRestoration),restoration);
+   await page.goForward();await page.locator('#'+id).waitFor({state:'visible'});await closeAny();assert.equal(await page.evaluate(()=>window.scrollY),scroll,'Forward retains the original background position');
+  }
   await move('[data-set-move="2"][data-step="-1"]');
   assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21,13]);
   await setName('Fixture saved set');

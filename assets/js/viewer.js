@@ -727,6 +727,7 @@
         if (printModalSession) {
           dismissPrintModal();
           history.replaceState(Object.assign({}, history.state, {examPrintModal: null}), "");
+          restorePrintModalScroll();
         }
         multiPrint.uid = nextUid;
         multiPrint.accountEpoch++; multiPrint.epoch++; multiPrint.list = [];
@@ -2940,10 +2941,10 @@
     el("pr-set-name").addEventListener("input", function () { multiPrint.name = this.value; multiChanged(); });
   }
   // All three print dialogs share a lifecycle; their controls remain in the DOM.
-  var printModalSession = null, printModalNavigating = false;
+  var printModalSession = null, printModalNavigating = false, printModalReturnScroll = null;
   var printModalPage = Math.random().toString(36).slice(2);
   function printModalMarker(id) {
-    return Object.assign({}, history.state, {examPrintModal: {page: printModalPage, id: id, account: multiPrint.accountEpoch}});
+    return Object.assign({}, history.state, {examPrintModal: {page: printModalPage, id: id, account: multiPrint.accountEpoch, scroll: printModalSession.scroll}});
   }
   function updatePrintModalViewport() {
     if (!printModalSession) return;
@@ -2955,8 +2956,12 @@
     if (printModalSession || printModalNavigating || multiPrint.busy) return;
     if (id === "pr-set-modal" && !multiPrint.enabled) return;
     var overlay = el(id), trigger = el(id === "pr-set-modal" ? "pr-set-manage" : id === "pr-settings-modal" ? "pr-settings-open" : "pr-questions-open");
-    printModalSession = {id: id, trigger: trigger, scroll: window.scrollY, top: document.body.style.top, overflow: document.body.style.overflow, inert: []};
+    var marker = fromHistory && history.state && history.state.examPrintModal;
+    var restoration = printModalReturnScroll ? printModalReturnScroll.restoration : history.scrollRestoration;
+    printModalReturnScroll = null;
+    printModalSession = {id: id, trigger: trigger, scroll: marker ? marker.scroll : window.scrollY, restoration: restoration, top: document.body.style.top, overflow: document.body.style.overflow, inert: []};
     $all("body > *").forEach(function (node) { if (node === overlay) return; printModalSession.inert.push({node: node, value: node.inert}); node.inert = true; });
+    history.scrollRestoration = "manual";
     UI.openModal(overlay);
     document.body.style.top = -printModalSession.scroll + "px";
     document.body.classList.add("print-modal-open");
@@ -2969,6 +2974,7 @@
     var session = printModalSession;
     if (!session) return;
     printModalSession = null;
+    printModalReturnScroll = {scroll: session.scroll, restoration: session.restoration};
     UI.closeModal(el(session.id));
     document.body.classList.remove("print-modal-open");
     document.body.style.top = session.top;
@@ -2978,13 +2984,27 @@
     if (session.id === "pr-set-modal") multiPrint.listEpoch++;
     if (session.trigger && !session.trigger.hidden) session.trigger.focus({preventScroll: true});
   }
+  function restorePrintModalScroll() {
+    var restore = printModalReturnScroll;
+    if (!restore) return;
+    printModalNavigating = true;
+    // Keep restoration manual through popstate; the browser otherwise replaces
+    // the restored position with the zero scroll of the fixed modal body.
+    setTimeout(function () {
+      if (printModalSession || printModalReturnScroll !== restore) return;
+      printModalReturnScroll = null;
+      window.scrollTo(0, restore.scroll);
+      history.scrollRestoration = restore.restoration;
+      printModalNavigating = false;
+    }, 0);
+  }
   function closePrintModal() {
     if (!printModalSession || multiPrint.busy) return;
     var id = printModalSession.id, marker = history.state && history.state.examPrintModal;
     dismissPrintModal();
     if (marker && marker.page === printModalPage && marker.id === id) {
       printModalNavigating = true; history.back();
-    }
+    } else restorePrintModalScroll();
   }
   function wirePrintModals() {
     [["pr-settings-open", "pr-settings-modal"], ["pr-questions-open", "pr-questions-modal"], ["pr-set-manage", "pr-set-modal"]].forEach(function (pair) {
@@ -3010,6 +3030,7 @@
       var marker = history.state && history.state.examPrintModal;
       dismissPrintModal();
       if (marker && marker.page === printModalPage && marker.account === multiPrint.accountEpoch) openPrintModal(marker.id, true);
+      else restorePrintModalScroll();
     });
     window.addEventListener("resize", updatePrintModalViewport);
     if (window.visualViewport) {
