@@ -3120,7 +3120,7 @@
     [false,true].forEach(function (answerSide) {
       ex.exams.forEach(function (exam) {
         var body = buildPrintHtml(Object.assign({}, exam, {kind:'exam'}), Object.assign({},opts,{cover:false,side:answerSide ? 'answer' : 'question'}));
-        if (body) html += '<section class="print-exam-block"><h2 class="print-exam-head">' + esc([exam.university_name,exam.year + '年度',exam.schedule].join(' / ')) + '</h2>' + body + '</section>';
+        if (body) html += '<section class="print-exam-block"><h2 class="print-exam-head">' + esc([exam.year,exam.university_name,exam.schedule].map(function (part) { return part == null ? '' : String(part).trim(); }).filter(Boolean).join(' ')) + '</h2>' + body + '</section>';
       });
     });
     return html;
