@@ -3051,7 +3051,7 @@
     $all("input,button,select", panel).forEach(function (node) { node.disabled = multiPrint.busy; });
     el("pr-set-save").disabled = multiPrint.busy || multiPrint.loading || multiPrint.archived || !multiPrint.ids.length;
     renderPrintSetLoadButton();
-    if (multiPrint.busy && panel.contains(document.activeElement) && document.activeElement.disabled) panel.querySelector('[role="dialog"]').focus({preventScroll: true});
+    if (multiPrint.busy && panel.classList.contains("open") && !panel.contains(document.activeElement)) panel.querySelector('[role="dialog"]').focus({preventScroll: true});
     $all("[data-multi-exam]", el("pr-tree")).forEach(function (cb) { cb.checked = multiPrint.ids.indexOf(Number(cb.dataset.multiExam)) >= 0; cb.disabled = multiPrint.busy; cb.closest("label").classList.toggle("selected", cb.checked); });
     $all("[data-multi-year]", el("pr-tree")).forEach(function (cb) {
       var ids = JSON.parse(cb.dataset.multiYear), n = ids.filter(function (id) { return multiPrint.ids.indexOf(id) >= 0; }).length;
@@ -3184,7 +3184,7 @@
       UI.toast("印刷セットを保存しました", "ok");
       await refreshPrintSets();
       if (account !== multiPrint.accountEpoch) return;
-      multiPrint.busy = false; closePrintSetModal();
+      multiPrint.busy = false; renderMultiControls(); closePrintSetModal();
     } catch (e) { if (account === multiPrint.accountEpoch) { multiPrint.error = e.message; UI.toast(e.message, "err"); } }
     finally { if (account === multiPrint.accountEpoch) { multiPrint.busy = false; renderMultiControls(); } }
   }

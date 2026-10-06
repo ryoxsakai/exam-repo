@@ -173,12 +173,15 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await checkPrint('[data-prq="11:1"]',false);
   console.log('QA preview/order ready');holdSave=true;await openModal();await page.locator('#pr-set-save').click();await page.waitForFunction(()=>document.getElementById('pr-set-name').disabled);await waitFlag(()=>saveHeld,'saveHeld');
   assert.equal(await page.locator('#pr-multi').isDisabled(),true);assert.equal(await page.locator('#btn-print-run').isDisabled(),true);assert.equal(await page.locator('#btn-print-run-2').isDisabled(),true);
-  await page.locator('#pr-set-modal [role="dialog"]').press('Escape');
+  assert.equal(await page.locator('#pr-set-modal').evaluate(n=>n.contains(document.activeElement)),true,'Disabling save keeps focus inside dialog');
+  await page.keyboard.press('Tab');assert.equal(await page.locator('#pr-set-modal').evaluate(n=>n.contains(document.activeElement)),true,'Busy Tab stays inside dialog');
+  await page.keyboard.press('Escape');
   await page.locator('#pr-set-modal').click({position:{x:2,y:2}});assert.equal(await page.locator('#pr-set-modal').isVisible(),true,'Busy cannot close');
   await page.goBack();assert.equal(await page.locator('#pr-set-modal').isVisible(),true,'Busy back cannot leave');
   await page.locator('[data-set-cover="1"]').evaluate(n=>n.dispatchEvent(new MouseEvent('dblclick',{bubbles:true})));assert.notEqual(await page.locator('[data-set-cover="1"]').getAttribute('contenteditable'),'true','Busy locks cover editor');
   await page.evaluate(()=>window.__setsTest.runPrint());assert.equal(await page.evaluate(()=>window.__prints||0),0);
   holdSave=false;releaseSave();await page.waitForFunction(()=>window.__setsTest.multiPrint.revision===1&&!window.__setsTest.multiPrint.busy);
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'pr-set-manage','Successful save restores enabled trigger focus');
   console.log('QA saved');await openModal();assert.equal(await page.locator('#pr-set-archive').isVisible(),true,'Saved set exposes archive');await closeModal();const id=await page.evaluate(()=>window.__setsTest.multiPrint.id);assert.equal(f.sql.prepare('SELECT count(*) n FROM print_sets').get().n,1);
   holdList=true;listHeld=false;await openModal();await waitFlag(()=>listHeld,'listHeld');
   await page.locator('#pr-set-list').selectOption(id);await closeModal();holdList=false;
@@ -194,7 +197,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await setName('Stale local edit');await openModal();await page.locator('#pr-set-save').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&window.__setsTest.multiPrint.error.includes('別端末'));
   assert.equal(await page.locator('#pr-set-name').inputValue(),'Stale local edit');assert.equal((await f.call('user-a',id)).body.print_set.name,'Updated on other device');assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
   await openModal();await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();await page.waitForFunction(()=>window.__setsTest.multiPrint.revision===2&&!window.__setsTest.multiPrint.busy);await closeModal();
-  holdSetRead=true;setReadHeld=false;await openModal();await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();await waitFlag(()=>setReadHeld,'setReadHeld');
+  holdSetRead=true;setReadHeld=false;await openModal();await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();await waitFlag(()=>setReadHeld,'setReadHeld');assert.equal(await page.locator('#pr-set-modal').evaluate(n=>n.contains(document.activeElement)),true,'Pending load retains dialog focus');
   await page.locator('#pr-set-modal [role="dialog"]').press('Escape');assert.equal(await page.locator('#pr-set-modal').isVisible(),true,'Pending read cannot close or change drafts');assert.equal(await page.locator('#pr-multi').isDisabled(),true);
   holdSetRead=false;releaseSetRead();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy);await closeModal();
   console.log('QA second device conflict ready');

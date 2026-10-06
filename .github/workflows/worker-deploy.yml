@@ -35,3 +35,27 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy worker/index.ts --name medical-exam-worker
+
+      - name: Verify published print UI (read only)
+        env:
+          PUBLICATION_SHA: ${{ github.sha }}
+        run: |
+          # Pages deploys alongside the Worker. Wait for this commit's static files.
+          check_dir=$(mktemp -d)
+          site_url=https://exam.lrnr.jp
+          for attempt in $(seq 1 30); do
+            if curl --max-time 20 -fsSL "$site_url/?publication=$PUBLICATION_SHA" -o "$check_dir/index.html" &&
+               curl --max-time 20 -fsSL "$site_url/assets/css/main-20261006printdialogs.css?publication=$PUBLICATION_SHA" -o "$check_dir/main.css" &&
+               curl --max-time 20 -fsSL "$site_url/assets/js/viewer.js?publication=$PUBLICATION_SHA" -o "$check_dir/viewer.js" &&
+               cmp -s index.html "$check_dir/index.html" &&
+               cmp -s assets/css/main-20261006printdialogs.css "$check_dir/main.css" &&
+               cmp -s assets/js/viewer.js "$check_dir/viewer.js"; then
+              echo "Published print HTML, CSS and JS match $PUBLICATION_SHA at $site_url"
+              sha256sum "$check_dir/index.html" "$check_dir/main.css" "$check_dir/viewer.js"
+              exit 0
+            fi
+            echo "Waiting for Pages publication (attempt $attempt/30)"
+            sleep 10
+          done
+          echo "Published print assets did not match this commit" >&2
+          exit 1
