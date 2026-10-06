@@ -350,6 +350,7 @@
         renderPrintPreview();
       });
     }
+    wirePrintModals();
     wireMultiPrint();
     el("btn-print-run").addEventListener("click", runPrint);
     el("btn-print-run-2").addEventListener("click", runPrint);
@@ -723,12 +724,16 @@
       var nextUid = user ? user.uid : null;
       if (nextUid !== multiPrint.uid) {
         var wasSignedIn = !!multiPrint.uid;
+        if (printModalSession) {
+          dismissPrintModal();
+          history.replaceState(Object.assign({}, history.state, {examPrintModal: null}), "");
+        }
         multiPrint.uid = nextUid;
         multiPrint.accountEpoch++; multiPrint.epoch++; multiPrint.list = [];
         multiPrint.id = null; multiPrint.revision = null; multiPrint.archived = false; multiPrint.busy = false;
         if (wasSignedIn) {
           multiPrint.ids = []; multiPrint.name = ""; multiPrint.cover = {lines: ["", "印刷セット", ""], time: ""};
-          state.printQSel = {};
+          state.printQSel = {}; multiPrint.questionSelection = {};
         }
         if (el("pr-set-list")) el("pr-set-list").innerHTML = "";
         if (multiPrint.enabled) { loadMultiPrint(); refreshPrintSets(); }
@@ -2604,7 +2609,8 @@
   // チェック状態はモーダル印刷と共通の Store.isPrintSection を用いる。
   function renderPrintSectionControls() {
     var box = el("pr-sections");
-    if (!state.printExam) { box.innerHTML = ""; return; }
+    renderPrintQuestionSummary();
+    if (!state.printExam) { box.innerHTML = '<p class="hint">ツリーから印刷対象を選択してください。</p>'; return; }
     var problem = [], answer = [];
     (state.printExam.questions || []).forEach(function (q) {
       questionSections(q).forEach(function (s) {
@@ -2652,6 +2658,7 @@
     $all("[data-prq]", box).forEach(function (cb) {
       cb.addEventListener("change", function () {
         state.printQSel[cb.getAttribute("data-prq")] = cb.checked;
+        if (multiPrint.enabled) multiPrint.questionSelection = Object.assign({}, state.printQSel);
         renderPrintPreview();
       });
     });
@@ -2893,11 +2900,13 @@
   }
 
   // A print set is a draft of stable exam IDs, independent of favorite questions.
-  var multiPrint = {enabled: false, ids: [], cover: {lines: ["", "印刷セット", ""], time: ""}, name: "", id: null, revision: null, archived: false, catalog: {}, list: [], epoch: 0, accountEpoch: 0, listEpoch: 0, loading: false, busy: false, error: ""};
+  var multiPrint = {enabled: false, ids: [], cover: {lines: ["", "印刷セット", ""], time: ""}, name: "", id: null, revision: null, archived: false, questionSelection: {}, catalog: {}, list: [], epoch: 0, accountEpoch: 0, listEpoch: 0, loading: false, busy: false, error: ""};
   var printRenderRevision = 0, printPreparing = false;
 
   function multiPayload() {
-    return {name: multiPrint.name, exam_ids: multiPrint.ids.slice(), cover: {lines: multiPrint.cover.lines.slice(), time: multiPrint.cover.time}, archived: multiPrint.archived};
+    var questions = {};
+    Object.keys(multiPrint.questionSelection || {}).forEach(function (key) { if (multiPrint.ids.indexOf(Number(key.split(":")[0])) >= 0) questions[key] = multiPrint.questionSelection[key]; });
+    return {name: multiPrint.name, exam_ids: multiPrint.ids.slice(), question_selection: questions, cover: {lines: multiPrint.cover.lines.slice(), time: multiPrint.cover.time}, archived: multiPrint.archived};
   }
   function multiChanged() {
     printRenderRevision++;
@@ -2911,7 +2920,7 @@
       if (multiPrint.busy) { this.checked = multiPrint.enabled; return; }
       multiPrint.enabled = this.checked;
       if (!multiPrint.enabled) closePrintSetModal();
-      state.printQSel = {};
+      state.printQSel = multiPrint.enabled ? Object.assign({}, multiPrint.questionSelection) : {};
       multiPrint.epoch++;
       state.printSel = Object.assign({}, state.printSel);
       state.printExam = null;
@@ -2919,21 +2928,7 @@
       loadPrintPreview();
       if (multiPrint.enabled) refreshPrintSets();
     });
-    el("pr-set-manage").addEventListener("click", openPrintSetModal);
-    var modal = el("pr-set-modal");
-    $all("[data-set-close]", modal).forEach(function (b) { b.addEventListener("click", closePrintSetModal); });
-    modal.addEventListener("mousedown", function (e) { if (e.target === modal) { e.preventDefault(); closePrintSetModal(); } });
-    modal.addEventListener("keydown", function (e) {
-      if (e.isComposing || e.keyCode === 229) return;
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closePrintSetModal(); }
-      if (e.key === "Tab") {
-        var nodes = $all('button,input,select,[tabindex="0"]', modal).filter(function (n) { return !n.disabled && n.getClientRects().length; });
-        if (!nodes.length) { e.preventDefault(); return; }
-        var first = nodes[0], last = nodes[nodes.length - 1];
-        if (e.shiftKey && (document.activeElement === first || nodes.indexOf(document.activeElement) < 0)) { e.preventDefault(); last.focus(); }
-        else if (!e.shiftKey && (document.activeElement === last || nodes.indexOf(document.activeElement) < 0)) { e.preventDefault(); first.focus(); }
-      }
-    });
+    el("pr-set-list").addEventListener("change", renderPrintSetLoadButton);
     el("pr-multi-clear").addEventListener("click", function () { multiPrint.ids = []; loadMultiPrint(); });
     el("pr-set-new").addEventListener("click", function () {
       multiPrint.id = null; multiPrint.revision = null; multiPrint.archived = false; multiChanged();
@@ -2944,17 +2939,95 @@
     el("pr-set-archive").addEventListener("click", function () { savePrintSet(!multiPrint.archived); });
     el("pr-set-name").addEventListener("input", function () { multiPrint.name = this.value; multiChanged(); });
   }
-  function openPrintSetModal() {
-    if (!multiPrint.enabled || multiPrint.busy) return;
-    renderMultiControls(); UI.openModal(el("pr-set-modal"));
-    el("pr-set-name").focus(); refreshPrintSets();
+  // All three print dialogs share a lifecycle; their controls remain in the DOM.
+  var printModalSession = null, printModalNavigating = false;
+  var printModalPage = Math.random().toString(36).slice(2);
+  function printModalMarker(id) {
+    return Object.assign({}, history.state, {examPrintModal: {page: printModalPage, id: id, account: multiPrint.accountEpoch}});
+  }
+  function updatePrintModalViewport() {
+    if (!printModalSession) return;
+    var viewport = window.visualViewport, modal = el(printModalSession.id);
+    modal.style.setProperty("--print-viewport-height", (viewport ? viewport.height : window.innerHeight) + "px");
+    modal.style.setProperty("--print-viewport-top", (viewport ? viewport.offsetTop : 0) + "px");
+  }
+  function openPrintModal(id, fromHistory) {
+    if (printModalSession || printModalNavigating || multiPrint.busy) return;
+    if (id === "pr-set-modal" && !multiPrint.enabled) return;
+    var overlay = el(id), trigger = el(id === "pr-set-modal" ? "pr-set-manage" : id === "pr-settings-modal" ? "pr-settings-open" : "pr-questions-open");
+    printModalSession = {id: id, trigger: trigger, scroll: window.scrollY, top: document.body.style.top, overflow: document.body.style.overflow, inert: []};
+    $all("body > *").forEach(function (node) { if (node === overlay) return; printModalSession.inert.push({node: node, value: node.inert}); node.inert = true; });
+    UI.openModal(overlay);
+    document.body.style.top = -printModalSession.scroll + "px";
+    document.body.classList.add("print-modal-open");
+    updatePrintModalViewport();
+    if (!fromHistory) history.pushState(printModalMarker(id), "");
+    overlay.querySelector('[role="dialog"]').focus({preventScroll: true});
+    if (id === "pr-set-modal") { renderMultiControls(); refreshPrintSets(); }
+  }
+  function dismissPrintModal() {
+    var session = printModalSession;
+    if (!session) return;
+    printModalSession = null;
+    UI.closeModal(el(session.id));
+    document.body.classList.remove("print-modal-open");
+    document.body.style.top = session.top;
+    document.body.style.overflow = session.overflow;
+    session.inert.forEach(function (item) { item.node.inert = item.value; });
+    window.scrollTo(0, session.scroll);
+    if (session.id === "pr-set-modal") multiPrint.listEpoch++;
+    if (session.trigger && !session.trigger.hidden) session.trigger.focus({preventScroll: true});
+  }
+  function closePrintModal() {
+    if (!printModalSession || multiPrint.busy) return;
+    var id = printModalSession.id, marker = history.state && history.state.examPrintModal;
+    dismissPrintModal();
+    if (marker && marker.page === printModalPage && marker.id === id) {
+      printModalNavigating = true; history.back();
+    }
+  }
+  function wirePrintModals() {
+    [["pr-settings-open", "pr-settings-modal"], ["pr-questions-open", "pr-questions-modal"], ["pr-set-manage", "pr-set-modal"]].forEach(function (pair) {
+      el(pair[0]).addEventListener("click", function () { openPrintModal(pair[1]); });
+      var overlay = el(pair[1]);
+      $all("[data-print-close], [data-set-close]", overlay).forEach(function (button) { button.addEventListener("click", closePrintModal); });
+      overlay.addEventListener("click", function (event) { if (event.target === overlay) closePrintModal(); });
+      overlay.addEventListener("keydown", function (event) {
+        if (event.isComposing || event.keyCode === 229) return;
+        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closePrintModal(); }
+        if (event.key === "Tab") {
+          var nodes = $all('button,input,select,textarea,[tabindex="0"]', overlay).filter(function (node) { return !node.disabled && node.getClientRects().length; });
+          if (!nodes.length) { event.preventDefault(); return; }
+          var first = nodes[0], last = nodes[nodes.length - 1];
+          if (event.shiftKey && (document.activeElement === first || nodes.indexOf(document.activeElement) < 0)) { event.preventDefault(); last.focus(); }
+          else if (!event.shiftKey && (document.activeElement === last || nodes.indexOf(document.activeElement) < 0)) { event.preventDefault(); first.focus(); }
+        }
+      });
+    });
+    window.addEventListener("popstate", function () {
+      printModalNavigating = false;
+      if (printModalSession && multiPrint.busy) { history.pushState(printModalMarker(printModalSession.id), ""); return; }
+      var marker = history.state && history.state.examPrintModal;
+      dismissPrintModal();
+      if (marker && marker.page === printModalPage && marker.account === multiPrint.accountEpoch) openPrintModal(marker.id, true);
+    });
+    window.addEventListener("resize", updatePrintModalViewport);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", updatePrintModalViewport);
+      window.visualViewport.addEventListener("scroll", updatePrintModalViewport);
+    }
   }
   function closePrintSetModal() {
-    if (multiPrint.busy) return;
-    var modal = el("pr-set-modal");
-    if (!modal.classList.contains("open")) return;
-    UI.closeModal(modal); multiPrint.listEpoch++;
-    if (multiPrint.enabled) el("pr-set-manage").focus();
+    if (printModalSession && printModalSession.id === "pr-set-modal") closePrintModal();
+  }
+  function renderPrintSetLoadButton() {
+    el("pr-set-open").disabled = multiPrint.busy || !el("pr-set-list").value;
+  }
+  function renderPrintQuestionSummary() {
+    var node = el("pr-question-summary");
+    if (!node) return;
+    var questions = state.printExam ? state.printExam.questions || [] : [];
+    node.textContent = questions.length ? questions.filter(isPrintQ).length + " / " + questions.length + "問" : "未選択";
   }
   function renderMultiControls() {
     var panel = el("pr-set-modal");
@@ -2965,12 +3038,20 @@
     el("pr-tree").classList.toggle("multi-print", multiPrint.enabled);
     el("pr-multi").disabled = multiPrint.busy;
     el("pr-multi-count").textContent = multiPrint.ids.length + "試験を選択";
-    el("pr-set-name").value = multiPrint.name;
+    if (el("pr-set-name").value !== multiPrint.name) el("pr-set-name").value = multiPrint.name;
+    el("pr-set-mode").textContent = multiPrint.archived ? "アーカイブ" : multiPrint.revision ? "更新" : "新規";
+    el("pr-set-save-label").textContent = multiPrint.busy ? "確認中…" : multiPrint.revision ? "変更を保存" : "新規保存";
+    el("pr-set-empty").hidden = !!multiPrint.ids.length;
+    el("pr-set-new").hidden = !multiPrint.id;
+    panel.setAttribute("aria-busy", String(multiPrint.busy));
+    el("pr-set-status").classList.toggle("has-error", !!multiPrint.error);
     el("pr-set-archive").hidden = !multiPrint.revision;
     el("pr-set-archive").textContent = multiPrint.archived ? "復元して保存" : "アーカイブ";
-    el("pr-set-status").textContent = multiPrint.busy ? "保存・確認中です…" : multiPrint.error || (multiPrint.archived ? "アーカイブ済みです。復元すると印刷できます。" : multiPrint.revision ? "版" + multiPrint.revision + "を読込済み。変更した内容は「保存」で更新します。" : (window.Auth && Auth.getCurrentUser() ? "新しい印刷セット。保存するまで下書きとして保持します。" : "保存・読込にはGoogleログインが必要です。"));
+    el("pr-set-status").textContent = multiPrint.busy ? "保存・確認中です…" : multiPrint.error || (multiPrint.archived ? "アーカイブ済みです。復元すると印刷できます。" : multiPrint.revision ? "版" + multiPrint.revision + "を読込済み。変更した内容は「変更を保存」で更新します。" : (window.Auth && Auth.getCurrentUser() ? "新しい印刷セット。保存するまで下書きとして保持します。" : "保存・読込にはGoogleログインが必要です。"));
     $all("input,button,select", panel).forEach(function (node) { node.disabled = multiPrint.busy; });
-    el("pr-set-save").disabled = multiPrint.busy || multiPrint.archived || !multiPrint.ids.length;
+    el("pr-set-save").disabled = multiPrint.busy || multiPrint.loading || multiPrint.archived || !multiPrint.ids.length;
+    renderPrintSetLoadButton();
+    if (multiPrint.busy && panel.contains(document.activeElement) && document.activeElement.disabled) panel.querySelector('[role="dialog"]').focus({preventScroll: true});
     $all("[data-multi-exam]", el("pr-tree")).forEach(function (cb) { cb.checked = multiPrint.ids.indexOf(Number(cb.dataset.multiExam)) >= 0; cb.disabled = multiPrint.busy; cb.closest("label").classList.toggle("selected", cb.checked); });
     $all("[data-multi-year]", el("pr-tree")).forEach(function (cb) {
       var ids = JSON.parse(cb.dataset.multiYear), n = ids.filter(function (id) { return multiPrint.ids.indexOf(id) >= 0; }).length;
@@ -3064,6 +3145,7 @@
       var selected = el("pr-set-list").value;
       el("pr-set-list").innerHTML = '<option value="">印刷セットを選択</option>' + multiPrint.list.map(function (s) { return '<option value="' + esc(s.id) + '">' + esc(s.name) + (s.archived ? "（アーカイブ）" : "") + '</option>'; }).join("");
       el("pr-set-list").value = selected;
+      renderPrintSetLoadButton();
     } catch (e) { if (account === multiPrint.accountEpoch && requestId === multiPrint.listEpoch) UI.toast(e.message, "err"); }
   }
   async function openPrintSet(id) {
@@ -3076,7 +3158,8 @@
       var s = result.print_set;
       multiPrint.id = s.id; multiPrint.revision = s.revision; multiPrint.name = s.name;
       multiPrint.ids = s.exam_ids.slice(); multiPrint.cover = s.cover; multiPrint.archived = s.archived;
-      state.printQSel = {};
+      multiPrint.questionSelection = Object.assign({}, s.question_selection || {});
+      state.printQSel = Object.assign({}, multiPrint.questionSelection);
       await loadMultiPrint();
     } catch (e) { if (account === multiPrint.accountEpoch) multiPrint.error = e.message; }
     finally { if (account === multiPrint.accountEpoch) { multiPrint.busy = false; renderMultiControls(); } }
@@ -3240,6 +3323,7 @@
   function renderPrintPreview() {
     printRenderRevision++;
     updatePrintDurationAvailability();
+    renderPrintQuestionSummary();
     if (!state.printExam) return;
     var opts = printOptions();
     var html = buildPrintHtml(state.printExam, opts, true);

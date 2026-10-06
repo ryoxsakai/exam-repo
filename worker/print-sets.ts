@@ -2,13 +2,13 @@
 // FK: a removed exam must remain visible as a broken reference, never disappear.
 export const printSetSchema = `CREATE TABLE IF NOT EXISTS print_sets (
   uid TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL,
-  exam_ids TEXT NOT NULL, cover TEXT NOT NULL,
+  exam_ids TEXT NOT NULL, cover TEXT NOT NULL, question_selection TEXT NOT NULL DEFAULT '{}',
   revision INTEGER NOT NULL DEFAULT 1, archived INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL, PRIMARY KEY (uid, id))`;
 
 function output(row: any) {
   return { id: row.id, name: row.name, exam_ids: JSON.parse(row.exam_ids),
-    cover: JSON.parse(row.cover), revision: row.revision,
+    cover: JSON.parse(row.cover), question_selection: JSON.parse(row.question_selection || "{}"), revision: row.revision,
     archived: !!row.archived, updated_at: row.updated_at };
 }
 const validId = (id: unknown): id is string => typeof id === "string" && /^[a-zA-Z0-9-]{16,64}$/.test(id);
@@ -20,6 +20,15 @@ export async function handlePrintSets(request: Request, db: any, uid: string | n
   if (!["GET", "POST", "PUT"].includes(request.method) ||
       (request.method === "POST" && id) || (request.method === "PUT" && !id)) return error("対応していない操作です。", 405);
   await db.prepare(printSetSchema).run();
+  // Additive migration for sets saved before question selections were included.
+  const columns = await db.prepare("PRAGMA table_info(print_sets)").all();
+  if (!columns.results.some((column: any) => column.name === "question_selection")) {
+    try { await db.prepare("ALTER TABLE print_sets ADD COLUMN question_selection TEXT NOT NULL DEFAULT '{}'").run(); }
+    catch (e) {
+      const current = await db.prepare("PRAGMA table_info(print_sets)").all();
+      if (!current.results.some((column: any) => column.name === "question_selection")) throw e;
+    }
+  }
   const read = () => db.prepare("SELECT * FROM print_sets WHERE uid = ? AND id = ?").bind(uid, id).first();
   if (request.method === "GET") {
     if (id) {
@@ -36,7 +45,7 @@ export async function handlePrintSets(request: Request, db: any, uid: string | n
     b = JSON.parse(raw);
   } catch { return error("入力形式が不正です。", 400); }
   if (!b || Array.isArray(b) || typeof b !== "object" ||
-      Object.keys(b).some(k => !["id", "name", "exam_ids", "cover", "revision", "archived"].includes(k)) ||
+      Object.keys(b).some(k => !["id", "name", "exam_ids", "cover", "revision", "archived", "question_selection"].includes(k)) ||
       typeof b.name !== "string" || !b.name.trim() || b.name.length > 120 ||
       !Array.isArray(b.exam_ids) || !b.exam_ids.length || b.exam_ids.length > 100 ||
       b.exam_ids.some((v: unknown) => !Number.isSafeInteger(v) || Number(v) < 1) ||
@@ -47,12 +56,24 @@ export async function handlePrintSets(request: Request, db: any, uid: string | n
       b.cover.lines.some((v: unknown) => typeof v !== "string" || v.length > 120) ||
       typeof b.cover.time !== "string" || b.cover.time.length > 120 ||
       (b.archived !== undefined && typeof b.archived !== "boolean")) return error("名前・試験選択・表紙の入力を確認してください（最大100試験）。", 400);
+  if (b.question_selection !== undefined && (!b.question_selection || typeof b.question_selection !== "object" ||
+      Array.isArray(b.question_selection) || Object.keys(b.question_selection).length > 2000 ||
+      Object.entries(b.question_selection).some(([key, value]) => {
+        const parts = key.split(":");
+        return !/^[1-9]\d*:[1-9]\d*$/.test(key) || !Number.isSafeInteger(Number(parts[1])) ||
+          !b.exam_ids.includes(Number(parts[0])) || typeof value !== "boolean";
+      }))) return error("大問選択の入力を確認してください。", 400);
   if (request.method === "POST") {
     if (!validId(b.id) || (b.revision !== undefined && b.revision !== 1) || b.archived) return error("新規印刷セットの入力が不正です。", 400);
     id = b.id;
   } else if (!Number.isSafeInteger(b.revision) || b.revision < 1 || (b.id !== undefined && b.id !== id)) {
     return error("版番号が不正です。", 400);
   }
+  const previous = request.method === "PUT" ? await read() : null;
+  // Old clients omit this optional field; keep existing selections on their updates.
+  const selections = b.question_selection === undefined ? JSON.parse(previous?.question_selection || "{}") : b.question_selection;
+  const questions = JSON.stringify(Object.fromEntries(Object.keys(selections).sort()
+    .filter(key => b.exam_ids.includes(Number(key.split(":")[0]))).map(key => [key, selections[key]])));
   const ids = JSON.stringify(b.exam_ids), cover = JSON.stringify(b.cover), name = b.name.trim();
   // Archiving broken references is allowed. Saving/restoring an active set must
   // identify every exam; the client also verifies the complete fetched content.
@@ -65,15 +86,15 @@ export async function handlePrintSets(request: Request, db: any, uid: string | n
   let row: any;
   if (request.method === "POST") {
     // Stable client ID makes a repeated create safe after a lost response.
-    await db.prepare(`INSERT INTO print_sets (uid,id,name,exam_ids,cover,updated_at)
-      VALUES (?,?,?,?,?,?) ON CONFLICT(uid,id) DO NOTHING`).bind(uid,id,name,ids,cover,new Date().toISOString()).run();
+    await db.prepare(`INSERT INTO print_sets (uid,id,name,exam_ids,cover,question_selection,updated_at)
+      VALUES (?,?,?,?,?,?,?) ON CONFLICT(uid,id) DO NOTHING`).bind(uid,id,name,ids,cover,questions,new Date().toISOString()).run();
     row = await read();
-    if (row.name !== name || row.exam_ids !== ids || row.cover !== cover || row.revision !== 1 || row.archived) return error("同じIDの保存内容が変わっています。保存一覧から読み直してください。", 409);
+    if (row.name !== name || row.exam_ids !== ids || row.cover !== cover || row.question_selection !== questions || row.revision !== 1 || row.archived) return error("同じIDの保存内容が変わっています。保存一覧から読み直してください。", 409);
   } else {
     // UPDATE ... RETURNING is the atomic compare-and-swap, including archive/restore.
-    row = await db.prepare(`UPDATE print_sets SET name=?,exam_ids=?,cover=?,archived=?,revision=revision+1,updated_at=?
+    row = await db.prepare(`UPDATE print_sets SET name=?,exam_ids=?,cover=?,question_selection=?,archived=?,revision=revision+1,updated_at=?
       WHERE uid=? AND id=? AND revision=? RETURNING *`)
-      .bind(name,ids,cover,b.archived ? 1 : 0,new Date().toISOString(),uid,id,b.revision).first();
+      .bind(name,ids,cover,questions,b.archived ? 1 : 0,new Date().toISOString(),uid,id,b.revision).first();
     if (!row) return error("別端末で更新されたか保存結果が未確認です。入力を保持しています。保存一覧から読み直すか、新しいセットとして保存してください。", 409);
   }
   return { status: 200, body: { print_set: output(row) } };

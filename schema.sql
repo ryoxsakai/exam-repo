@@ -267,7 +267,7 @@ CREATE TABLE IF NOT EXISTS exam_print_durations (
 -- Print sets retain references to unavailable exams for explicit user repair.
 CREATE TABLE IF NOT EXISTS print_sets (
   uid TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL,
-  exam_ids TEXT NOT NULL, cover TEXT NOT NULL,
+  exam_ids TEXT NOT NULL, cover TEXT NOT NULL, question_selection TEXT NOT NULL DEFAULT '{}',
   revision INTEGER NOT NULL DEFAULT 1, archived INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL, PRIMARY KEY (uid, id)
 );

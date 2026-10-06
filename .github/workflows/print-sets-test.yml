@@ -20,14 +20,29 @@ jobs:
           node-version: 24
       - run: npm ci --prefix panel
       - run: npm run build --prefix panel
-      - run: node scripts/test-print-sets.cjs
+      - name: Print and OAuth regressions (isolated SQLite)
+        run: |
+          node scripts/test-print-sets.cjs
+          node scripts/test-print-duration.cjs
+          node scripts/test-print-duration-merges.cjs
+          node scripts/test-print-name-field.cjs
+          node scripts/test-print-renumber.cjs
+          node scripts/test-print-line-numbers.cjs
+          node scripts/test-print-writing-space.cjs
+          node scripts/test-section-saving.cjs
+          node scripts/test-oauth-browser-session.cjs
+          node scripts/test-oauth-refresh.cjs
       - run: ./panel/node_modules/.bin/playwright install --with-deps chromium
       - run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk poppler-utils
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: python -m pip install pypdf==6.14.2
-      - run: node scripts/test-print-sets-browser.cjs
+      - name: Desktop and mobile UI, modal history, saved selections and A4 PDF
+        run: |
+          node scripts/test-print-sets-browser.cjs
+          node scripts/test-print-name-field.cjs --browser
+          node scripts/test-print-duration-browser.cjs
       - if: always()
         uses: actions/upload-artifact@v4
         with:
