@@ -163,7 +163,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await page.emulateMedia({media:'print'});await assertHeadingColor('#print-area');await page.emulateMedia({media:null});
   const pdfPath=path.join(evidence,`multi-${width}.pdf`);await page.pdf({path:pdfPath,format:'A4',printBackground:true});
   const pdfText=execFileSync('python3',['-c',"import json,sys;from pypdf import PdfReader;print(json.dumps([p.extract_text() for p in PdfReader(sys.argv[1]).pages]))",pdfPath],{encoding:'utf8'});
-  const pages=JSON.parse(pdfText);assert.equal(pages.length,7);assert.ok(pages[0].includes('COMMON COVER'));for(const [i,marker] of ['Q11','Q21','Q13','A11','A21','A13'].entries()){assert.ok(pages[i+1].includes(marker),`PDF page ${i+2} contains ${marker}`);assert.ok(pages[i+1].normalize('NFKC').includes(expectedHeads[i%3]),`PDF page ${i+2} keeps year/university/schedule heading`);}
+  const pages=JSON.parse(pdfText);assert.equal(pages.length,7);assert.ok(pages[0].includes('COMMON COVER'));for(const [i,marker] of ['Q11','Q21','Q13','A11','A21','A13'].entries()){assert.ok(pages[i+1].includes(marker),`PDF page ${i+2} contains ${marker}`);assert.ok(pages[i+1].normalize('NFKC').replace(/\s+/g,' ').includes(expectedHeads[i%3]),`PDF page ${i+2} keeps year/university/schedule heading`);}
   fs.writeFileSync(path.join(evidence,`multi-${width}-pages.json`),JSON.stringify(pages,null,2));await page.screenshot({path:path.join(evidence,`desktop-mobile-${width}.png`),fullPage:true});
   // Repeated clicks and an edited cover during font loading must not print old output.
   const beforePrints=await page.evaluate(()=>window.__prints||0);
