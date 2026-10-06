@@ -3079,10 +3079,11 @@
     el("pr-set-archive").hidden = !multiPrint.revision;
     el("pr-set-archive").textContent = multiPrint.archived ? "復元して保存" : "アーカイブ";
     el("pr-set-status").textContent = multiPrint.busy ? "保存・確認中です…" : multiPrint.error || (multiPrint.archived ? "アーカイブ済みです。復元すると印刷できます。" : multiPrint.revision ? "版" + multiPrint.revision + "を読込済み。変更した内容は「変更を保存」で更新します。" : (window.Auth && Auth.getCurrentUser() ? "新しい印刷セット。保存するまで下書きとして保持します。" : "保存・読込にはGoogleログインが必要です。"));
+    // Focus before disabling the active control; some browsers blur it later.
+    if (multiPrint.busy && panel.classList.contains("open")) panel.querySelector('[role="dialog"]').focus({preventScroll: true});
     $all("input,button,select", panel).forEach(function (node) { node.disabled = multiPrint.busy; });
     el("pr-set-save").disabled = multiPrint.busy || multiPrint.loading || multiPrint.archived || !multiPrint.ids.length;
     renderPrintSetLoadButton();
-    if (multiPrint.busy && panel.classList.contains("open") && !panel.contains(document.activeElement)) panel.querySelector('[role="dialog"]').focus({preventScroll: true});
     $all("[data-multi-exam]", el("pr-tree")).forEach(function (cb) { cb.checked = multiPrint.ids.indexOf(Number(cb.dataset.multiExam)) >= 0; cb.disabled = multiPrint.busy; cb.closest("label").classList.toggle("selected", cb.checked); });
     $all("[data-multi-year]", el("pr-tree")).forEach(function (cb) {
       var ids = JSON.parse(cb.dataset.multiYear), n = ids.filter(function (id) { return multiPrint.ids.indexOf(id) >= 0; }).length;
