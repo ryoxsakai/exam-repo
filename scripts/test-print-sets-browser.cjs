@@ -9,10 +9,10 @@ const questions=id=>[{exam_id:id,question_number:1,category:'長文',problem_tex
 const auth=`window.__fixtureUser={displayName:'Fixture',email:'fixture@example.test',uid:'user-a'};window.__authCallbacks=[];window.Auth={init(){},onChange(cb){__authCallbacks.push(cb);cb(__fixtureUser);},getCurrentUser(){return __fixtureUser;},getIdToken(){return Promise.resolve(__fixtureUser?'fixture-'+__fixtureUser.uid:null);},switchUser(uid){__fixtureUser=uid?{displayName:'Fixture',email:'fixture@example.test',uid}:null;__authCallbacks.forEach(cb=>cb(__fixtureUser));},signIn(){return Promise.resolve();},signOut(){this.switchUser(null);}};`;
 const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrintPreview,refreshPrintSets};';
 (async()=>{
- const deadline=setTimeout(()=>{console.error('Browser test exceeded 120 seconds');process.exit(1);},120000);
+ const deadline=setTimeout(()=>{console.error('Browser test exceeded 180 seconds');process.exit(1);},180000);
  const browser=await chromium.launch({headless:!process.env.HEADED,...(process.env.PANEL_CHROMIUM?{executablePath:process.env.PANEL_CHROMIUM}:{})});
  try {for(const width of [1280,390]){
-  const f=fixture();let failExam=null,holdId=null,releaseExam,examHeld=false,holdSave=false,releaseSave,saveHeld=false,failSave=false;
+  const f=fixture();let failExam=null,holdId=null,releaseExam,examHeld=false,holdSave=false,releaseSave,saveHeld=false,failSave=false,holdSetRead=false,setReadHeld=false,releaseSetRead,holdList=false,listHeld=false,releaseList;
   const context=await browser.newContext({viewport:{width,height:960},serviceWorkers:'block'});
   const errors=[];context.on('page',p=>p.on('pageerror',e=>errors.push(e.message)));
   await context.route('**/*',async route=>{
@@ -20,11 +20,16 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
    if(url.origin!==origin)return route.fulfill({status:200,contentType:req.resourceType()==='stylesheet'?'text/css':'application/javascript',body:''});
    if(url.pathname.startsWith('/api/')){
     let data;
+    if(['/api/user-settings','/api/favorites','/api/config','/api/universities','/api/exams'].includes(url.pathname))assert.equal(req.method(),'GET','No source/favorite/settings test writes');
     const sets=url.pathname.match(/^\/api\/print-sets(?:\/([^/]+))?$/);
     if(sets){
+     let staleList=false;
+     if(req.method()==='GET'&&sets[1]&&holdSetRead){setReadHeld=true;await new Promise(r=>releaseSetRead=r);}
+     if(req.method()==='GET'&&!sets[1]&&holdList){listHeld=true;await new Promise(r=>releaseList=r);staleList=true;}
      if(req.method()!=='GET'&&holdSave){saveHeld=true;await new Promise(r=>releaseSave=r);}
      if(req.method()!=='GET'&&failSave){failSave=false;return route.fulfill({status:503,contentType:'application/json',body:'{"error":"Synthetic save failure"}'});}
      const r=await f.call(req.headers()['authorization']==='Bearer fixture-user-b'?'user-b':'user-a',sets[1],req.method()==='GET'?undefined:req.postDataJSON(),req.method());
+     if(staleList&&r.body.print_sets?.length)r.body.print_sets[0].name='Stale list response';
      return route.fulfill({status:r.status,contentType:'application/json',body:JSON.stringify(r.body)});
     }
     const match=url.pathname.match(/^\/api\/exams\/(\d+)(\/print-duration)?$/);
@@ -47,17 +52,36 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   const page=await context.newPage();page.setDefaultTimeout(10000);page.setDefaultNavigationTimeout(15000);console.log('QA started',width);await page.goto(origin,{waitUntil:'networkidle'});await page.locator('[data-multi-exam="11"]').waitFor({state:'attached'});
   const waitReady=()=>page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='printSet'&&!window.__setsTest.multiPrint.loading);
   const toggle=async()=>{await page.locator('#pr-multi').check();await page.locator('.tree-row-uni').filter({hasText:'合成大学'}).click();await page.locator('.tree-row-uni').filter({hasText:'別大学'}).click();await page.locator('.tree-row-year').filter({hasText:'2026年度'}).nth(0).click();await page.locator('.tree-row-year').filter({hasText:'2026年度'}).nth(1).click();};
+  const openModal=async(p=page)=>{if(!await p.locator('#pr-set-modal').isVisible())await p.locator('#pr-set-manage').click();};
+  const closeModal=async(p=page)=>{if(await p.locator('#pr-set-modal').isVisible())await p.locator('[data-set-close]').first().click();};
+  const setName=async(text,p=page)=>{await openModal(p);await p.locator('#pr-set-name').fill(text);};
+  const cover=async(index,text,p=page)=>{await closeModal(p);const n=p.locator(`[data-set-cover="${index}"]`);await n.dblclick();await n.fill(text);await n.press('Enter');};
+  const move=async(selector)=>{await openModal();await page.locator(selector).click();await waitReady();await closeModal();};
   console.log('QA initial loaded');
-  assert.equal(await page.locator('#pr-multi-panel').isVisible(),false,'OFF hides print-set controls');
+  assert.equal(await page.locator('#pr-multi-panel').count(),0,'No permanent added panel');
+  assert.equal(await page.locator('#pr-set-modal').isVisible(),false);
+  assert.equal(await page.locator('#pr-set-manage').isVisible(),false,'OFF keeps original toolbar');
   await toggle();
-  assert.equal(await page.locator('#pr-multi-panel').isVisible(),true,'ON shows print-set controls');
-  assert.equal(await page.locator('#pr-set-archive').isVisible(),false,'A new set has no archive action');
-  assert.equal(await page.locator('[data-multi-exam="11"]').isVisible(),true,'Multi tree checkbox is visible on screen');
-  assert.equal(await page.locator('.tree-row-sched[data-uni="合成大学"][data-year="2026"][data-sched="前期"]').isVisible(),false,'ON hides the single-exam row');
-  const fieldLayout=await page.locator('.print-set-fields').evaluate(e=>({display:getComputedStyle(e).display,columns:getComputedStyle(e).gridTemplateColumns.split(' ').length,inputs:[...e.querySelectorAll('input')].map(input=>({type:input.type,width:input.getBoundingClientRect().width,parentWidth:input.parentElement.getBoundingClientRect().width}))}));
-  assert.equal(fieldLayout.display,'grid','Screen controls are outside print-only media');assert.equal(fieldLayout.columns,width===1280?2:1,'Responsive field columns');
-  for(const input of fieldLayout.inputs){assert.equal(input.type,'text');assert.ok(input.width>250&&input.width<=input.parentWidth+1,'Readable input fills its field without overflow');}
-  await page.locator('#pr-multi-panel').screenshot({path:path.join(evidence,`print-set-controls-${width}.png`)});
+  assert.equal(await page.locator('#pr-set-modal').isVisible(),false,'ON only changes tree selection');
+  assert.equal(await page.locator('[data-multi-exam="11"]').isVisible(),true);
+  assert.equal(await page.locator('.tree-row-sched[data-uni="合成大学"][data-year="2026"][data-sched="前期"]').isVisible(),false);
+  await openModal();assert.equal(await page.locator('#pr-set-archive').isVisible(),false);
+  assert.equal(await page.locator('#pr-set-modal [data-set-cover]').count(),0,'Cover has no duplicate inputs');
+  const input=await page.locator('#pr-set-name').evaluate(e=>({width:e.getBoundingClientRect().width,parent:e.parentElement.getBoundingClientRect().width}));assert.ok(input.width>250&&input.width<=input.parent+1);
+  await closeModal();
+  // Closing never writes or loses the modal draft; existing overlay styling and focus are reused.
+  for(const way of ['close','cancel','escape','background']) {
+    await setName('Unsaved '+way);
+    if(way==='close')await page.locator('[data-set-close]').first().click();
+    if(way==='cancel')await page.getByRole('button',{name:'キャンセル',exact:true}).click();
+    if(way==='escape')await page.locator('#pr-set-name').press('Escape');
+    if(way==='background')await page.locator('#pr-set-modal').click({position:{x:2,y:2}});
+    assert.equal(await page.locator('#pr-set-modal').isVisible(),false);
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'pr-set-manage');
+    await openModal();assert.equal(await page.locator('#pr-set-name').inputValue(),'Unsaved '+way);await closeModal();
+  }
+  assert.equal(f.sql.prepare("SELECT count(*) n FROM sqlite_master WHERE name='print_sets'").get().n,1);
+  assert.equal(f.sql.prepare('SELECT count(*) n FROM print_sets').get().n,0,'Closing does not save');
   assert.equal(await page.locator('#btn-print-run').isDisabled(),true,'Zero selection cannot print');
   await page.locator('[data-multi-exam="11"]').check();await waitReady();
   await page.locator('[data-multi-exam="13"]').check();await waitReady();
@@ -65,30 +89,54 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   assert.match(await page.locator('#pr-multi-count').innerText(),/3試験/);
   await page.locator('.tree-row-uni').filter({hasText:'合成大学'}).click();await page.locator('.tree-row-uni').filter({hasText:'合成大学'}).click();
   assert.equal(await page.locator('[data-multi-exam="11"]').isChecked(),true,'Selections survive university navigation');
-  await page.locator('[data-set-move="2"][data-step="-1"]').click();await waitReady();
+  await move('[data-set-move="2"][data-step="-1"]');
   assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21,13]);
-  await page.locator('#pr-set-name').fill('Fixture saved set');
-  await page.locator('[data-set-cover="1"]').fill('COMMON COVER');
-  await page.locator('[data-set-cover="time"]').fill('各60分');
-  assert.equal(await page.locator('#print-preview .print-cover').count(),1);assert.equal(await page.locator('#print-preview .pc-duration').innerText(),'時間：各60分');
+  await setName('Fixture saved set');
+  await cover('1','COMMON COVER');
+  await cover('time','各60分');
+  assert.equal(await page.locator('#print-preview .print-cover').count(),1);assert.equal(await page.locator('#print-preview .pc-duration').textContent(),'時間：各60分');
+  // The existing cover editor keeps text across tree/mode changes and cancels one edit with Escape.
+  await cover('0','Set-only draft');
+  const editable=page.locator('[data-set-cover="0"]');await editable.dblclick();await editable.fill('Discard this');await editable.press('Escape');assert.equal(await page.locator('[data-set-cover="0"]').textContent(),'Set-only draft');
+  const ime=page.locator('[data-set-cover="0"]');await ime.dblclick();await ime.fill('IME draft');await ime.dispatchEvent('keydown',{key:'Enter',isComposing:true,keyCode:229});assert.equal(await ime.getAttribute('contenteditable'),'true');await ime.dispatchEvent('compositionend');await ime.press('Enter');
+  await page.locator('[data-multi-exam="13"]').uncheck();await waitReady();assert.equal(await page.locator('[data-set-cover="0"]').textContent(),'IME draft');await page.locator('[data-multi-exam="13"]').check();await waitReady();
+  await page.locator('#pr-multi').uncheck();await page.locator('.tree-row-sched[data-uni="合成大学"][data-year="2026"][data-sched="前期"]').click();await page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='exam');assert.ok(!(await page.locator('#print-preview .print-cover').innerText()).includes('IME draft'));
+  await page.locator('#pr-multi').check();await waitReady();assert.equal(await page.locator('[data-set-cover="0"]').textContent(),'IME draft');
+  await cover('0','超'.repeat(125));assert.equal((await page.locator('[data-set-cover="0"]').textContent()).length,120);
+  await cover('0','字'+'😀'.repeat(70));assert.equal((await page.locator('[data-set-cover="0"]').textContent()).length,119,'Limit preserves a complete Unicode character');
+  await cover('0','');
+  assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21,13]);
+  await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:path.join(evidence,`normal-modal-ui-${width}.png`)});
+  await openModal();await page.locator('#pr-set-modal .modal').screenshot({path:path.join(evidence,`set-modal-${width}.png`)});await closeModal();
   await page.locator('.print-settings > summary').click();
   assert.equal(await page.locator('[data-prq="11:1"]').count(),1);assert.equal(await page.locator('[data-prq="21:1"]').count(),1);
   await page.locator('[data-prq="11:1"]').uncheck();assert.ok(!(await page.locator('#print-preview').innerText()).includes('Q11'));assert.ok((await page.locator('#print-preview').innerText()).includes('Q21'));
-  await page.locator('[data-set-move="1"][data-step="-1"]').click();await waitReady();assert.equal(await page.locator('[data-prq="11:1"]').isChecked(),false,'Reorder retains excluded question');await page.locator('[data-set-move="0"][data-step="1"]').click();await waitReady();await page.locator('[data-prq="11:1"]').check();
+  await move('[data-set-move="1"][data-step="-1"]');assert.equal(await page.locator('[data-prq="11:1"]').isChecked(),false,'Reorder retains excluded question');await move('[data-set-move="0"][data-step="1"]');await page.locator('[data-prq="11:1"]').check();
   const ordered=await page.locator('#print-preview .print-exam-block').allTextContents();assert.equal(ordered.length,6);for(const [i,marker] of ['Q11','Q21','Q13','A11','A21','A13'].entries())assert.ok(ordered[i].includes(marker));
   // Busy write locks all draft edits and both print buttons; repeated save creates one row.
-  console.log('QA preview/order ready');holdSave=true;await page.locator('#pr-set-save').click();await page.waitForFunction(()=>document.getElementById('pr-set-name').disabled);while(!saveHeld)await new Promise(r=>setTimeout(r,10));
+  console.log('QA preview/order ready');holdSave=true;await openModal();await page.locator('#pr-set-save').click();await page.waitForFunction(()=>document.getElementById('pr-set-name').disabled);while(!saveHeld)await new Promise(r=>setTimeout(r,10));
   assert.equal(await page.locator('#pr-multi').isDisabled(),true);assert.equal(await page.locator('#btn-print-run').isDisabled(),true);assert.equal(await page.locator('#btn-print-run-2').isDisabled(),true);
+  await page.locator('#pr-set-modal [role="dialog"]').press('Escape');
+  await page.locator('#pr-set-modal').click({position:{x:2,y:2}});assert.equal(await page.locator('#pr-set-modal').isVisible(),true,'Busy cannot close');
+  await page.locator('[data-set-cover="1"]').evaluate(n=>n.dispatchEvent(new MouseEvent('dblclick',{bubbles:true})));assert.notEqual(await page.locator('[data-set-cover="1"]').getAttribute('contenteditable'),'true','Busy locks cover editor');
   await page.evaluate(()=>window.__setsTest.runPrint());assert.equal(await page.evaluate(()=>window.__prints||0),0);
   holdSave=false;releaseSave();await page.waitForFunction(()=>window.__setsTest.multiPrint.revision===1&&!window.__setsTest.multiPrint.busy);
-  console.log('QA saved');assert.equal(await page.locator('#pr-set-archive').isVisible(),true,'Saved set exposes archive');const id=await page.evaluate(()=>window.__setsTest.multiPrint.id);assert.equal(f.sql.prepare('SELECT count(*) n FROM print_sets').get().n,1);
+  console.log('QA saved');await openModal();assert.equal(await page.locator('#pr-set-archive').isVisible(),true,'Saved set exposes archive');await closeModal();const id=await page.evaluate(()=>window.__setsTest.multiPrint.id);assert.equal(f.sql.prepare('SELECT count(*) n FROM print_sets').get().n,1);
+  holdList=true;listHeld=false;await openModal();while(!listHeld)await new Promise(r=>setTimeout(r,10));
+  await page.locator('#pr-set-list').selectOption(id);await closeModal();holdList=false;
+  const freshList=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/print-sets'&&r.request().method()==='GET');await openModal();await freshList;releaseList();
+  await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  assert.equal(await page.locator('#pr-set-list').inputValue(),id,'Refresh retains the chosen set');assert.ok(!(await page.locator('#pr-set-list').textContent()).includes('Stale list response'),'Closed modal invalidates the old list result');await closeModal();
   f.reopen();
-  const second=await context.newPage();await second.goto(origin,{waitUntil:'networkidle'});await second.locator('#pr-multi').check();await second.locator(`#pr-set-list option[value="${id}"]`).waitFor({state:'attached'});await second.locator('#pr-set-list').selectOption(id);await second.locator('#pr-set-open').click();await second.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='printSet'&&!window.__setsTest.multiPrint.busy);
-  assert.deepEqual(await second.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21,13]);assert.equal(await second.locator('[data-set-cover="1"]').inputValue(),'COMMON COVER');
-  await second.locator('#pr-set-name').fill('Updated on other device');await second.locator('#pr-set-save').click();await second.waitForFunction(()=>window.__setsTest.multiPrint.revision===2&&!window.__setsTest.multiPrint.busy);
-  await page.locator('#pr-set-name').fill('Stale local edit');await page.locator('#pr-set-save').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&window.__setsTest.multiPrint.error.includes('別端末'));
+  const second=await context.newPage();await second.goto(origin,{waitUntil:'networkidle'});await second.locator('#pr-multi').check();await second.locator(`#pr-set-list option[value="${id}"]`).waitFor({state:'attached'});await openModal(second);await second.locator('#pr-set-list').selectOption(id);await second.locator('#pr-set-open').click();await second.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='printSet'&&!window.__setsTest.multiPrint.busy);await closeModal(second);
+  assert.deepEqual(await second.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21,13]);assert.equal(await second.locator('[data-set-cover="1"]').textContent(),'COMMON COVER');
+  await setName('Updated on other device',second);await openModal(second);await second.locator('#pr-set-save').click();await second.waitForFunction(()=>window.__setsTest.multiPrint.revision===2&&!window.__setsTest.multiPrint.busy);
+  await setName('Stale local edit');await openModal();await page.locator('#pr-set-save').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&window.__setsTest.multiPrint.error.includes('別端末'));
   assert.equal(await page.locator('#pr-set-name').inputValue(),'Stale local edit');assert.equal((await f.call('user-a',id)).body.print_set.name,'Updated on other device');assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
-  await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();await page.waitForFunction(()=>window.__setsTest.multiPrint.revision===2&&!window.__setsTest.multiPrint.busy);
+  await openModal();await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();await page.waitForFunction(()=>window.__setsTest.multiPrint.revision===2&&!window.__setsTest.multiPrint.busy);await closeModal();
+  holdSetRead=true;setReadHeld=false;await openModal();await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();while(!setReadHeld)await new Promise(r=>setTimeout(r,10));
+  await page.locator('#pr-set-modal [role="dialog"]').press('Escape');assert.equal(await page.locator('#pr-set-modal').isVisible(),true,'Pending read cannot close or change drafts');assert.equal(await page.locator('#pr-multi').isDisabled(),true);
+  holdSetRead=false;releaseSetRead();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy);await closeModal();
   console.log('QA second device conflict ready');
   // Real print HTML and PDF: one cover, Q exams then A exams, distinct pages.
   await page.locator('#btn-print-run').click();await page.waitForFunction(()=>window.__prints===1);assert.equal(await page.locator('#print-area .print-cover').count(),1);
@@ -100,43 +148,43 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   const beforePrints=await page.evaluate(()=>window.__prints||0);
   await page.evaluate(()=>{window.__originalFonts=document.fonts.ready;window.__heldFonts=new Promise(resolve=>window.__releaseFonts=resolve);Object.defineProperty(document.fonts,'ready',{configurable:true,get:()=>window.__heldFonts});});
   await page.locator('#btn-print-run').click();await page.evaluate(()=>window.__setsTest.runPrint());
-  await page.locator('[data-set-cover="0"]').fill('Changed during preparation');await page.evaluate(()=>window.__releaseFonts());
+  await cover('0','Changed during preparation');await page.evaluate(()=>window.__releaseFonts());
   await page.waitForFunction(()=>!document.getElementById('btn-print-run').disabled);assert.equal(await page.evaluate(()=>window.__prints||0),beforePrints);
-  await page.evaluate(()=>Object.defineProperty(document.fonts,'ready',{configurable:true,get:()=>window.__originalFonts}));await page.locator('[data-set-cover="0"]').fill('');
+  await page.evaluate(()=>Object.defineProperty(document.fonts,'ready',{configurable:true,get:()=>window.__originalFonts}));await cover('0','');
   // Borderline and maximum-length cover text must stay entirely on page one.
   await page.locator('#pr-name-field').check();
   for (const length of [30,60,120]) {
-   for (let i=0;i<3;i++)await page.locator(`[data-set-cover="${i}"]`).fill(['上','中','下'][i].repeat(length));
-   await page.locator('[data-set-cover="time"]').fill('時'.repeat(120));
+   for (let i=0;i<3;i++)await cover(i,['上','中','下'][i].repeat(length));
+   await cover('time','時'.repeat(120));
    await page.locator('#btn-print-run').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&!document.getElementById('btn-print-run').disabled);
    const longPdf=path.join(evidence,`cover-${width}-${length}.pdf`);await page.pdf({path:longPdf,format:'A4',printBackground:true});
    const longPages=JSON.parse(execFileSync('python3',['-c',"import json,sys;from pypdf import PdfReader;print(json.dumps([p.extract_text() for p in PdfReader(sys.argv[1]).pages]))",longPdf],{encoding:'utf8'}));
    assert.equal(longPages.length,7);for(const marker of ['上','中','下'])assert.equal([...longPages[0]].filter(x=>x===marker).length,length);assert.equal([...longPages[0]].filter(x=>x==='時').length,121);
    for(const text of longPages.slice(1))assert.ok(!/[上中下時]/.test(text),'Cover never spills into exam pages');
   }
-  for(let i=0;i<3;i++)await page.locator(`[data-set-cover="${i}"]`).fill(i===1?'COMMON COVER':'');await page.locator('[data-set-cover="time"]').fill('各60分');
+  for(let i=0;i<3;i++)await cover(i,i===1?'COMMON COVER':'');await cover('time','各60分');
   await page.locator('#pr-name-field').uncheck();
   // Answer-only and problem-only reuse section controls.
   for(const type of ['本文','設問'])await page.locator(`[data-prsec="${type}"]`).uncheck();assert.equal(await page.locator('#print-preview .print-exam-block').count(),3);assert.ok(!(await page.locator('#print-preview').innerText()).includes('Q11'));
   for(const type of ['本文','設問'])await page.locator(`[data-prsec="${type}"]`).check();for(const type of ['解答','解説'])await page.locator(`[data-prsec="${type}"]`).uncheck();assert.equal(await page.locator('#print-preview .print-exam-block').count(),3);
   for(const type of ['解答','解説'])await page.locator(`[data-prsec="${type}"]`).check();
-  await page.locator('#pr-set-archive').click();await page.waitForFunction(()=>window.__setsTest.multiPrint.archived&&!window.__setsTest.multiPrint.busy);assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
-  await page.locator('#pr-set-archive').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.archived&&!window.__setsTest.multiPrint.busy);
+  await openModal();await page.locator('#pr-set-archive').click();await page.waitForFunction(()=>window.__setsTest.multiPrint.archived&&!window.__setsTest.multiPrint.busy);assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
+  await openModal();await page.locator('#pr-set-archive').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.archived&&!window.__setsTest.multiPrint.busy);
   // Failed/missing exam blocks entire output; delayed stale results cannot replace a changed selection.
   failExam=21;await page.evaluate(()=>window.__setsTest.loadMultiPrint());await page.waitForFunction(()=>window.__setsTest.multiPrint.error.includes('21'));assert.equal(await page.locator('#btn-print-run').isDisabled(),true);assert.equal(await page.locator('#print-preview .print-cover').count(),0);
   failExam=null;await page.locator('#pr-multi-retry').click();await waitReady();
   holdId=13;examHeld=false;await page.evaluate(()=>{window.__setsTest.loadMultiPrint();});while(!examHeld)await new Promise(r=>setTimeout(r,10));
-  await page.locator('[data-set-remove="13"]').click();await waitReady();holdId=null;releaseExam();await page.waitForTimeout(100);assert.deepEqual(await page.evaluate(()=>window.__setsTest.state.printExam.exams.map(e=>e.id)),[11,21]);
+  await move('[data-set-remove="13"]');holdId=null;releaseExam();await page.waitForTimeout(100);assert.deepEqual(await page.evaluate(()=>window.__setsTest.state.printExam.exams.map(e=>e.id)),[11,21]);
   // Selecting all/none within a year does not clear other universities.
   await page.locator('[data-multi-year="[11,13]"]').check();await waitReady();assert.deepEqual((await page.evaluate(()=>window.__setsTest.multiPrint.ids)).sort(),[11,13,21]);
   await page.locator('[data-multi-year="[11,13]"]').uncheck();await waitReady();assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[21]);
-  await page.locator('#pr-multi-clear').click();assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
+  await openModal();await page.locator('#pr-multi-clear').click();await closeModal();assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
   // OFF returns to existing single exam and favorite output with no shared cover.
-  await page.locator('#pr-multi').uncheck();assert.equal(await page.locator('#pr-multi-panel').isVisible(),false);assert.equal(await page.locator('[data-multi-exam="11"]').isVisible(),false,'OFF hides multi checkboxes');await page.locator('.tree-row-sched[data-uni="合成大学"][data-year="2026"][data-sched="前期"]').click();await page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='exam');assert.equal(await page.locator('#print-preview .pc-duration').innerText(),'時間：60分');assert.equal(await page.locator('#print-preview .print-cover').count(),1);
+  await closeModal();await page.locator('#pr-multi').uncheck();assert.equal(await page.locator('#pr-set-manage').isVisible(),false);assert.equal(await page.locator('[data-multi-exam="11"]').isVisible(),false,'OFF hides multi checkboxes');await page.locator('.tree-row-sched[data-uni="合成大学"][data-year="2026"][data-sched="前期"]').click();await page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='exam');assert.equal(await page.locator('#print-preview .pc-duration').innerText(),'時間：60分');assert.equal(await page.locator('#print-preview .print-cover').count(),1);
   await page.locator('.tree-row-fav').click();await page.locator('[data-favfolder="1"]').click();await page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='favFolder');assert.equal(await page.locator('#print-preview .pc-uni').innerText(),'Fixture favorites');
-  await page.locator('#pr-multi').check();await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&window.__setsTest.multiPrint.revision);
+  await page.locator('#pr-multi').check();await openModal();await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&window.__setsTest.multiPrint.revision);await closeModal();
   await page.evaluate(()=>Auth.switchUser('user-b'));await page.waitForFunction(()=>window.__setsTest.multiPrint.uid==='user-b');
-  assert.equal(await page.locator('#pr-set-name').inputValue(),'');assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[]);assert.equal(await page.locator('[data-set-cover="1"]').inputValue(),'印刷セット');assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
+  assert.equal(await page.locator('#pr-set-name').inputValue(),'');assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[]);assert.equal(await page.locator('[data-set-cover="1"]').count(),0);assert.equal(await page.evaluate(()=>window.__setsTest.multiPrint.cover.lines[1]),'印刷セット');assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
   assert.deepEqual(errors,[]);assert.equal(f.sql.prepare('SELECT count(*) n FROM favorites').get().n,1);assert.equal(f.sql.prepare('SELECT problem_text FROM questions').get().problem_text,'source');
   console.log(`PASS ${width}px: selection/year/order, shared cover, SQLite re-open/second device/conflict, archive/restore, failures/stale fetch, single/favorite regressions, 7-page A4 PDF`);
   await context.close();f.close();
