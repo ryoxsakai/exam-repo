@@ -7,7 +7,7 @@ const root=path.resolve(__dirname,'..'),origin='https://exam-print-sets.test',ev
 const exams=[{id:11,university_id:1,university_name:'合成大学',year:2026,schedule:'前期'},{id:12,university_id:1,university_name:'合成大学',year:2025,schedule:'前期'},{id:13,university_id:1,university_name:'合成大学',year:2026,schedule:'後期'},{id:21,university_id:2,university_name:'別大学',year:2026,schedule:'前期'}];
 const questions=id=>[{exam_id:id,question_number:1,category:'長文',problem_text:`{{本文}}\nQ${id} Synthetic passage with enough words to check printing.\n{{設問}}\n[[35]] Choose a word.`,answer_text:`A${id} [[35]] ((1))`,commentary_text:`C${id} Test commentary.`}];
 const auth=`window.__fixtureUser={displayName:'Fixture',email:'fixture@example.test',uid:'user-a'};window.__authCallbacks=[];window.Auth={init(){},onChange(cb){__authCallbacks.push(cb);cb(__fixtureUser);},getCurrentUser(){return __fixtureUser;},getIdToken(){return Promise.resolve(__fixtureUser?'fixture-'+__fixtureUser.uid:null);},switchUser(uid){__fixtureUser=uid?{displayName:'Fixture',email:'fixture@example.test',uid}:null;__authCallbacks.forEach(cb=>cb(__fixtureUser));},signIn(){return Promise.resolve();},signOut(){this.switchUser(null);}};`;
-const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrintPreview,refreshPrintSets};';
+const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrintPreview,refreshPrintSets,buildPrintHtml};';
 (async()=>{
  const deadline=setTimeout(()=>{console.error('Browser test exceeded 180 seconds');process.exit(1);},180000);
  const browser=await chromium.launch({headless:!process.env.HEADED,...(process.env.PANEL_CHROMIUM?{executablePath:process.env.PANEL_CHROMIUM}:{})});
@@ -113,6 +113,25 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await page.locator('[data-prq="11:1"]').uncheck();assert.ok(!(await page.locator('#print-preview').innerText()).includes('Q11'));assert.ok((await page.locator('#print-preview').innerText()).includes('Q21'));
   await move('[data-set-move="1"][data-step="-1"]');assert.equal(await page.locator('[data-prq="11:1"]').isChecked(),false,'Reorder retains excluded question');await move('[data-set-move="0"][data-step="1"]');await page.locator('[data-prq="11:1"]').check();
   const ordered=await page.locator('#print-preview .print-exam-block').allTextContents();assert.equal(ordered.length,6);for(const [i,marker] of ['Q11','Q21','Q13','A11','A21','A13'].entries())assert.ok(ordered[i].includes(marker));
+  const expectedHeads=['2026 合成大学 前期','2026 別大学 前期','2026 合成大学 後期'];
+  assert.deepEqual(await page.locator('#print-preview .print-exam-head').allTextContents(),expectedHeads.concat(expectedHeads));
+  const assertHeadingColor=async(root)=>{
+   const colors=await page.locator(root+' .print-exam-block').evaluateAll(blocks=>blocks.map(b=>({head:getComputedStyle(b.querySelector('.print-exam-head')).color,line:getComputedStyle(b.querySelector('.print-exam-head')).borderBottomColor,question:getComputedStyle(b.querySelector('.print-q-head')).color})));
+   assert.equal(colors.length,6);for(const c of colors){assert.equal(c.head,c.question);assert.equal(c.line,c.question);}return colors;
+  };
+  const originalColors=await assertHeadingColor('#print-preview');
+  await page.evaluate(()=>document.documentElement.style.setProperty('--emerald-dark','#8a2d3b'));
+  const themedColors=await assertHeadingColor('#print-preview');assert.notEqual(themedColors[0].head,originalColors[0].head,'Heading follows the existing question color token');
+  await page.evaluate(()=>document.documentElement.style.removeProperty('--emerald-dark'));
+  // Missing schedule values and whitespace preserve display names and never alter exam data.
+  for(const schedule of ['',null,undefined,'  ']){
+   const result=await page.evaluate(schedule=>{
+    const ex=JSON.parse(JSON.stringify(window.__setsTest.state.printExam));ex.exams=[ex.exams[0]];ex.exams[0].schedule=schedule;ex.exams[0].university_name='表示名 <大学> & 名称';const before=JSON.stringify(ex);
+    const html=window.__setsTest.buildPrintHtml(ex,{cover:false,side:'both'},false),doc=new DOMParser().parseFromString(html,'text/html');
+    return {heads:Array.from(doc.querySelectorAll('.print-exam-head'),n=>n.textContent),unchanged:JSON.stringify(ex)===before};
+   },schedule);
+   assert.deepEqual(result.heads,['2026 表示名 <大学> & 名称','2026 表示名 <大学> & 名称']);assert.equal(result.unchanged,true);
+  }
   // Busy write locks all draft edits and both print buttons; repeated save creates one row.
   console.log('QA preview/order ready');holdSave=true;await openModal();await page.locator('#pr-set-save').click();await page.waitForFunction(()=>document.getElementById('pr-set-name').disabled);while(!saveHeld)await new Promise(r=>setTimeout(r,10));
   assert.equal(await page.locator('#pr-multi').isDisabled(),true);assert.equal(await page.locator('#btn-print-run').isDisabled(),true);assert.equal(await page.locator('#btn-print-run-2').isDisabled(),true);
@@ -140,9 +159,11 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   console.log('QA second device conflict ready');
   // Real print HTML and PDF: one cover, Q exams then A exams, distinct pages.
   await page.locator('#btn-print-run').click();await page.waitForFunction(()=>window.__prints===1);assert.equal(await page.locator('#print-area .print-cover').count(),1);
+  assert.deepEqual(await page.locator('#print-area .print-exam-head').allTextContents(),expectedHeads.concat(expectedHeads));
+  await page.emulateMedia({media:'print'});await assertHeadingColor('#print-area');await page.emulateMedia({media:null});
   const pdfPath=path.join(evidence,`multi-${width}.pdf`);await page.pdf({path:pdfPath,format:'A4',printBackground:true});
   const pdfText=execFileSync('python3',['-c',"import json,sys;from pypdf import PdfReader;print(json.dumps([p.extract_text() for p in PdfReader(sys.argv[1]).pages]))",pdfPath],{encoding:'utf8'});
-  const pages=JSON.parse(pdfText);assert.equal(pages.length,7);assert.ok(pages[0].includes('COMMON COVER'));for(const [i,marker] of ['Q11','Q21','Q13','A11','A21','A13'].entries())assert.ok(pages[i+1].includes(marker),`PDF page ${i+2} contains ${marker}`);
+  const pages=JSON.parse(pdfText);assert.equal(pages.length,7);assert.ok(pages[0].includes('COMMON COVER'));for(const [i,marker] of ['Q11','Q21','Q13','A11','A21','A13'].entries()){assert.ok(pages[i+1].includes(marker),`PDF page ${i+2} contains ${marker}`);assert.ok(pages[i+1].normalize('NFKC').includes(expectedHeads[i%3]),`PDF page ${i+2} keeps year/university/schedule heading`);}
   fs.writeFileSync(path.join(evidence,`multi-${width}-pages.json`),JSON.stringify(pages,null,2));await page.screenshot({path:path.join(evidence,`desktop-mobile-${width}.png`),fullPage:true});
   // Repeated clicks and an edited cover during font loading must not print old output.
   const beforePrints=await page.evaluate(()=>window.__prints||0);
