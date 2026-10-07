@@ -329,7 +329,8 @@
         renderPrintPreview();
       });
     }
-    [["pr-optimize-answers", "getPrintOptimizeAnswers", "setPrintOptimizeAnswers"],
+    [["pr-answer-exam-break", "getPrintAnswerExamPageBreak", "setPrintAnswerExamPageBreak"],
+     ["pr-optimize-answers", "getPrintOptimizeAnswers", "setPrintOptimizeAnswers"],
      ["pr-compact-commentary", "getPrintCompactCommentary", "setPrintCompactCommentary"]].forEach(function (setting) {
       var control = el(setting[0]);
       if (!control) return;
@@ -2428,6 +2429,7 @@
       qSubtitle: el("pr-qsubtitle") ? el("pr-qsubtitle").checked : false,
       lineNumbers: (el("pr-linenum") && el("pr-linenum").checked) || (el("pr-line-refs") && el("pr-line-refs").checked),
       lineReferences: el("pr-line-refs") && el("pr-line-refs").checked,
+      answerExamBreak: el("pr-answer-exam-break") ? el("pr-answer-exam-break").checked : false,
       optimizeAnswers: el("pr-optimize-answers") ? el("pr-optimize-answers").checked : false,
       compactCommentary: el("pr-compact-commentary") ? el("pr-compact-commentary").checked : false,
       optimizeChoices: el("pr-optimize-choices") ? el("pr-optimize-choices").checked : false,
@@ -2774,6 +2776,7 @@
   // プレビュー(.print-doc)と実際の印刷(#print-area.print-out)で同じ指定を使う。
   function printDocClasses(opts) {
     return "fs-" + Store.getPrintFontSize() + " lh-" + Store.getPrintLineHeight() +
+      (opts && opts.answerExamBreak ? " answer-exam-break" : "") +
       (opts && opts.qBreakQ ? " qbreak-q" : "") +
       (opts && opts.qBreakA ? " qbreak-a" : "") +
       (opts && opts.sBreakQ ? " sbreak-q" : "") +
@@ -3415,7 +3418,7 @@
         var minutes = exam.duration && exam.duration.effective_minutes;
         var time = opts.duration && Number.isInteger(minutes) && minutes >= 1 && minutes <= 1440
           ? '<span class="print-exam-time">' + esc(minutes) + '分</span>' : '';
-        if (body) html += '<section class="print-exam-block"><h2 class="print-exam-head"><span class="print-exam-label">' + esc(printExamLabel(exam)) + '</span>' + time + '</h2>' + body + '</section>';
+        if (body) html += '<section class="print-exam-block print-exam-' + (answerSide ? 'a' : 'q') + '"><h2 class="print-exam-head"><span class="print-exam-label">' + esc(printExamLabel(exam)) + '</span>' + time + '</h2>' + body + '</section>';
       });
     });
     return html;
