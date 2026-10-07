@@ -23,6 +23,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+JP:wght@400;500;600;700;800&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
   <link rel="stylesheet" href="assets/css/main-20261007printlines.css" />
+  <link rel="stylesheet" href="assets/css/print-choices.css?v=20261007a" />
   <link rel="stylesheet" href="assets/css/image-layout.css?v=20260923b" />
 </head>
 <body>
@@ -238,6 +239,8 @@
             <input type="checkbox" id="pr-linenum"> <span>本文に5行ごとの行番号をつける</span></label>
           <label class="check-inline" title="設問の引用語句を本文から特定し、印刷時の行番号へ更新します。本文の行番号も表示します。特定できない参照は元の番号を残し、確認メッセージを表示します。">
             <input type="checkbox" id="pr-line-refs"> <span>設問内の行番号を本文に合わせて自動更新</span></label>
+          <label class="check-inline" title="選択肢間の空白行を詰め、文字幅に合わせて横並び・段組み・縦並びに整えます。7択は3列で左端を揃えます。元データは変更しません">
+            <input type="checkbox" id="pr-optimize-choices"> <span>選択肢表示の最適化</span></label>
           <label class="check-inline" title="英作文カテゴリの各大問の末尾に、四角で囲んだ罫線付きの解答スペースをつけます">
             <input type="checkbox" id="pr-writing-space"> <span>英作文に解答欄をつける</span></label>
           <label class="check-inline"><span>英作文の解答欄の行数</span>
@@ -487,7 +490,7 @@
   <!-- Firebase Authentication（Googleログイン用。Firestore等は未使用） -->
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="assets/js/store.js?v=20261004duration"></script>
+  <script src="assets/js/store.js?v=20261007choices"></script>
   <script src="assets/js/auth.js?v=20260706a"></script>
   <script src="assets/js/api.js?v=20261006printsets"></script>
   <script src="assets/js/ui.js?v=20260726a"></script>
@@ -495,7 +498,7 @@
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260923a"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/viewer.js?v=20261007blankorder"></script>
+  <script src="assets/js/viewer.js?v=20261007choices"></script>
   <script src="assets/js/webmcp.js?v=20260826a"></script>
 </body>
 </html>
