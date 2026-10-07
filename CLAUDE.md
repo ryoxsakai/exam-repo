@@ -249,3 +249,6 @@ schemaは既存Workerデプロイに含まれ、認証済み印刷セットAPI�
 印刷セットの試験表示は共通 `printExamLabel` により「2021 大阪医科薬科 前期」形式（空の日程は省略、空白を整理）。セット選択一覧・読込後の一覧・印刷見出し・大問選択で共用し、DBと大学/年度ツリーの表示は変えない。
 
 PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-line-numbers-browser.cjs`（PyMuPDF 1.26.6を使用）。PC/mobile、単一/セット/お気に入り、全5文字サイズ/行間設定、複数フォント、複数本文/段落とページまたぎ、遅延フォント/画像、再印刷を合成通信だけで確認する。PDFの文字座標とベースラインから5行ごとの対応・欠落/重複・既存左余白内の位置を検証し、番号glyphのラスタ画素も確認。ON/OFFおよび従来margin指定との本文/見出し/表紙の文字座標・折り返し・ページ数の一致を確認し、PDF/PNG/JSONを `/tmp/exam-print-sets-qa/line-numbers` に保存する。
+
+### 印刷セットの解答区切り（2026-10-08）
+解答面の大学・年度・方式区切りの改ページは既定OFF。設定モーダルの「解答面：大学ごとに改ページ（印刷セット）」でONにすると従来同様各試験を新ページにする。`exam_print_answer_exam_break` に端末保存し、未設定はOFF。保存セットの形式は変えず、問題編と問題→解答の境界改ページ、単一試験・お気に入りは従来通り。`test-print-sets-browser.cjs` でPC/mobile、端末再読込、既存保存セット、最適化ON/OFF、両面/解答のみの実A4 PDFを検証。

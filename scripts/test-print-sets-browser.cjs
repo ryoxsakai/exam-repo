@@ -223,6 +223,41 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await page.locator('#pr-set-modal [role="dialog"]').press('Escape');assert.equal(await page.locator('#pr-set-modal').isVisible(),true,'Pending read cannot close or change drafts');assert.equal(await page.locator('#pr-multi').isDisabled(),true);
   holdSetRead=false;releaseSetRead();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy);await closeModal();
   console.log('QA second device conflict ready');
+  // Existing saved sets contain no new option: default remains OFF in this device.
+  assert.equal(await page.locator('#pr-answer-exam-break').isChecked(),false);
+  const readPages=pdf=>JSON.parse(execFileSync('python3',['-c',"import json,sys;from pypdf import PdfReader;print(json.dumps([p.extract_text() for p in PdfReader(sys.argv[1]).pages]))",pdf],{encoding:'utf8'}));
+  for(const optimized of [false,true]) {
+   await checkPrint('#pr-optimize-answers',optimized);
+   for(const breaks of [false,true]) {
+    await checkPrint('#pr-answer-exam-break',breaks);
+    await page.evaluate(()=>window.__setsTest.runPrint());await page.waitForFunction(()=>!document.getElementById('btn-print-run').disabled);
+    const pdf=path.join(evidence,`answer-break-${width}-${optimized}-${breaks}.pdf`);await page.pdf({path:pdf,format:'A4',printBackground:true});
+    const texts=readPages(pdf);assert.equal(texts.length,breaks?7:5);
+    for(const [i,m] of ['Q11','Q21','Q13'].entries())assert.ok(texts[i+1].includes(m),'Question boundaries unchanged');
+    for(const [i,m] of ['A11','A21','A13'].entries())assert.ok(texts[breaks?i+4:4].includes(m),'Answer boundary follows option');
+    assert.ok(texts.every(t=>t.trim()),'No empty PDF page');
+   }
+  }
+  await checkPrint('#pr-optimize-answers',false);
+  // Long answers cross A4 pages; each exam heading must stay with its first answer.
+  const originalCommentary=await page.evaluate(()=>window.__setsTest.state.printExam.exams.map(e=>e.questions[0].commentary_text));
+  for(const optimized of [false,true])for(const breaks of [false,true]) {
+   await checkPrint('#pr-optimize-answers',optimized);await checkPrint('#pr-answer-exam-break',breaks);
+   await page.evaluate(()=>{window.__setsTest.state.printExam.exams.forEach(e=>{e.questions[0].commentary_text=Array.from({length:75},(_,i)=>'Long explanation line '+i+' keeps flowing across pages without blank sheets.').join('\n');});});
+   await page.evaluate(()=>window.__setsTest.runPrint());await page.waitForFunction(()=>!document.getElementById('btn-print-run').disabled);
+   const pdf=path.join(evidence,`answer-long-${width}-${optimized}-${breaks}.pdf`);await page.pdf({path:pdf,format:'A4',printBackground:true});
+   const texts=readPages(pdf);assert.ok(texts.length>7);assert.ok(texts.every(t=>t.trim()),'Long answer has no blank page');
+   for(const [i,m] of ['A11','A21','A13'].entries()) {
+    const answerPage=texts.find(t=>t.includes(m));assert.ok(answerPage.normalize('NFKC').replace(/\s+/g,' ').includes(expectedHeads[i]),'Exam heading stays with its first answer');
+   }
+  }
+  await page.evaluate(values=>window.__setsTest.state.printExam.exams.forEach((e,i)=>e.questions[0].commentary_text=values[i]),originalCommentary);
+  await checkPrint('#pr-optimize-answers',false);await checkPrint('#pr-answer-exam-break',true);
+  // Test reload through Store without disturbing the existing modal/history scenario.
+  assert.equal(await page.evaluate(()=>Store.getPrintAnswerExamPageBreak()),true);
+  const storagePage=await context.newPage();await storagePage.goto(origin,{waitUntil:'networkidle'});
+  assert.equal(await storagePage.locator('#pr-answer-exam-break').isChecked(),true);await storagePage.close();await page.bringToFront();
+  await page.evaluate(()=>window.__prints=0);
   // Real print HTML and PDF: one cover, Q exams then A exams, distinct pages.
   await page.locator('#btn-print-run').click();await page.waitForFunction(()=>window.__prints===1);assert.equal(await page.locator('#print-area .print-cover').count(),1);assert.equal(await page.locator('#print-area .print-modal, #print-area input, #print-area button').count(),0,'Print output contains no dialogs/controls');
   assert.deepEqual(await page.locator('#print-area .print-exam-label').allTextContents(),expectedHeads.concat(expectedHeads));
@@ -254,6 +289,13 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   console.log('QA cover lengths ready');
   // Answer-only and problem-only reuse section controls.
   for(const type of ['本文','設問'])await checkPrint(`[data-prsec="${type}"]`,false);assert.equal(await page.locator('#print-preview .print-exam-block').count(),3);assert.ok(!(await page.locator('#print-preview').innerText()).includes('Q11'));
+  await checkPrint('#pr-cover',false);
+  for(const breaks of [false,true]) {
+   await checkPrint('#pr-answer-exam-break',breaks);await page.evaluate(()=>window.__setsTest.runPrint());await page.waitForFunction(()=>!document.getElementById('btn-print-run').disabled);
+   const pdf=path.join(evidence,`answer-only-${width}-${breaks}.pdf`);await page.pdf({path:pdf,format:'A4',printBackground:true});
+   const texts=readPages(pdf);assert.equal(texts.length,breaks?3:1);for(const [i,m] of ['A11','A21','A13'].entries())assert.ok(texts[breaks?i:0].includes(m));
+  }
+  await checkPrint('#pr-cover',true);
   for(const type of ['本文','設問'])await checkPrint(`[data-prsec="${type}"]`);for(const type of ['解答','解説'])await checkPrint(`[data-prsec="${type}"]`,false);assert.equal(await page.locator('#print-preview .print-exam-block').count(),3);
   for(const type of ['解答','解説'])await checkPrint(`[data-prsec="${type}"]`);
   await setName('Retry save draft');failSave=true;await page.locator('#pr-set-save').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&window.__setsTest.multiPrint.error);assert.equal(await page.locator('#pr-set-name').inputValue(),'Retry save draft');assert.equal(await page.locator('#pr-set-modal').isVisible(),true);await page.locator('#pr-set-save').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&!window.__setsTest.multiPrint.error);await closeAny();
