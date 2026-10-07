@@ -44,6 +44,7 @@ jobs:
           node scripts/test-print-name-field.cjs --browser
           node scripts/test-print-duration-browser.cjs
           node scripts/test-print-line-numbers-browser.cjs
+          node scripts/test-print-renumber-browser.cjs
       - if: always()
         uses: actions/upload-artifact@v4
         with:

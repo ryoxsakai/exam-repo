@@ -226,6 +226,12 @@ schemaは既存Workerデプロイに含まれ、認証済み印刷セットAPI�
 
 検証: `node scripts/test-print-sets.cjs` は隔離実SQLite再open・他ユーザー・同時版競合・アーカイブ/復元を確認。`node scripts/test-print-sets-browser.cjs` は全通信を合成データに差し替え、Mac ChromeのPC/mobileと7ページA4 PDFを確認（`PANEL_CHROMIUM` / `HEADED=1`に対応、PDF抽出はPython pypdf）。既存の印刷時間・番号・行番号・セクション保存・お気に入り・OAuthの回帰も行う。`.github/workflows/print-sets-test.yml`で同じ隔離テストを実行し、PDF/スクリーンショットを保存する。
 
+### 小問採番の番号体系（2026-10-07）
+
+`{{問N}}`/行頭`問N`と裸`{{N}}`/空所`[[N]]`は別の対応表を持つ。問題/設問欄に小問見出しがある場合はその表示順を基準とし、本文の参照や下位`(4)`が先に番号を消費しない。同じ番号の繰返しは同じ変換先、各大問で1から開始する。名前付き小問を持つ問題の行頭括弧/区切り番号は下位番号として維持し、同番号の空所があっても上書きしない。名前付き小問がない旧形式の括弧/区切り番号は従来どおり採番する。リード文・解答・解説では対応する番号体系を共有し、DB原文と設問の順序は変えない。
+
+`PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-renumber-browser.cjs`は全通信を合成fixtureへ差替え、PC/mobile・単年度/複数/お気に入り・大問ごとの開始番号・OFF/ON反復・除外・原文不変とA4 PDF内バッジ順を確認する。PDF/HTML/PNG/JSONを`/tmp/exam-print-sets-qa/renumber`へ保存。`EXAM_RENUMBER_FIXTURES=/tmp/exam-readonly-970.json,/tmp/exam-readonly-42.json`でreadonly取得済み実問題も隔離して確認できる（CIは合成fixtureのみ）。`RENUMBER_BASELINE_REF=1eeee2e6b003d0b2ac407d7ef07c5aa0adb88790`では旧不具合を再現し、ONの順序検査で失敗する。
+
 ### 印刷モーダル（2026-10-06）
 
 通常画面は「印刷設定」「印刷する大問」の入口と選択問数のみ。既存コントロールを各独立モーダルに配置し、値・localStorage・表紙編集・プレビュー/印刷のHTMLは共用する。印刷設定と大問選択は即時反映、印刷セットは保存まで下書き。セット画面は現在のセット/保存済みセットを分離し、新規保存と更新を明示する。

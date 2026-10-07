@@ -1,7 +1,8 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert'),path=require('path');
 const root=path.resolve(__dirname,'..');
 const ctx={Difficulty:{BAND_LABEL:{}},document:{addEventListener(){}},saved:{},localStorage:{getItem:k=>ctx.saved[k]??null,setItem:(k,v)=>ctx.saved[k]=v},UI:{el:()=>null,escapeHtml:s=>String(s)}};ctx.window=ctx;vm.createContext(ctx);
-for(const file of ['assets/js/store.js','assets/js/markup-20261001a.js'])vm.runInContext(fs.readFileSync(path.join(root,file),'utf8'),ctx);
+const markupFile=fs.readFileSync(path.join(root,'index.html'),'utf8').match(/src="(assets\/js\/markup[^"?]*\.js)/)[1];
+for(const file of ['assets/js/store.js',markupFile])vm.runInContext(fs.readFileSync(path.join(root,file),'utf8'),ctx);
 vm.runInContext(fs.readFileSync(path.join(root,'assets/js/viewer.js'),'utf8').replace('document.addEventListener("DOMContentLoaded", init);','window.testPrint={renumberPrintSections,buildPrintHtml,state};'),ctx);
 const renumber=secs=>JSON.parse(JSON.stringify(ctx.testPrint.renumberPrintSections(secs)));
 assert.equal(ctx.Store.getPrintRenumber(),false);ctx.Store.setPrintRenumber(true);assert.equal(ctx.Store.getPrintRenumber(),true);
@@ -12,6 +13,41 @@ assert.equal(r[0].text,'[1] In 1966 [[1]] and [[--2--]].  ##word::問7##\n![問7
 assert.equal(r[1].text,'{{問1}} [[1]]\n((1)) First choice\n((2)) Second choice\n{{問2}} [[2]]');
 assert.equal(r[2].text,'問1：[[1]] = 2\n問2：[[2]] = 1');
 assert.equal(r[3].text,'問1の説明。大問7はそのまま。問2も参照。');
+// A passage's (4) must not allocate 問4 before the actual question headings.
+// This reproduces the reported 2, 3, 4, 1 without changing any source order.
+const outOfOrder=[{type:'問題',text:'(4)__Passage reference.__\n{{問1}} First\n{{問2}} Second\n{{問3}} Third\n{{問4}} Fourth'},
+  {type:'解答',text:'{{問1}} A\n{{問2}} B\n{{問3}} C\n{{問4}} D'},
+  {type:'解説',text:'問4の説明。\n(4) Passage explanation.'}];
+assert.deepEqual([...renumber(outOfOrder)[0].text.matchAll(/\{\{問(\d+)\}\}/g)].map(m=>+m[1]),[1,2,3,4]);
+assert.equal(renumber(outOfOrder)[0].text,outOfOrder[0].text);
+assert.equal(renumber(outOfOrder)[1].text,outOfOrder[1].text);
+// Real-data shape: IUHW 2026 IV/V has (1), (4), (6) below 問1.
+const nested=renumber([{type:'本文',text:'__(1) first__ and __(4) fourth__.'},
+  {type:'設問',text:'{{問7}} First\n(1)\n((1)) one\n(4)\n((4)) four\n(6)\n{{問8}} Second\n(2)\n(3)\n(5)\n{{問9}} Third\n{{問10}} Fourth'},
+  {type:'解答',text:'{{問7}}(1)((2)) (4)((3)) (6)((4))\n{{問8}}(2)((1))\n{{問9}} A\n{{問10}} B'},
+  {type:'解説',text:'問10の説明。\n(4) Fourth reference.'}]);
+assert.deepEqual([...nested[1].text.matchAll(/\{\{問(\d+)\}\}/g)].map(m=>+m[1]),[1,2,3,4]);
+assert(nested[1].text.includes('(4)\n((4)) four\n(6)'));
+assert.equal(nested[2].text,'{{問1}}(1)((2)) (4)((3)) (6)((4))\n{{問2}}(2)((1))\n{{問3}} A\n{{問4}} B');
+assert.equal(nested[3].text,'問4の説明。\n(4) Fourth reference.');
+// Plain numeric badges are a separate sequence from the named question groups.
+const namedAndNumeric=renumber([{type:'設問',text:'{{問7}} Group one\n{{66}} Child one\n{{68}} Child two\n{{問8}} Group two\n{{70}} Child three'},
+  {type:'解答',text:'{{問7}} {{66}}((4)) {{68}}((2))\n{{問8}} {{70}}((1))'}]);
+assert.equal(namedAndNumeric[0].text,'{{問1}} Group one\n{{1}} Child one\n{{2}} Child two\n{{問2}} Group two\n{{3}} Child three');
+assert.equal(namedAndNumeric[1].text,'{{問1}} {{1}}((4)) {{2}}((2))\n{{問2}} {{3}}((1))');
+// A lower-level parenthesis also stays unchanged when a blank uses its number.
+const lowerBlankCollision=renumber([{type:'本文',text:'[[4]] then [[1]].'},
+  {type:'設問',text:'{{問7}} Group\n(4) Lower four\n(1) Lower one'},
+  {type:'解答',text:'{{問7}}(4) A\n(4) B\n[[4]] C'}]);
+assert.equal(lowerBlankCollision[0].text,'[[1]] then [[2]].');
+assert.equal(lowerBlankCollision[1].text,'{{問1}} Group\n(4) Lower four\n(1) Lower one');
+assert.equal(lowerBlankCollision[2].text,'{{問1}}(4) A\n(4) B\n[[1]] C');
+const bodyRefs=renumber([{type:'本文',text:'{{問10}}は後で答える。\n問10への参照。'},
+  {type:'設問',text:'{{問7}} First\n{{問8}} Second\n{{問9}} Third\n{{問10}} Fourth\n{{問7}} repeated'},
+  {type:'解説',text:'問10の説明。大問10・質問10件・疑問10・問100・問10abcは維持。'}]);
+assert.equal(bodyRefs[0].text,'{{問4}}は後で答える。\n問4への参照。');
+assert.equal(bodyRefs[1].text,'{{問1}} First\n{{問2}} Second\n{{問3}} Third\n{{問4}} Fourth\n{{問1}} repeated');
+assert.equal(bodyRefs[2].text,'問4の説明。大問10・質問10件・疑問10・問100・問10abcは維持。');
 assert.equal(renumber([{type:'問題',text:'{{66}} A\n{{68}} B\n{{66}} reference'},{type:'解答',text:'66: B\n68: A'}])[1].text,'1: B\n2: A');
 assert.equal(renumber([{type:'設問',text:'(66) A\n(67) B'},{type:'解説',text:'(66) Explanation\n(67) Explanation'}])[1].text,'(1) Explanation\n(2) Explanation');
 assert.equal(renumber([{type:'問題',text:'問7 A\n問8 B'}])[0].text,'問1 A\n問2 B');
@@ -143,7 +179,7 @@ assert.equal(renumber([{type:'問題',text:'(35)〜(42)を解け。'}])[0].text,
 const rangedQuestion={exam_id:50,question_number:7,problem_text:rangeSections.map(s=>'{{'+s.type+'}}\n'+s.text).join('\n'),answer_text:'Duplicate legacy answer must not appear'};
 const rangedExam={questions:[rangedQuestion]},rangedBefore=JSON.stringify(rangedExam);
 const rangedHtml=ctx.testPrint.buildPrintHtml(rangedExam,{renumber:true});
-assert(rangedHtml.includes('Fill <span class="blank-badge">1</span> 〜 <span class="blank-badge">23</span>'));
+assert(/Fill <span class="blank-badge">1<\/span>\s*〜\s*<span class="blank-badge">23<\/span>/.test(rangedHtml));
 assert(rangedHtml.includes('question-badge">23</span>'));
 assert(!rangedHtml.includes('Duplicate legacy answer'));
 assert(ctx.testPrint.buildPrintHtml(rangedExam,{renumber:false}).includes('question-badge">71</span>'));
@@ -162,7 +198,7 @@ const rangedFolder={kind:'favFolder',questions:[rangedQuestion,rangedSecond],ite
 const rangedFolderBefore=JSON.stringify(rangedFolder),rangedFolderHtml=ctx.testPrint.buildPrintHtml(rangedFolder,{renumber:true});
 assert.equal((rangedFolderHtml.match(/print-section-head">Range group one/g)||[]).length,2);
 assert.equal((rangedFolderHtml.match(/print-section-head">Range group two/g)||[]).length,2);
-assert(rangedFolderHtml.includes('Fill <span class="blank-badge">1</span> 〜 <span class="blank-badge">3</span>'));
+assert(/Fill <span class="blank-badge">1<\/span>\s*〜\s*<span class="blank-badge">3<\/span>/.test(rangedFolderHtml));
 assert(rangedFolderHtml.includes('question-badge">1</span><span class="qtext">A <span class="question-badge">2</span> B <span class="question-badge">3</span> C'));
 assert.equal(JSON.stringify(rangedFolder),rangedFolderBefore);
 const trailingLegacy={questions:[{question_number:1,problem_text:'{{本文}}\nBody [[66]].\n{{リード文}}\nTrailing [[66]] instructions.',answer_text:'{{66}} A',commentary_text:'{{66}} Explanation.'}]};
