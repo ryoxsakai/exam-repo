@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'exam-duration-'));
 const out = path.join(tmp, 'duration.cjs');
 buildSync({entryPoints: [path.join(root, 'worker/print-duration.ts')], bundle: true, platform: 'node', format: 'cjs', outfile: out});
-const {handlePrintDuration} = require(out);
+const {handlePrintDuration,handleUniversityPrintDuration} = require(out);
 let sql = new DatabaseSync(path.join(tmp, 'test.sqlite'));
 sql.exec('PRAGMA foreign_keys=ON; CREATE TABLE universities(id INTEGER PRIMARY KEY); CREATE TABLE exams(id INTEGER PRIMARY KEY, university_id INTEGER REFERENCES universities(id), year INTEGER, schedule TEXT); INSERT INTO universities VALUES (1),(2); INSERT INTO exams VALUES (11,1,2026,\'前期\'),(12,1,2025,\'前期\'),(13,1,2026,\'後期\'),(21,2,2026,\'前期\');');
 function dbAdapter() {
@@ -20,6 +20,18 @@ const call = (id, body, method = body === undefined ? 'GET' : 'PUT') => handlePr
 const get = async id => {const r=await call(id); assert.equal(r.status,200); return r.body;};
 (async () => {
   try {
+    const uniCall=(id,body)=>handleUniversityPrintDuration(new Request('https://test/api/universities/'+id+'/print-duration',{method:body===undefined?'GET':'PUT',...(body===undefined?{}:{body:JSON.stringify(body)})}),dbAdapter(),id);
+    assert.equal((await uniCall(1)).body.university_minutes,null);
+    assert.equal((await uniCall(1,{university_minutes:65})).status,200);
+    assert.equal((await get(12)).effective_minutes,65);
+    await call(12,{exam_minutes:80});
+    await uniCall(1,{university_minutes:70});
+    assert.equal((await get(12)).effective_minutes,80,'University settings preserve exam overrides');
+    assert.equal((await get(13)).effective_minutes,70);
+    assert.equal((await uniCall(999,{university_minutes:60})).status,404);
+    for(const body of [{university_minutes:0},{university_minutes:'60'},[],null,{university_minutes:60,extra:1},{}]) assert.equal((await uniCall(1,body)).status,400);
+    assert.equal((await get(13)).effective_minutes,70,'Invalid settings never write');
+    await uniCall(1,{university_minutes:null}); await call(12,{exam_minutes:null});
     assert.equal((await get(11)).source, 'unset');
     assert.equal((await get(11)).effective_minutes, null);
     assert.equal((await call(11,{university_minutes:60})).status,200);

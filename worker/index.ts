@@ -1,4 +1,4 @@
-import { handlePrintDuration, planUniversityPrintDurationMerge, planExamPrintDurationMerge, planExamPrintDurationMove } from "./print-duration";
+import { handlePrintDuration, handleUniversityPrintDuration, ensurePrintDurationSchema, planUniversityPrintDurationMerge, planExamPrintDurationMerge, planExamPrintDurationMove } from "./print-duration";
 import { handlePrintSets } from "./print-sets";
 import { handleMcpRoute, safeEqual, type McpEnv } from "./mcp";
 import { extractZenyakuTitle, readUniversityIndex, safeRefreshUniversityIndex, invalidateAllUniversityIndexes } from "./university-index";
@@ -1053,10 +1053,17 @@ export default {
         return json(result.body, result.status, origin);
       }
 
+      const universityDurationMatch = path.match(/^\/api\/universities\/(\d+)\/print-duration$/);
+      if (universityDurationMatch) {
+        const result = await handleUniversityPrintDuration(request, env.DB, Number(universityDurationMatch[1]));
+        return json(result.body, result.status, origin);
+      }
+
       // ── GET /api/universities ──────────────────────────────────────
       if (path === "/api/universities" && request.method === "GET") {
+        await ensurePrintDurationSchema(env.DB);
         const { results } = await env.DB.prepare(
-          "SELECT * FROM universities WHERE hidden = 0 ORDER BY name ASC"
+          "SELECT u.*, d.minutes AS print_minutes FROM universities u LEFT JOIN university_print_durations d ON d.university_id = u.id WHERE u.hidden = 0 ORDER BY u.name ASC"
         ).all();
         return json({ universities: results }, 200, origin);
       }

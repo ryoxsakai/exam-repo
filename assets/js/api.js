@@ -60,6 +60,7 @@
     getExams:         function (p) { return call("/api/exams" + qs(p)); },
     getExam:          function (id) { return call("/api/exams/" + id); },
     getPrintDuration: function (id) { return call("/api/exams/" + id + "/print-duration"); },
+    saveUniversityPrintDuration: function (id, minutes) { return call("/api/universities/" + id + "/print-duration", { method: "PUT", body: JSON.stringify({university_minutes: minutes}) }); },
     savePrintDuration: function (id, data) { return call("/api/exams/" + id + "/print-duration", { method: "PUT", body: JSON.stringify(data) }); },
     createExam:       function (d) { return call("/api/exams", { method: "POST", body: JSON.stringify(d) }); },
     updateExam:       function (id, d) { return call("/api/exams/" + id, { method: "PUT", body: JSON.stringify(d) }); },

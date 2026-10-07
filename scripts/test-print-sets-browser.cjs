@@ -169,8 +169,10 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await move('[data-set-move="1"][data-step="-1"]');assert.equal(await page.locator('[data-prq="11:1"]').isChecked(),false,'Reorder retains excluded question');await move('[data-set-move="0"][data-step="1"]');await checkPrint('[data-prq="11:1"]');
   await closeAny();
   const ordered=await page.locator('#print-preview .print-exam-block').allTextContents();assert.equal(ordered.length,6);for(const [i,marker] of ['Q11','Q21','Q13','A11','A21','A13'].entries())assert.ok(ordered[i].includes(marker));
+  assert.equal(await page.locator('#print-preview .print-exam-time').count(),6);
+  assert.deepEqual(await page.locator('#print-preview .print-exam-time').allTextContents(),Array(6).fill('60分'));
   const expectedHeads=['2026 合成大学 前期','2026 別大学 前期','2026 合成大学 後期'];
-  assert.deepEqual(await page.locator('#print-preview .print-exam-head').allTextContents(),expectedHeads.concat(expectedHeads));
+  assert.deepEqual(await page.locator('#print-preview .print-exam-label').allTextContents(),expectedHeads.concat(expectedHeads));
   const assertHeadingColor=async(root)=>{
    const colors=await page.locator(root+' .print-exam-block').evaluateAll(blocks=>blocks.map(b=>({head:getComputedStyle(b.querySelector('.print-exam-head')).color,line:getComputedStyle(b.querySelector('.print-exam-head')).borderBottomColor,question:getComputedStyle(b.querySelector('.print-q-head')).color})));
    assert.equal(colors.length,6);for(const c of colors){assert.equal(c.head,c.question);assert.equal(c.line,c.question);}return colors;
@@ -223,7 +225,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   console.log('QA second device conflict ready');
   // Real print HTML and PDF: one cover, Q exams then A exams, distinct pages.
   await page.locator('#btn-print-run').click();await page.waitForFunction(()=>window.__prints===1);assert.equal(await page.locator('#print-area .print-cover').count(),1);assert.equal(await page.locator('#print-area .print-modal, #print-area input, #print-area button').count(),0,'Print output contains no dialogs/controls');
-  assert.deepEqual(await page.locator('#print-area .print-exam-head').allTextContents(),expectedHeads.concat(expectedHeads));
+  assert.deepEqual(await page.locator('#print-area .print-exam-label').allTextContents(),expectedHeads.concat(expectedHeads));
   await page.emulateMedia({media:'print'});await assertHeadingColor('#print-area');await page.emulateMedia({media:null});
   const pdfPath=path.join(evidence,`multi-${width}.pdf`);await page.pdf({path:pdfPath,format:'A4',printBackground:true});
   const pdfText=execFileSync('python3',['-c',"import json,sys;from pypdf import PdfReader;print(json.dumps([p.extract_text() for p in PdfReader(sys.argv[1]).pages]))",pdfPath],{encoding:'utf8'});
