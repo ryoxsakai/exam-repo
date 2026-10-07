@@ -329,6 +329,15 @@
         renderPrintPreview();
       });
     }
+    [["pr-optimize-answers", "getPrintOptimizeAnswers", "setPrintOptimizeAnswers"],
+     ["pr-compact-commentary", "getPrintCompactCommentary", "setPrintCompactCommentary"]].forEach(function (setting) {
+      var control = el(setting[0]);
+      if (!control) return;
+      control.checked = Store[setting[1]]();
+      control.addEventListener("change", function () {
+        Store[setting[2]](control.checked); renderPrintPreview();
+      });
+    });
     if (el("pr-optimize-choices")) {
       el("pr-optimize-choices").checked = Store.getPrintOptimizeChoices();
       el("pr-optimize-choices").addEventListener("change", function () {
@@ -2034,6 +2043,34 @@
   // どのセクションか分からなくなると困るため常にラベルを出す。
   var LABEL_HIDABLE = ["問題", "本文", "設問"];
 
+  function renderOptimizedAnswers(text, options) {
+    var lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
+    var entries = [], preamble = [], current = null;
+    var marker = /^\s*\{\{((?:問)?[0-9０-９]+(?:[-－.．][0-9０-９]+|[A-Za-z])?|[A-Za-z]|[IVXivx]+)\}\}[ \t　]*(.*)$/;
+    lines.forEach(function (line) {
+      var match = line.match(marker);
+      if (match) {
+        current = { label: match[1], lines: [match[2]] }; entries.push(current);
+      } else if (current) current.lines.push(line);
+      else preamble.push(line);
+    });
+    // Ambiguous headings or incomplete entries retain the original rendering.
+    if (!entries.length || entries.some(function (entry) {
+      return !entry.lines.join("\n").trim() || entry.lines.some(function (line) { return /^\s*\{\{/.test(line); });
+    })) return Markup.render(text, options).html;
+    var prefix = preamble.join("\n").trim();
+    var html = prefix ? Markup.render(prefix, options).html : "";
+    html += '<div class="print-answer-group">';
+    entries.forEach(function (entry) {
+      var body = entry.lines.join("\n").trim();
+      var long = body.split("\n").filter(function (line) { return line.trim(); }).length > 1;
+      html += '<div class="print-answer-item' + (long ? ' print-answer-long' : '') + '">' +
+        '<span class="question-badge">' + esc(entry.label) + '</span>' +
+        '<div class="print-answer-text">' + Markup.render(body, options).html + '</div></div>';
+    });
+    return html + '</div>';
+  }
+
   function printField(label, text, opts, dialogueSource) {
     var body = isBodySection(label);
     var hideLabel = opts && opts.hideLabels && LABEL_HIDABLE.indexOf(label) >= 0;
@@ -2055,7 +2092,13 @@
         return line.replace(/([^\s])([ \t　]+)(?=\(\([^)]+\)\)\s+\S)/g, "$1\n");
       }).join("\n");
     }
-    var rendered = Markup.render(text, markupOpts(label, dialogueSource)).html;
+    var rendered = opts && opts.optimizeAnswers && label === "解答"
+      ? renderOptimizedAnswers(text, markupOpts(label, dialogueSource))
+      : Markup.render(text, markupOpts(label, dialogueSource)).html;
+    if (opts && opts.compactCommentary && label === "解説") {
+      // Remove only blank-line spacers. Keep real line breaks, paragraphs, headings and tables.
+      rendered = rendered.replace(/<div style="height:\.6em"><\/div>/g, "");
+    }
     refs.forEach(function (ref) {
       rendered = rendered.replace(ref.token, '<span class="print-line-ref" data-phrase="' + esc(ref.phrase) + '" data-original="' + esc(ref.original) + '">' + esc(ref.original) + "</span>");
     });
@@ -2373,6 +2416,8 @@
       qSubtitle: el("pr-qsubtitle") ? el("pr-qsubtitle").checked : false,
       lineNumbers: (el("pr-linenum") && el("pr-linenum").checked) || (el("pr-line-refs") && el("pr-line-refs").checked),
       lineReferences: el("pr-line-refs") && el("pr-line-refs").checked,
+      optimizeAnswers: el("pr-optimize-answers") ? el("pr-optimize-answers").checked : false,
+      compactCommentary: el("pr-compact-commentary") ? el("pr-compact-commentary").checked : false,
       optimizeChoices: el("pr-optimize-choices") ? el("pr-optimize-choices").checked : false,
       writingLines: Store.getPrintWritingLines(),
       writingSpace: el("pr-writing-space") ? el("pr-writing-space").checked : false,
@@ -2636,6 +2681,7 @@
       lineNumberFrame = 0;
       var preview = el("print-preview");
       if (preview && preview.querySelector(".print-choice-group")) optimizePrintChoices(preview);
+      if (preview && preview.querySelector(".print-answer-group")) layoutPrintAnswerGroups(preview);
       if (preview && preview.querySelector(".linenum-target")) applyPrintLineNumbers(preview);
     });
   }
@@ -2675,11 +2721,19 @@
         node = cursor;
       }
     });
+    layoutPrintGroups(root, forPrint, ".print-choice-group", ".answer-choice-text", false);
+  }
+
+  function layoutPrintAnswerGroups(root, forPrint) {
+    layoutPrintGroups(root, forPrint, ".print-answer-group", ".print-answer-text", true);
+  }
+
+  function layoutPrintGroups(root, forPrint, selector, textSelector, answers) {
     var probe = document.createElement("div");
     probe.className = "print-doc";
     probe.style.cssText = "position:absolute;left:-100000px;top:0;visibility:hidden;padding:0;border:0;width:174mm;";
     document.body.appendChild(probe);
-    $all(".print-choice-group", root).forEach(function (group) {
+    $all(selector, root).forEach(function (group) {
       var style = getComputedStyle(group);
       var fontSize = forPrint ? (PRINT_FS_PT[Store.getPrintFontSize()] || 12) * 4 / 3 : parseFloat(style.fontSize);
       probe.style.fontSize = fontSize + "px"; probe.style.fontFamily = style.fontFamily;
@@ -2688,14 +2742,15 @@
       children.forEach(function (choice) {
         var copy = choice.cloneNode(true);
         copy.style.cssText = "display:inline-flex;width:max-content;max-width:none;margin:0;padding:0;";
-        copy.querySelector(".answer-choice-text").style.cssText = "flex:none;white-space:nowrap;";
+        copy.querySelector(textSelector).style.cssText = "flex:none;white-space:nowrap;";
         probe.appendChild(copy); maxWidth = Math.max(maxWidth, copy.getBoundingClientRect().width); copy.remove();
       });
       var count = children.length;
       // Seven choices use three fixed columns: 1/4/7, 2/5, 3/6 align.
       var columns = count <= 4 ? count : count === 7 ? 3 : Math.ceil(count / 2);
+      if (answers) columns = Math.min(columns, 4);
       var gap = fontSize;
-      if (maxWidth > fontSize * 22 || children.some(function (c) { return !!c.querySelector("img, table"); })) columns = 1;
+      if (maxWidth > fontSize * 22 || children.some(function (c) { return !!c.querySelector("img, table") || c.classList.contains("print-answer-long"); })) columns = 1;
       while (columns > 1 && maxWidth + fontSize * .5 > (width - gap * (columns - 1)) / columns) columns--;
       group.style.setProperty("--choice-columns", columns);
       group.dataset.columns = String(columns);
@@ -3469,10 +3524,9 @@
     var html = buildPrintHtml(state.printExam, opts, true);
     if (!html) { el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>印刷対象がありません。チェックや登録内容を確認してください。</div></div>'; return; }
     el("print-preview").innerHTML = '<div class="print-doc ' + printDocClasses(opts) + '">' + html + "</div>";
-    if (opts.optimizeChoices) {
-      optimizePrintChoices(el("print-preview"));
-      watchPreviewLineNumbers();
-    }
+    if (opts.optimizeChoices) optimizePrintChoices(el("print-preview"));
+    if (opts.optimizeAnswers) layoutPrintAnswerGroups(el("print-preview"));
+    if (opts.optimizeChoices || opts.optimizeAnswers) watchPreviewLineNumbers();
     wirePrintTitleEdit();
     if (el("pr-duration")) el("pr-duration").disabled = !opts.cover || state.printExam.kind !== "exam";
     if (opts.lineNumbers) {
@@ -3699,6 +3753,7 @@
         UI.toast("印刷準備中に設定が変わりました。保存・再取得完了後に印刷し直してください。", "err"); return;
       }
       if (opts.optimizeChoices) optimizePrintChoices(area, true);
+      if (opts.optimizeAnswers) layoutPrintAnswerGroups(area, true);
       if (opts.lineNumbers) applyPrintLineNumbers(area, true);
       window.print();
     }).finally(function () { printPreparing = false; updatePrintDurationAvailability(); });

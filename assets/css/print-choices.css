@@ -9,3 +9,19 @@
 @media print {
   #print-area .print-choice-group > .answer-choice { margin: 0; }
 }
+
+.print-answer-group {
+  display: flex; flex-wrap: wrap; column-gap: 1em; row-gap: .3em;
+  margin: .3em 0; --choice-columns: 1;
+}
+.print-answer-group > .print-answer-item {
+  display: flex; align-items: baseline; gap: .4em;
+  flex: 0 0 calc((100% - (var(--choice-columns) - 1) * 1em) / var(--choice-columns));
+  box-sizing: border-box; min-width: 0;
+}
+.print-answer-item > .question-badge { flex-shrink: 0; margin-right: 0; }
+.print-answer-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; text-indent: 0; }
+.print-answer-text > .blk { text-indent: 0; }
+@media print {
+  #print-area .print-answer-item { break-inside: avoid; page-break-inside: avoid; }
+}
