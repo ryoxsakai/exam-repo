@@ -99,3 +99,27 @@ export async function handlePrintDuration(request: Request, db: any, examId: num
     effective_minutes: override?.minutes ?? university?.minutes ?? null,
     source: override ? "exam" : university ? "university" : "unset" } };
 }
+
+export async function handleUniversityPrintDuration(request: Request, db: D1Database, universityId: number) {
+  if (!["GET", "PUT"].includes(request.method)) return { status: 405, body: { error: "Method not allowed" } };
+  const university = await db.prepare("SELECT id FROM universities WHERE id = ?").bind(universityId).first();
+  if (!university) return { status: 404, body: { error: "University not found" } };
+  let minutes: number | null | undefined;
+  if (request.method === "PUT") {
+    const body = await request.json().catch(() => null) as { university_minutes?: unknown } | null;
+    const value = body?.university_minutes;
+    if (!body || Array.isArray(body) || Object.keys(body).length !== 1 ||
+        (value !== null && (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 1440))) {
+      return { status: 400, body: { error: "時間は1〜1440の整数（分）、解除はnullで指定してください。" } };
+    }
+    minutes = value as number | null;
+  }
+  await ensurePrintDurationSchema(db);
+  if (minutes !== undefined) {
+    await (minutes === null
+      ? db.prepare("DELETE FROM university_print_durations WHERE university_id = ?").bind(universityId)
+      : db.prepare("INSERT INTO university_print_durations (university_id, minutes) VALUES (?, ?) ON CONFLICT(university_id) DO UPDATE SET minutes = excluded.minutes").bind(universityId, minutes)).run();
+  }
+  const duration = await db.prepare("SELECT minutes FROM university_print_durations WHERE university_id = ?").bind(universityId).first<{minutes: number}>();
+  return { status: 200, body: { university_id: universityId, university_minutes: duration?.minutes ?? null } };
+}

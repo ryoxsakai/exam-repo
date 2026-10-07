@@ -1358,3 +1358,14 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 @media print {
   #print-area.print-out .print-set-cover .pc-cover-small { font-size: 14pt; line-height: 1.3; margin-bottom: 14pt; }
 }
+
+/* University time defaults and print-set exam headings. */
+.uniyomi-item .label { flex-basis: 26%; }
+.uniyomi-item .edit-item-reading { flex-basis: 28%; min-width: 0; }
+.uniyomi-item .edit-item-abbr { flex-basis: 22%; min-width: 0; }
+.uniyomi-duration { display: flex; align-items: center; gap: .35em; flex: 0 0 100px; }
+.uniyomi-duration input { width: 76px; min-width: 0; }
+@media (max-width: 640px) { .uniyomi-item .label { flex-basis: 100%; } .uniyomi-item .edit-item-reading, .uniyomi-item .edit-item-abbr { flex-basis: 35%; } }
+.print-exam-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1em; }
+.print-exam-label { min-width: 0; overflow-wrap: anywhere; }
+.print-exam-time { flex-shrink: 0; margin-left: auto; white-space: nowrap; font-size: .85em; }

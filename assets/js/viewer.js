@@ -3313,14 +3313,16 @@
     el("print-preview").innerHTML = '<div class="card">' + (ids.length ? "選択試験を読み込み中…" : "ツリーから試験を選択してください。") + '</div>';
     if (!ids.length) return Promise.resolve();
     return Promise.all(ids.map(function (id) {
-      return Api.getExam(id).then(function (r) {
+      return Promise.all([Api.getExam(id), Api.getPrintDuration(id)]).then(function (results) {
+        var r = results[0], duration = results[1];
+        if (Number(duration.exam_id) !== id) throw new Error("試験時間の対象が一致しません");
         if (!r.exam || Number(r.exam.id) !== id || !Array.isArray(r.exam.questions) || !r.exam.questions.length) throw new Error("試験データがありません");
         var seen = {};
         r.exam.questions.forEach(function (q) {
           if (!Number.isInteger(q.question_number) || q.question_number < 1 || seen[q.question_number]) throw new Error("大問番号が不正です");
           seen[q.question_number] = true;
         });
-        return r.exam;
+        return Object.assign({}, r.exam, {duration: duration});
       }).catch(function (e) { throw new Error("試験ID " + id + "：" + e.message + "。印刷を停止しました。選択を見直すか再読込してください。"); });
     })).then(function (exams) {
       if (token !== multiPrint.epoch || !multiPrint.enabled) return;
@@ -3410,7 +3412,10 @@
     [false,true].forEach(function (answerSide) {
       ex.exams.forEach(function (exam) {
         var body = buildPrintHtml(Object.assign({}, exam, {kind:'exam'}), Object.assign({},opts,{cover:false,side:answerSide ? 'answer' : 'question'}));
-        if (body) html += '<section class="print-exam-block"><h2 class="print-exam-head">' + esc(printExamLabel(exam)) + '</h2>' + body + '</section>';
+        var minutes = exam.duration && exam.duration.effective_minutes;
+        var time = opts.duration && Number.isInteger(minutes) && minutes >= 1 && minutes <= 1440
+          ? '<span class="print-exam-time">' + esc(minutes) + '分</span>' : '';
+        if (body) html += '<section class="print-exam-block"><h2 class="print-exam-head"><span class="print-exam-label">' + esc(printExamLabel(exam)) + '</span>' + time + '</h2>' + body + '</section>';
       });
     });
     return html;
@@ -3431,7 +3436,7 @@
     updatePrintDurationAvailability();
     if (!box) return;
     box.hidden = !ex || ex.kind !== "exam" || !ex.duration;
-    if (el("pr-duration")) el("pr-duration").disabled = !el("pr-cover").checked || (ex && ex.kind !== "exam");
+    if (el("pr-duration")) el("pr-duration").disabled = !ex || (ex.kind !== "printSet" && (!el("pr-cover").checked || ex.kind !== "exam"));
     if (box.hidden) return;
     var d = ex.duration;
     el("pr-duration-context").textContent = ex.university_name + " / " + ex.year + "年度 / " + ex.schedule;
@@ -3540,7 +3545,7 @@
     if (opts.optimizeAnswers) layoutPrintAnswerGroups(el("print-preview"));
     if (opts.optimizeChoices || opts.optimizeAnswers) watchPreviewLineNumbers();
     wirePrintTitleEdit();
-    if (el("pr-duration")) el("pr-duration").disabled = !opts.cover || state.printExam.kind !== "exam";
+    if (el("pr-duration")) el("pr-duration").disabled = state.printExam.kind !== "printSet" && (!opts.cover || state.printExam.kind !== "exam");
     if (opts.lineNumbers) {
       applyPrintLineNumbers(el("print-preview"));
       watchPreviewLineNumbers();
