@@ -37,6 +37,7 @@
     printRenumber: "exam_print_renumber",    // 印刷時だけ小問番号を大問ごとに1から振り直す
     printQSubtitle: "exam_print_qsubtitle",  // 大問見出しを「1. 2018 ○○ 前期 大問3」形式にする
     printWritingLines: "exam_print_writing_lines",
+    printOptimizeChoices: "exam_print_optimize_choices",
     printWritingSpace: "exam_print_writing_space",
     printLineNumbers: "exam_print_linenum",  // 印刷時、本文セクションに5行ごとの行番号を付ける
     printGrayscale: "exam_print_grayscale",  // 印刷時、バッジ・ハイライト・画像などをグレースケールにする
@@ -365,6 +366,8 @@
       n = Number(n);
       write(KEYS.printWritingLines, [5, 10, 15, 20, 25].indexOf(n) >= 0 ? n : 10);
     },
+    getPrintOptimizeChoices: function () { return read(KEYS.printOptimizeChoices, false) === true; },
+    setPrintOptimizeChoices: function (on) { write(KEYS.printOptimizeChoices, !!on); },
     getPrintWritingSpace: function () { return read(KEYS.printWritingSpace, false) === true; },
     setPrintWritingSpace: function (on) { write(KEYS.printWritingSpace, !!on); },
 

@@ -329,6 +329,13 @@
         renderPrintPreview();
       });
     }
+    if (el("pr-optimize-choices")) {
+      el("pr-optimize-choices").checked = Store.getPrintOptimizeChoices();
+      el("pr-optimize-choices").addEventListener("change", function () {
+        Store.setPrintOptimizeChoices(el("pr-optimize-choices").checked);
+        renderPrintPreview();
+      });
+    }
     if (el("pr-writing-space")) {
       el("pr-writing-space").checked = Store.getPrintWritingSpace();
       el("pr-writing-space").addEventListener("change", function () {
@@ -2042,6 +2049,12 @@
         return quote + phrase + closeQuote + prep + token;
       });
     }
+    if (opts && opts.optimizeChoices && ["問題", "設問"].indexOf(label) >= 0) {
+      text = text.split("\n").map(function (line) {
+        if (!/^\s*\(\([^)]+\)\)\s+\S/.test(line)) return line;
+        return line.replace(/([^\s])([ \t　]+)(?=\(\([^)]+\)\)\s+\S)/g, "$1\n");
+      }).join("\n");
+    }
     var rendered = Markup.render(text, markupOpts(label, dialogueSource)).html;
     refs.forEach(function (ref) {
       rendered = rendered.replace(ref.token, '<span class="print-line-ref" data-phrase="' + esc(ref.phrase) + '" data-original="' + esc(ref.original) + '">' + esc(ref.original) + "</span>");
@@ -2360,6 +2373,7 @@
       qSubtitle: el("pr-qsubtitle") ? el("pr-qsubtitle").checked : false,
       lineNumbers: (el("pr-linenum") && el("pr-linenum").checked) || (el("pr-line-refs") && el("pr-line-refs").checked),
       lineReferences: el("pr-line-refs") && el("pr-line-refs").checked,
+      optimizeChoices: el("pr-optimize-choices") ? el("pr-optimize-choices").checked : false,
       writingLines: Store.getPrintWritingLines(),
       writingSpace: el("pr-writing-space") ? el("pr-writing-space").checked : false,
       grayscale: el("pr-grayscale") ? el("pr-grayscale").checked : false
@@ -2621,6 +2635,7 @@
     lineNumberFrame = requestAnimationFrame(function () {
       lineNumberFrame = 0;
       var preview = el("print-preview");
+      if (preview && preview.querySelector(".print-choice-group")) optimizePrintChoices(preview);
       if (preview && preview.querySelector(".linenum-target")) applyPrintLineNumbers(preview);
     });
   }
@@ -2631,6 +2646,61 @@
       lineNumberObserver.observe(el("print-preview"));
     }
     if (document.fonts) document.fonts.ready.then(schedulePreviewLineNumbers);
+  }
+
+  // Only consecutive standalone choices belong to a group; prose and blank badges are boundaries.
+  function optimizePrintChoices(root, forPrint) {
+    $all(".print-part-q .exam-doc", root).forEach(function (doc) {
+      var node = doc.firstElementChild;
+      while (node) {
+        if (!node.classList.contains("answer-choice")) { node = node.nextElementSibling; continue; }
+        var choices = [node], spacers = [], cursor = node.nextElementSibling;
+        var labels = [node.querySelector(".answer-choice-label").textContent];
+        while (cursor) {
+          var gaps = [];
+          while (cursor && cursor.tagName === "DIV" && !cursor.className && !cursor.textContent.trim() && cursor.style.height === "0.6em") {
+            gaps.push(cursor); cursor = cursor.nextElementSibling;
+          }
+          if (!cursor || !cursor.classList.contains("answer-choice")) break;
+          var label = cursor.querySelector(".answer-choice-label").textContent;
+          if (labels.indexOf(label) >= 0) break;
+          labels.push(label); spacers = spacers.concat(gaps); choices.push(cursor); cursor = cursor.nextElementSibling;
+        }
+        if (choices.length > 1) {
+          var group = document.createElement("div"); group.className = "print-choice-group";
+          doc.insertBefore(group, node);
+          choices.forEach(function (choice) { group.appendChild(choice); });
+          spacers.forEach(function (spacer) { spacer.remove(); });
+        }
+        node = cursor;
+      }
+    });
+    var probe = document.createElement("div");
+    probe.className = "print-doc";
+    probe.style.cssText = "position:absolute;left:-100000px;top:0;visibility:hidden;padding:0;border:0;width:174mm;";
+    document.body.appendChild(probe);
+    $all(".print-choice-group", root).forEach(function (group) {
+      var style = getComputedStyle(group);
+      var fontSize = forPrint ? (PRINT_FS_PT[Store.getPrintFontSize()] || 12) * 4 / 3 : parseFloat(style.fontSize);
+      probe.style.fontSize = fontSize + "px"; probe.style.fontFamily = style.fontFamily;
+      var width = forPrint ? probe.getBoundingClientRect().width : group.getBoundingClientRect().width;
+      var children = Array.prototype.slice.call(group.children), maxWidth = 0;
+      children.forEach(function (choice) {
+        var copy = choice.cloneNode(true);
+        copy.style.cssText = "display:inline-flex;width:max-content;max-width:none;margin:0;padding:0;";
+        copy.querySelector(".answer-choice-text").style.cssText = "flex:none;white-space:nowrap;";
+        probe.appendChild(copy); maxWidth = Math.max(maxWidth, copy.getBoundingClientRect().width); copy.remove();
+      });
+      var count = children.length;
+      // Seven choices use three fixed columns: 1/4/7, 2/5, 3/6 align.
+      var columns = count <= 4 ? count : count === 7 ? 3 : Math.ceil(count / 2);
+      var gap = fontSize;
+      if (maxWidth > fontSize * 22 || children.some(function (c) { return !!c.querySelector("img, table"); })) columns = 1;
+      while (columns > 1 && maxWidth + fontSize * .5 > (width - gap * (columns - 1)) / columns) columns--;
+      group.style.setProperty("--choice-columns", columns);
+      group.dataset.columns = String(columns);
+    });
+    probe.remove();
   }
 
   // 印刷ドキュメントのルートに付けるクラス（文字サイズ・行間・大問／セクションごとの改ページ）。
@@ -3399,6 +3469,10 @@
     var html = buildPrintHtml(state.printExam, opts, true);
     if (!html) { el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>印刷対象がありません。チェックや登録内容を確認してください。</div></div>'; return; }
     el("print-preview").innerHTML = '<div class="print-doc ' + printDocClasses(opts) + '">' + html + "</div>";
+    if (opts.optimizeChoices) {
+      optimizePrintChoices(el("print-preview"));
+      watchPreviewLineNumbers();
+    }
     wirePrintTitleEdit();
     if (el("pr-duration")) el("pr-duration").disabled = !opts.cover || state.printExam.kind !== "exam";
     if (opts.lineNumbers) {
@@ -3624,6 +3698,7 @@
       if (printDurationWrite || durationRevision !== printDurationRevision || state.printExam !== selected || selected.durationUnverified || renderRevision !== printRenderRevision || (multiPrint.enabled && (multiPrint.busy || multiPrint.loading || multiPrint.archived))) {
         UI.toast("印刷準備中に設定が変わりました。保存・再取得完了後に印刷し直してください。", "err"); return;
       }
+      if (opts.optimizeChoices) optimizePrintChoices(area, true);
       if (opts.lineNumbers) applyPrintLineNumbers(area, true);
       window.print();
     }).finally(function () { printPreparing = false; updatePrintDurationAvailability(); });
