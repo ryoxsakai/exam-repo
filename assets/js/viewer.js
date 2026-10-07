@@ -2063,18 +2063,19 @@
     return state.printQSel[printQKey(q)] !== false;
   }
 
+  // 印刷の見出し・選択一覧で共用する試験名（空の日程は省略）。
+  function printExamLabel(exam) {
+    return [exam.year, exam.university_name, exam.schedule].map(function (part) {
+      return part == null ? "" : String(part).trim().replace(/\s+/g, " ");
+    }).filter(Boolean).join(" ");
+  }
   // 大問見出しの文字列。subtitle 指定時は「1. 2018 関西医科 前期 大問3」のように
   // 通し番号と試験情報を添える（お気に入りフォルダの印刷では大問が複数の試験にまたがるため）。
   function printQHeading(q, seq, opts) {
     var base = "大問" + qLabel(q);
     if (!opts || !opts.qSubtitle) return base;
     var c = q._ctx || {};
-    var parts = [seq + "."];
-    if (c.year) parts.push(String(c.year));
-    if (c.university_name) parts.push(c.university_name);
-    if (c.schedule) parts.push(c.schedule);
-    parts.push(base);
-    return parts.join(" ");
+    return [seq + ".", printExamLabel(c), base].filter(Boolean).join(" ");
   }
 
   // 印刷対象の大問を、印刷順（お気に入りフォルダはユーザーが並べた順、
@@ -2647,7 +2648,7 @@
         // お気に入りフォルダの印刷ではどの試験の大問か分かるよう試験情報も添える
         var c = q._ctx || {};
         var label = ((ex.kind === "favFolder" || ex.kind === "printSet") && c.university_name)
-          ? [c.year, c.university_name, c.schedule].filter(Boolean).join(" ") + " 大問" + qLabel(q)
+          ? printExamLabel(c) + " 大問" + qLabel(q)
           : "大問" + qLabel(q);
         h += '<label class="check-inline"><input type="checkbox" data-prq="' + esc(printQKey(q)) + '"' + ck +
           "> <span>" + esc(label) + "</span></label>";
@@ -3098,7 +3099,7 @@
       if (multiPrint.busy) node.setAttribute("contenteditable", "false");
     });
     el("pr-multi-selection").innerHTML = multiPrint.ids.map(function (id, i) {
-      var e = multiPrint.catalog[id], title = e ? [e.university_name, e.year + "年度", e.schedule].join(" / ") : "試験ID " + id + "（選択一覧に見つかりません）";
+      var e = multiPrint.catalog[id], title = e ? printExamLabel(e) : "試験ID " + id + "（選択一覧に見つかりません）";
       return '<li><span>' + esc(title) + '</span><div class="toolbar"><button type="button" class="btn ghost sm" data-set-move="' + i + '" data-step="-1" aria-label="' + esc(title) + 'を上へ"' + (i === 0 || multiPrint.busy ? ' disabled' : '') + '>↑</button><button type="button" class="btn ghost sm" data-set-move="' + i + '" data-step="1" aria-label="' + esc(title) + 'を下へ"' + (i === multiPrint.ids.length - 1 || multiPrint.busy ? ' disabled' : '') + '>↓</button><button type="button" class="btn ghost sm" data-set-remove="' + id + '"' + (multiPrint.busy ? ' disabled' : '') + '>解除</button></div></li>';
     }).join("");
     $all("[data-set-move]", panel).forEach(function (b) { b.addEventListener("click", function () {
@@ -3235,7 +3236,7 @@
     [false,true].forEach(function (answerSide) {
       ex.exams.forEach(function (exam) {
         var body = buildPrintHtml(Object.assign({}, exam, {kind:'exam'}), Object.assign({},opts,{cover:false,side:answerSide ? 'answer' : 'question'}));
-        if (body) html += '<section class="print-exam-block"><h2 class="print-exam-head">' + esc([exam.year,exam.university_name,exam.schedule].map(function (part) { return part == null ? '' : String(part).trim(); }).filter(Boolean).join(' ')) + '</h2>' + body + '</section>';
+        if (body) html += '<section class="print-exam-block"><h2 class="print-exam-head">' + esc(printExamLabel(exam)) + '</h2>' + body + '</section>';
       });
     });
     return html;

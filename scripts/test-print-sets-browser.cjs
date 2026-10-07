@@ -141,6 +141,10 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   }
   await move('[data-set-move="2"][data-step="-1"]');
   assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21,13]);
+  assert.deepEqual(await page.locator('#pr-multi-selection li > span').allTextContents(),['2026 合成大学 前期','2026 別大学 前期','2026 合成大学 後期']);
+  await page.evaluate(()=>{window.__setsTest.multiPrint.catalog[11].schedule='  ';window.__setsTest.multiPrint.catalog[11].university_name='  大阪医科薬科  ';});
+  await openModal();assert.equal(await page.locator('#pr-multi-selection li > span').first().textContent(),'2026 大阪医科薬科');await closeModal();
+  await page.evaluate(()=>{window.__setsTest.multiPrint.catalog[11].schedule='前期';window.__setsTest.multiPrint.catalog[11].university_name='合成大学';});
   await setName('Fixture saved set');
   await cover('1','COMMON COVER');
   await cover('time','各60分');
@@ -206,6 +210,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   f.reopen();
   const second=await context.newPage();await second.goto(origin,{waitUntil:'networkidle'});await second.locator('#pr-multi').check();await second.locator(`#pr-set-list option[value="${id}"]`).waitFor({state:'attached'});await openModal(second);await second.locator('#pr-set-list').selectOption(id);await second.locator('#pr-set-open').click();await second.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='printSet'&&!window.__setsTest.multiPrint.busy);await closeModal(second);
   assert.deepEqual(await second.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21,13]);assert.equal(await second.locator('[data-set-cover="1"]').textContent(),'COMMON COVER');
+  await openModal(second);assert.deepEqual(await second.locator('#pr-multi-selection li > span').allTextContents(),['2026 合成大学 前期','2026 別大学 前期','2026 合成大学 後期']);await closeModal(second);
   assert.equal(await second.locator('[data-prq="11:1"]').isChecked(),false,'Saved exclusions restore on another device');
   await openDialog('pr-questions-modal',second);await second.locator('[data-prq="11:1"]').check();await closeAny(second);
   await setName('Updated on other device',second);await openModal(second);await second.locator('#pr-set-save').click();await second.waitForFunction(()=>window.__setsTest.multiPrint.revision===2&&!window.__setsTest.multiPrint.busy);

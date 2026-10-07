@@ -149,6 +149,7 @@
   - アンカーは行頭の最初の単語の末尾へ差し込む。アンカーはfont-size:0の通常インラインとし、折り返し位置や行の高さを変えない。番号のSVGには本文の文字サイズを明示する。横位置は本文の左端から0.45em外側に統一する。
   - 矩形はテキストノード単位で取得し、同じ行の太字・下線等を重複して数えない。語注・語数・出典・リード文・上付き/下付き・各種バッジの小さいラベルを除外する。
   - 印刷本文幅はON/OFF共通の174mm（`#print-area.print-out`と`PRINT_BODY_WIDTH`）。画面外の計測コンテナは`.print-doc`を付け、印刷用のArial空所バッジ・文字サイズ・行間・元の字下げ指定を再現する。番号を各行へ付けるため、改ページしてもその行と一緒に移動する。
+  - Chromium PDFで左余白のSVGがpage描画境界にclipされるため、印刷タブだけnamed page `exam-print`（左右余白0）を使い、従来の紙面左右余白を出力marginへ移す。旧Chromiumのpage余白18mmは整数69 CSS pxに丸められるので、出力margin69pxにより旧PDFの物理位置を保持する。174mm幅/ON・OFF共通で3桁以上も既存左余白内へ描く。閲覧モーダル/設定プレビューの印刷は従来の通常page余白18mmのまま。実機Safari/iOSの丸め差は未検証。
   - プレビューは実際の表示幅で計測し、ResizeObserverとフォント読み込み後に再計測する。印刷はフォントと画像の読み込み完了後に計測してから印刷ダイアログを開く。
 
 #### お気に入りフォルダの一括印刷
@@ -234,3 +235,7 @@ schemaは既存Workerデプロイに含まれ、認証済み印刷セットAPI�
 既存印刷セットAPIの任意キー `question_selection`（`exam_id:question_number` → 真偽）で大問の除外を保存/復元する。既存テーブルには認証済み初回呼出で列だけを追加し、旧セットは `{}`（全問）、旧クライアントの省略更新では既存値を保持する。schema.sql全体は再適用しない。選択された試験の順番は従来のexam_idsを保持する。
 
 検証: `npm ci --prefix panel --cache /tmp/exam-npm-cache && npm run build --prefix panel`、既存Node印刷/OAuth回帰、`PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-sets-browser.cjs`（PC1280px/mobile390px・touch、3モーダル/戻る進む/連打/保存・読込待機/失敗再試行/新入力/アカウント切替/単年度と複数とお気に入り/大問除外の別端末復元/7ページA4 PDF）。全通信を合成データ・隔離SQLiteへ向ける。`test-print-name-field.cjs --browser` と `test-print-duration-browser.cjs` で既存表紙/時間/PDFを検証。viewport縮小/panはエミュレーションで、実機iOSキーボード/自動ズームの確認は含まない。
+
+印刷セットの試験表示は共通 `printExamLabel` により「2021 大阪医科薬科 前期」形式（空の日程は省略、空白を整理）。セット選択一覧・読込後の一覧・印刷見出し・大問選択で共用し、DBと大学/年度ツリーの表示は変えない。
+
+PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-line-numbers-browser.cjs`（PyMuPDF 1.26.6を使用）。PC/mobile、単一/セット/お気に入り、全5文字サイズ/行間設定、複数フォント、複数本文/段落とページまたぎ、遅延フォント/画像、再印刷を合成通信だけで確認する。PDFの文字座標とベースラインから5行ごとの対応・欠落/重複・既存左余白内の位置を検証し、番号glyphのラスタ画素も確認。ON/OFFおよび従来margin指定との本文/見出し/表紙の文字座標・折り返し・ページ数の一致を確認し、PDF/PNG/JSONを `/tmp/exam-print-sets-qa/line-numbers` に保存する。
