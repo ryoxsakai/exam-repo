@@ -2108,7 +2108,8 @@
   // 印刷用のコピーだけを変換する。問題面で定義された番号を両面で共有し、
   // 段落番号 [N]・選択肢 ((N))・URL・語注・出典の数字は触らない。
   function renumberPrintSections(sections) {
-    var questions = {}, blanks = {}, questionCount = 0, blankCount = 0;
+    var namedQuestions = {}, questions = {}, blanks = {}, plainLabels = {};
+    var namedCount = 0, questionCount = 0, blankCount = 0;
     function protectedText(text, transform) {
       var saved = [];
       var safe = String(text || "").replace(/!\[[^\]]*\]\([^\n]*?\)|https?:\/\/[^\s<>]+|##[\s\S]*?##|!!!![\s\S]*?!!!!|`[^`\n]*`/g, function (m) {
@@ -2118,7 +2119,9 @@
     }
     function add(map, n, blank) {
       n = String(Number(n));
-      if (!Object.prototype.hasOwnProperty.call(map, n)) map[n] = blank ? ++blankCount : ++questionCount;
+      if (!Object.prototype.hasOwnProperty.call(map, n)) {
+        map[n] = blank ? ++blankCount : map === namedQuestions ? ++namedCount : ++questionCount;
+      }
     }
     var rangeJoin = "\\s*(?:[〜～~–—-]|から|to)\\s*";
     var blankLabel = "\\[\\[\\s*(?:--\\s*)?\\d+\\s*(?:--)?\\s*\\]\\]";
@@ -2133,6 +2136,7 @@
       // 助詞の1文字だけで参照と誤判定しない。
       return /^(?:\*\*)?[ \t]*(?:の(?:解答|答え|説明|解説|結果|内容)|(?:を|も|に)?(?:参照|参考)|を(?:見|確認)|について|まで|[〜～~–—-])/.test(text);
     }
+    var definitions = [];
     sections.forEach(function (sec) {
       if (isAnswerSide(sec.type) || sec.type === "リード文") return;
       protectedText(sec.text, function (text) {
@@ -2141,19 +2145,40 @@
         text = text.replace(referenceRanges, "\u0005").replace(parenRanges, "$1\u0005");
         text.split("\n").forEach(function (line) {
           // 行中の {{問7}} 等も参照。実際の小問見出しの出現順だけで採番する。
-          var m = line.match(/^\s*(?:@@)?(?:\*\*)?(?:\{\{\s*(?:問\s*)?(\d+)\s*\}\}|問\s*(\d+)(?!\d)|[（(](\d+)[）)]|(\d+)[.．、：:](?=\s|[^\d]))/);
-          if (m && !referenceSuffix(line.slice(m[0].length))) add(questions, m[1] || m[2] || m[3] || m[4], false);
+          var m = line.match(/^\s*(?:@@)?(?:\*\*)?(?:\{\{\s*(?:問\s*)?(\d+)\s*\}\}|問\s*(\d+)(?![\dA-Za-z])|[（(](\d+)[）)]|(\d+)[.．、：:](?=\s|[^\d]))/);
+          if (m && !referenceSuffix(line.slice(m[0].length))) {
+            definitions.push({n: m[1] || m[2] || m[3] || m[4], type: sec.type,
+              named: /^\s*(?:@@)?(?:\*\*)?(?:\{\{\s*問|問)/.test(line), marked: !!m[1]});
+          }
         });
         text.replace(/\[\[\s*(?:--\s*)?(\d+)\s*(?:--)?\s*\]\]/g, function (_, n) { add(blanks, n, true); return _; });
         return text;
       });
     });
+    // 問Nと(4)/{{4}}は別の番号体系。下位番号や本文の参照で小問を採番しない。
+    // 明示的な問題/設問欄があれば、その見出しの表示順を基準にする。
+    var namedDefinitions = definitions.filter(function (d) { return d.named; });
+    var questionDefinitions = namedDefinitions.filter(function (d) { return d.type === "設問" || d.type === "問題"; });
+    (questionDefinitions.length ? questionDefinitions : namedDefinitions).forEach(function (d) { add(namedQuestions, d.n, false); });
+    definitions.forEach(function (d) {
+      if (d.named) return;
+      if (namedCount && !d.marked) plainLabels[String(Number(d.n))] = true;
+      else add(questions, d.n, false);
+    });
     // 解答やリード文の {{66}} は、問題側では [[66]] として定義されることもある。
     // 定義をすべて集めた後で参照も変換し、参照だけの番号は新規採番しない。
-    function number(map, n, fallback) {
+    function number(map, n, fallback, last) {
       var key = String(Number(n)), v = map[key];
       if (v == null && fallback) v = fallback[key];
+      if (v == null && last) v = last[key];
       return v == null ? n : String(v);
+    }
+    function questionNumber(n) { return number(namedQuestions, n, questions, blanks); }
+    function itemNumber(n) { return number(questions, n, blanks, namedQuestions); }
+    function blankNumber(n) { return number(blanks, n, questions, namedQuestions); }
+    function plainNumber(n) {
+      var key = String(Number(n));
+      return plainLabels[key] ? n : itemNumber(n);
     }
     return sections.map(function (sec) {
       var copy = Object.assign({}, sec);
@@ -2163,37 +2188,38 @@
         function label(value) { labels.push(value); return "\u0003" + (labels.length - 1) + "\u0004"; }
         // {{56-61}} 等の範囲見出しも、実際の空所・小問の対応表を共有する。
         text = text.replace(/(\{\{\s*(?:問\s*)?)(\d+)((?:\s*(?:[〜～~–—-]|から|to)\s*(?:問\s*)?\d+)+)(\s*\}\})/g, function (_, a, n, rest, b) {
-          return label(a + number(questions, n, blanks) + rest.replace(/\d+/g, function (v) { return number(questions, v, blanks); }) + b);
+          var resolve = /問/.test(a) ? questionNumber : itemNumber;
+          return label(a + resolve(n) + rest.replace(/\d+/g, resolve) + b);
         });
         text = text.replace(/(\[\[\s*(?:--\s*)?)(\d+)((?:\s*(?:[〜～~–—-]|から|to)\s*\d+)+)(\s*(?:--)?\s*\]\])/g, function (_, a, n, rest, b) {
-          return label(a + number(blanks, n, questions) + rest.replace(/\d+/g, function (v) { return number(blanks, v, questions); }) + b);
+          return label(a + blankNumber(n) + rest.replace(/\d+/g, blankNumber) + b);
         });
         text = text.replace(/(\{\{\s*(?:問\s*)?)(\d+)(\s*\}\})/g, function (_, a, n, b) {
-          return label(a + number(questions, n, blanks) + b);
+          return label(a + (/問/.test(a) ? questionNumber(n) : itemNumber(n)) + b);
         });
         text = text.replace(/(\[\[\s*(?:--\s*)?)(\d+)(\s*(?:--)?\s*\]\])/g, function (_, a, n, b) {
-          return label(a + number(blanks, n, questions) + b);
+          return label(a + blankNumber(n) + b);
         });
-        text = text.replace(/(^|[^大])(問\s*)(\d+)((?:\s*(?:[〜～~–—-]|から|to)\s*(?:問\s*)?\d+)+)/g, function (_, before, a, n, rest) {
-          return before + label(a + number(questions, n, blanks) + rest.replace(/\d+/g, function (v) { return number(questions, v, blanks); }));
+        text = text.replace(/(^|[^大質疑])(問\s*)(\d+)((?:\s*(?:[〜～~–—-]|から|to)\s*(?:問\s*)?\d+)+)(?![\dA-Za-z])/g, function (_, before, a, n, rest) {
+          return before + label(a + questionNumber(n) + rest.replace(/\d+/g, questionNumber));
         });
-        text = text.replace(/(^|[^大])問(\s*)(\d+)(?!\d)/g, function (_, a, space, n) {
-          return a + "問" + space + number(questions, n, blanks);
+        text = text.replace(/(^|[^大質疑])問(\s*)(\d+)(?![\dA-Za-z])/g, function (_, a, space, n) {
+          return a + "問" + space + questionNumber(n);
         });
         // リード文の (35)〜(42) も、本文の空所・小問の定義から変換する。
         // 全端点が既知の範囲のみ扱い、未知の数値範囲はそのまま退避する。
         text = text.replace(parenRanges, function (_, before, range) {
           var known = (range.match(/\d+/g) || []).every(function (n) {
             var key = String(Number(n));
-            return questions[key] != null || blanks[key] != null;
+            return questions[key] != null || blanks[key] != null || namedQuestions[key] != null || plainLabels[key];
           });
           return before + label(known ? range.replace(/\d+/g, function (n) {
-            return number(questions, n, blanks);
+            return plainNumber(n);
           }) : range);
         });
         // 括弧と区切り付きの行頭番号。選択肢マークアップの二重括弧は一致しない。
         text = text.replace(/^(\s*(?:@@)?(?:\*\*)?)(?:([（(])(\d+)([）)])|(\d+)([.．、：:])(?=\s|[^\d]))/gm, function (_, prefix, a, n, b, bare, sep) {
-          return prefix + (a ? a + number(questions, n, blanks) + b : number(questions, bare, blanks) + sep);
+          return prefix + (a ? a + plainNumber(n) + b : plainNumber(bare) + sep);
         });
         return text.replace(/\u0003(\d+)\u0004/g, function (_, i) { return labels[Number(i)]; });
       });
