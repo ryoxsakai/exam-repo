@@ -8,6 +8,7 @@ on:
       - 'assets/js/viewer.js'
       - 'assets/css/main*.css'
       - '.github/workflows/verify-public-print-assets.yml'
+      - 'scripts/verify-public-print-assets.cjs'
   pull_request:
     paths:
       - '.github/workflows/verify-public-print-assets.yml'
@@ -17,7 +18,7 @@ permissions:
 jobs:
   public-assets:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
