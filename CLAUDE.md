@@ -230,7 +230,11 @@ schemaは既存Workerデプロイに含まれ、認証済み印刷セットAPI�
 
 `{{問N}}`/行頭`問N`と裸`{{N}}`/空所`[[N]]`は別の対応表を持つ。問題/設問欄に小問見出しがある場合はその表示順を基準とし、本文の参照や下位`(4)`が先に番号を消費しない。同じ番号の繰返しは同じ変換先、各大問で1から開始する。名前付き小問を持つ問題の行頭括弧/区切り番号は下位番号として維持し、同番号の空所があっても上書きしない。名前付き小問がない旧形式の括弧/区切り番号は従来どおり採番する。リード文・解答・解説では対応する番号体系を共有し、DB原文と設問の順序は変えない。
 
+本文/問題欄の単独空所がすべて設問欄の単独空所定義に含まれる場合は、空所の対応表も設問の出現順を基準にする。帝京2026大問1のように本文に`[[3]]`（2日目は`[[3]]`/`[[6]]`）しか出現しなくても、設問の1〜8と同じ番号になる。範囲参照は定義に含めず、本文に独立した空所群がある愛知医科2025大問6や設問欄のない旧形式は従来順を保つ。問Nと空所の対応表は独立したまま。
+
 `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-renumber-browser.cjs`は全通信を合成fixtureへ差替え、PC/mobile・単年度/複数/お気に入り・大問ごとの開始番号・OFF/ON反復・除外・原文不変とA4 PDF内バッジ順を確認する。PDF/HTML/PNG/JSONを`/tmp/exam-print-sets-qa/renumber`へ保存。`EXAM_RENUMBER_FIXTURES=/tmp/exam-readonly-970.json,/tmp/exam-readonly-42.json`でreadonly取得済み実問題も隔離して確認できる（CIは合成fixtureのみ）。`RENUMBER_BASELINE_REF=1eeee2e6b003d0b2ac407d7ef07c5aa0adb88790`では旧不具合を再現し、ONの順序検査で失敗する。
+
+合成fixtureは本文の部分空所と非連番の設問側空所を含み、本文・設問・裸の解答ラベルの対応を独立した期待順で検査する。PDFは問Nに加えて数字の空所バッジもDOMと照合する。`EXAM_RENUMBER_FIXTURES=/tmp/exam-readonly-971.json,/tmp/exam-readonly-972.json`では帝京2026の両日程大問1を隔離確認できる。`EXAM_RENUMBER_EVIDENCE=/tmp/exam-print-sets-qa/blank-order-teikyo`で証跡先を指定可能。`RENUMBER_BASELINE_REF=66098924f2a42c5a3f03ef51a5602c6578b4bf10`では部分空所の対応検査が失敗する。
 
 ### 印刷モーダル（2026-10-06）
 
