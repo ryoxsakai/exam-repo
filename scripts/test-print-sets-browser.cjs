@@ -9,11 +9,12 @@ const questions=id=>[{exam_id:id,question_number:1,category:'長文',problem_tex
 const auth=`window.__fixtureUser={displayName:'Fixture',email:'fixture@example.test',uid:'user-a'};window.__authCallbacks=[];window.Auth={init(){},onChange(cb){__authCallbacks.push(cb);cb(__fixtureUser);},getCurrentUser(){return __fixtureUser;},getIdToken(){return Promise.resolve(__fixtureUser?'fixture-'+__fixtureUser.uid:null);},switchUser(uid){__fixtureUser=uid?{displayName:'Fixture',email:'fixture@example.test',uid}:null;__authCallbacks.forEach(cb=>cb(__fixtureUser));},signIn(){return Promise.resolve();},signOut(){this.switchUser(null);}};`;
 const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrintPreview,refreshPrintSets,buildPrintHtml};';
 (async()=>{
- const deadline=setTimeout(()=>{console.error('Browser test exceeded 180 seconds');process.exit(1);},180000);
+ const deadline=setTimeout(()=>{console.error('Browser test exceeded 360 seconds');process.exit(1);},360000);
+ const waitFlag=async(fn,name)=>{for(let i=0;i<1000;i++){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw new Error('Timed out waiting for '+name);};
  const browser=await chromium.launch({headless:!process.env.HEADED,...(process.env.PANEL_CHROMIUM?{executablePath:process.env.PANEL_CHROMIUM}:{})});
  try {for(const width of [1280,390]){
   const f=fixture();let failExam=null,holdId=null,releaseExam,examHeld=false,holdSave=false,releaseSave,saveHeld=false,failSave=false,holdSetRead=false,setReadHeld=false,releaseSetRead,holdList=false,listHeld=false,releaseList;
-  const context=await browser.newContext({viewport:{width,height:960},serviceWorkers:'block'});
+  const context=await browser.newContext({viewport:{width,height:960},isMobile:width<640,hasTouch:width<640,serviceWorkers:'block'});
   const errors=[];context.on('page',p=>p.on('pageerror',e=>errors.push(e.message)));
   await context.route('**/*',async route=>{
    const req=route.request(),url=new URL(req.url());
@@ -52,11 +53,19 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   const page=await context.newPage();page.setDefaultTimeout(10000);page.setDefaultNavigationTimeout(15000);console.log('QA started',width);await page.goto(origin,{waitUntil:'networkidle'});await page.locator('[data-multi-exam="11"]').waitFor({state:'attached'});
   const waitReady=()=>page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='printSet'&&!window.__setsTest.multiPrint.loading);
   const toggle=async()=>{await page.locator('#pr-multi').check();await page.locator('.tree-row-uni').filter({hasText:'合成大学'}).click();await page.locator('.tree-row-uni').filter({hasText:'別大学'}).click();await page.locator('.tree-row-year').filter({hasText:'2026年度'}).nth(0).click();await page.locator('.tree-row-year').filter({hasText:'2026年度'}).nth(1).click();};
-  const openModal=async(p=page)=>{if(!await p.locator('#pr-set-modal').isVisible())await p.locator('#pr-set-manage').click();};
-  const closeModal=async(p=page)=>{if(await p.locator('#pr-set-modal').isVisible())await p.locator('[data-set-close]').first().click();};
+  const closeAny=async(p=page)=>{await p.bringToFront();const close=p.locator('.print-modal.open [data-print-close], .print-modal.open [data-set-close]').first();if(await close.count()){await close.click();await p.waitForFunction(()=>!document.querySelector('.print-modal.open'));await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));}};
+  const openDialog=async(id,p=page)=>{await p.bringToFront();if(!await p.locator('#'+id).isVisible()){await closeAny(p);await p.locator(id==='pr-set-modal'?'#pr-set-manage':id==='pr-settings-modal'?'#pr-settings-open':'#pr-questions-open').click();await p.locator('#'+id).waitFor({state:'visible'});}};
+  const openModal=async(p=page)=>openDialog('pr-set-modal',p);
+  const closeModal=closeAny;
   const setName=async(text,p=page)=>{await openModal(p);await p.locator('#pr-set-name').fill(text);};
-  const cover=async(index,text,p=page)=>{await closeModal(p);const n=p.locator(`[data-set-cover="${index}"]`);await n.dblclick();await n.fill(text);await n.press('Enter');};
+  const cover=async(index,text,p=page)=>{await closeAny(p);const n=p.locator(`[data-set-cover="${index}"]`);await n.dblclick();await n.fill(text);await n.press('Enter');};
   const move=async(selector)=>{await openModal();await page.locator(selector).click();await waitReady();await closeModal();};
+  const checkPrint=async(selector,checked=true)=>{await openDialog(selector.startsWith('[data-pr')?'pr-questions-modal':'pr-settings-modal');await page.locator(selector).setChecked(checked);await closeAny();};
+  const checkOtherHistory=async()=>{
+   await page.evaluate(()=>{const spacer=document.createElement('div');spacer.id='fixture-history-space';spacer.style.height='1600px';document.body.appendChild(spacer);window.scrollTo(0,150);history.pushState(Object.assign({},history.state,{fixtureHistory:true}),"");window.scrollTo(0,400);});
+   await page.goBack();await page.waitForFunction(()=>window.scrollY===150);assert.equal(await page.evaluate(()=>history.scrollRestoration),'auto','Unrelated history keeps native restoration');
+   await page.goForward();await page.waitForFunction(()=>window.scrollY===400);await page.evaluate(()=>document.getElementById('fixture-history-space').remove());
+  };
   console.log('QA initial loaded');
   assert.equal(await page.locator('#pr-multi-panel').count(),0,'No permanent added panel');
   assert.equal(await page.locator('#pr-set-modal').isVisible(),false);
@@ -65,6 +74,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   assert.equal(await page.locator('#pr-set-modal').isVisible(),false,'ON only changes tree selection');
   assert.equal(await page.locator('[data-multi-exam="11"]').isVisible(),true);
   assert.equal(await page.locator('.tree-row-sched[data-uni="合成大学"][data-year="2026"][data-sched="前期"]').isVisible(),false);
+  await checkOtherHistory();
   await openModal();assert.equal(await page.locator('#pr-set-archive').isVisible(),false);
   assert.equal(await page.locator('#pr-set-modal [data-set-cover]').count(),0,'Cover has no duplicate inputs');
   const input=await page.locator('#pr-set-name').evaluate(e=>({width:e.getBoundingClientRect().width,parent:e.parentElement.getBoundingClientRect().width}));assert.ok(input.width>250&&input.width<=input.parent+1);
@@ -82,6 +92,40 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   }
   assert.equal(f.sql.prepare("SELECT count(*) n FROM sqlite_master WHERE name='print_sets'").get().n,1);
   assert.equal(f.sql.prepare('SELECT count(*) n FROM print_sets').get().n,0,'Closing does not save');
+  const initialRestoration=await page.evaluate(()=>history.scrollRestoration);assert.equal(initialRestoration,"auto");
+  // Each dialog isolates background focus/scroll and keeps a single history entry.
+  for(const [id,trigger] of [['pr-settings-modal','pr-settings-open'],['pr-questions-modal','pr-questions-open'],['pr-set-modal','pr-set-manage']]) {
+   for(const way of ['close','escape','background','back']) {
+    await page.locator('#'+trigger).evaluate(n=>{n.click();n.click();n.click();});
+    await page.locator('#'+id).waitFor({state:'visible'});
+    assert.equal(await page.locator('.print-modal.open').count(),1);
+    assert.equal(await page.locator('.shell').evaluate(n=>n.inert),true);
+    const nodes=page.locator('#'+id+' button:visible:not(:disabled), #'+id+' input:visible:not(:disabled), #'+id+' select:visible:not(:disabled)');
+    await nodes.last().focus();await page.keyboard.press('Tab');assert.equal(await nodes.first().evaluate(n=>n===document.activeElement),true);
+    await page.keyboard.press('Shift+Tab');assert.equal(await nodes.last().evaluate(n=>n===document.activeElement),true);
+    if(way==='close')await closeAny();
+    if(way==='escape')await page.keyboard.press('Escape');
+    if(way==='background')await page.locator('#'+id).click({position:{x:2,y:2}});
+    if(way==='back')await page.goBack();
+    await page.locator('#'+id).waitFor({state:'hidden'});
+    assert.equal(await page.locator('.shell').evaluate(n=>n.inert),false);
+    assert.equal(await page.evaluate(()=>document.activeElement.id),trigger);
+    await page.goForward();await page.locator('#'+id).waitFor({state:'visible'});await closeAny();assert.equal(await page.evaluate(()=>history.scrollRestoration),initialRestoration,'Forward close restores the original history mode');
+   }
+  }
+  await page.locator('#pr-multi').uncheck();await page.goForward();await page.waitForFunction(mode=>history.scrollRestoration===mode,initialRestoration);assert.equal(await page.locator('.print-modal.open').count(),0,'OFF rejects set-history reopening');await page.locator('#pr-multi').check();
+  await checkOtherHistory();
+  await openDialog('pr-settings-modal');
+  await page.locator('#pr-fontsize').selectOption('sm');await closeAny();await openDialog('pr-settings-modal');assert.equal(await page.locator('#pr-fontsize').inputValue(),'sm');await page.locator('#pr-fontsize').selectOption('md');await closeAny();
+  await openModal();await page.locator('#pr-set-name').fill('Caret');await page.locator('#pr-set-name').press('ArrowLeft');await page.keyboard.insertText('X');assert.equal(await page.locator('#pr-set-name').inputValue(),'CareXt','Input rerenders retain caret');
+  // Simulated visual viewport shrink/pan: validates geometry, not a real iOS keyboard.
+  await page.evaluate(()=>{window.__savedViewport=Object.getOwnPropertyDescriptor(window,'visualViewport');Object.defineProperty(window,'visualViewport',{configurable:true,value:{height:360,offsetTop:90}});window.dispatchEvent(new Event('resize'));});
+  const geometry=await page.locator('#pr-set-modal').evaluate(n=>({top:parseFloat(getComputedStyle(n).top),height:n.getBoundingClientRect().height,foot:n.querySelector('.modal-foot').getBoundingClientRect().bottom,scroll:n.querySelector('.modal-body').scrollHeight>n.querySelector('.modal-body').clientHeight}));
+  assert.equal(geometry.top,90);assert.equal(geometry.height,360);assert.ok(geometry.foot<=450);assert.equal(geometry.scroll,true);
+  await page.evaluate(()=>{Object.defineProperty(window,'visualViewport',window.__savedViewport);window.dispatchEvent(new Event('resize'));});
+  const fonts=await page.locator('.print-modal input:not([type="checkbox"]), .print-modal select, .print-modal textarea').evaluateAll(nodes=>nodes.map(n=>parseFloat(getComputedStyle(n).fontSize)));assert.ok(fonts.every(size=>size>=16));
+  assert.ok(!(await page.locator('meta[name="viewport"]').getAttribute('content')).match(/user-scalable\s*=\s*no|maximum-scale/));
+  await closeAny();
   assert.equal(await page.locator('#btn-print-run').isDisabled(),true,'Zero selection cannot print');
   await page.locator('[data-multi-exam="11"]').check();await waitReady();
   await page.locator('[data-multi-exam="13"]').check();await waitReady();
@@ -89,6 +133,12 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   assert.match(await page.locator('#pr-multi-count').innerText(),/3試験/);
   await page.locator('.tree-row-uni').filter({hasText:'合成大学'}).click();await page.locator('.tree-row-uni').filter({hasText:'合成大学'}).click();
   assert.equal(await page.locator('[data-multi-exam="11"]').isChecked(),true,'Selections survive university navigation');
+  for(const [id,trigger] of [['pr-settings-modal','pr-settings-open'],['pr-questions-modal','pr-questions-open'],['pr-set-modal','pr-set-manage']]) {
+   await page.evaluate(()=>window.scrollTo(0,150));const scroll=await page.evaluate(()=>window.scrollY);const restoration=await page.evaluate(()=>history.scrollRestoration);
+   await page.locator('#'+trigger).evaluate(n=>n.click());assert.equal(await page.evaluate(()=>document.body.style.top),-scroll+'px');
+   await closeAny();assert.equal(await page.evaluate(()=>window.scrollY),scroll,'Close restores background scroll');assert.equal(await page.evaluate(()=>history.scrollRestoration),restoration);
+   await page.goForward();await page.locator('#'+id).waitFor({state:'visible'});await closeAny();assert.equal(await page.evaluate(()=>window.scrollY),scroll,'Forward retains the original background position');
+  }
   await move('[data-set-move="2"][data-step="-1"]');
   assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21,13]);
   await setName('Fixture saved set');
@@ -108,10 +158,12 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21,13]);
   await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:path.join(evidence,`normal-modal-ui-${width}.png`)});
   await openModal();await page.locator('#pr-set-modal .modal').screenshot({path:path.join(evidence,`set-modal-${width}.png`)});await closeModal();
-  await page.locator('.print-settings > summary').click();
+  await openDialog('pr-settings-modal');await page.locator('#pr-settings-modal .modal').screenshot({path:path.join(evidence,`settings-modal-${width}.png`)});await closeAny();
+  await openDialog('pr-questions-modal');await page.locator('#pr-questions-modal .modal').screenshot({path:path.join(evidence,`questions-modal-${width}.png`)});
   assert.equal(await page.locator('[data-prq="11:1"]').count(),1);assert.equal(await page.locator('[data-prq="21:1"]').count(),1);
   await page.locator('[data-prq="11:1"]').uncheck();assert.ok(!(await page.locator('#print-preview').innerText()).includes('Q11'));assert.ok((await page.locator('#print-preview').innerText()).includes('Q21'));
-  await move('[data-set-move="1"][data-step="-1"]');assert.equal(await page.locator('[data-prq="11:1"]').isChecked(),false,'Reorder retains excluded question');await move('[data-set-move="0"][data-step="1"]');await page.locator('[data-prq="11:1"]').check();
+  await move('[data-set-move="1"][data-step="-1"]');assert.equal(await page.locator('[data-prq="11:1"]').isChecked(),false,'Reorder retains excluded question');await move('[data-set-move="0"][data-step="1"]');await checkPrint('[data-prq="11:1"]');
+  await closeAny();
   const ordered=await page.locator('#print-preview .print-exam-block').allTextContents();assert.equal(ordered.length,6);for(const [i,marker] of ['Q11','Q21','Q13','A11','A21','A13'].entries())assert.ok(ordered[i].includes(marker));
   const expectedHeads=['2026 合成大学 前期','2026 別大学 前期','2026 合成大学 後期'];
   assert.deepEqual(await page.locator('#print-preview .print-exam-head').allTextContents(),expectedHeads.concat(expectedHeads));
@@ -133,15 +185,20 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
    assert.deepEqual(result.heads,['2026 表示名 <大学> & 名称','2026 表示名 <大学> & 名称']);assert.equal(result.unchanged,true);
   }
   // Busy write locks all draft edits and both print buttons; repeated save creates one row.
-  console.log('QA preview/order ready');holdSave=true;await openModal();await page.locator('#pr-set-save').click();await page.waitForFunction(()=>document.getElementById('pr-set-name').disabled);while(!saveHeld)await new Promise(r=>setTimeout(r,10));
+  await checkPrint('[data-prq="11:1"]',false);
+  console.log('QA preview/order ready');holdSave=true;await openModal();await page.locator('#pr-set-save').click();await page.waitForFunction(()=>document.getElementById('pr-set-name').disabled);await waitFlag(()=>saveHeld,'saveHeld');
   assert.equal(await page.locator('#pr-multi').isDisabled(),true);assert.equal(await page.locator('#btn-print-run').isDisabled(),true);assert.equal(await page.locator('#btn-print-run-2').isDisabled(),true);
-  await page.locator('#pr-set-modal [role="dialog"]').press('Escape');
+  assert.equal(await page.locator('#pr-set-modal').evaluate(n=>n.contains(document.activeElement)),true,'Disabling save keeps focus inside dialog');
+  await page.keyboard.press('Tab');assert.equal(await page.locator('#pr-set-modal').evaluate(n=>n.contains(document.activeElement)),true,'Busy Tab stays inside dialog');
+  await page.keyboard.press('Escape');
   await page.locator('#pr-set-modal').click({position:{x:2,y:2}});assert.equal(await page.locator('#pr-set-modal').isVisible(),true,'Busy cannot close');
+  await page.goBack();assert.equal(await page.locator('#pr-set-modal').isVisible(),true,'Busy back cannot leave');
   await page.locator('[data-set-cover="1"]').evaluate(n=>n.dispatchEvent(new MouseEvent('dblclick',{bubbles:true})));assert.notEqual(await page.locator('[data-set-cover="1"]').getAttribute('contenteditable'),'true','Busy locks cover editor');
   await page.evaluate(()=>window.__setsTest.runPrint());assert.equal(await page.evaluate(()=>window.__prints||0),0);
   holdSave=false;releaseSave();await page.waitForFunction(()=>window.__setsTest.multiPrint.revision===1&&!window.__setsTest.multiPrint.busy);
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'pr-set-manage','Successful save restores enabled trigger focus');
   console.log('QA saved');await openModal();assert.equal(await page.locator('#pr-set-archive').isVisible(),true,'Saved set exposes archive');await closeModal();const id=await page.evaluate(()=>window.__setsTest.multiPrint.id);assert.equal(f.sql.prepare('SELECT count(*) n FROM print_sets').get().n,1);
-  holdList=true;listHeld=false;await openModal();while(!listHeld)await new Promise(r=>setTimeout(r,10));
+  holdList=true;listHeld=false;await openModal();await waitFlag(()=>listHeld,'listHeld');
   await page.locator('#pr-set-list').selectOption(id);await closeModal();holdList=false;
   const freshList=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/print-sets'&&r.request().method()==='GET');await openModal();await freshList;releaseList();
   await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
@@ -149,16 +206,18 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   f.reopen();
   const second=await context.newPage();await second.goto(origin,{waitUntil:'networkidle'});await second.locator('#pr-multi').check();await second.locator(`#pr-set-list option[value="${id}"]`).waitFor({state:'attached'});await openModal(second);await second.locator('#pr-set-list').selectOption(id);await second.locator('#pr-set-open').click();await second.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='printSet'&&!window.__setsTest.multiPrint.busy);await closeModal(second);
   assert.deepEqual(await second.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21,13]);assert.equal(await second.locator('[data-set-cover="1"]').textContent(),'COMMON COVER');
+  assert.equal(await second.locator('[data-prq="11:1"]').isChecked(),false,'Saved exclusions restore on another device');
+  await openDialog('pr-questions-modal',second);await second.locator('[data-prq="11:1"]').check();await closeAny(second);
   await setName('Updated on other device',second);await openModal(second);await second.locator('#pr-set-save').click();await second.waitForFunction(()=>window.__setsTest.multiPrint.revision===2&&!window.__setsTest.multiPrint.busy);
   await setName('Stale local edit');await openModal();await page.locator('#pr-set-save').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&window.__setsTest.multiPrint.error.includes('別端末'));
   assert.equal(await page.locator('#pr-set-name').inputValue(),'Stale local edit');assert.equal((await f.call('user-a',id)).body.print_set.name,'Updated on other device');assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
   await openModal();await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();await page.waitForFunction(()=>window.__setsTest.multiPrint.revision===2&&!window.__setsTest.multiPrint.busy);await closeModal();
-  holdSetRead=true;setReadHeld=false;await openModal();await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();while(!setReadHeld)await new Promise(r=>setTimeout(r,10));
+  holdSetRead=true;setReadHeld=false;await openModal();await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();await waitFlag(()=>setReadHeld,'setReadHeld');assert.equal(await page.locator('#pr-set-modal').evaluate(n=>n.contains(document.activeElement)),true,'Pending load retains dialog focus');
   await page.locator('#pr-set-modal [role="dialog"]').press('Escape');assert.equal(await page.locator('#pr-set-modal').isVisible(),true,'Pending read cannot close or change drafts');assert.equal(await page.locator('#pr-multi').isDisabled(),true);
   holdSetRead=false;releaseSetRead();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy);await closeModal();
   console.log('QA second device conflict ready');
   // Real print HTML and PDF: one cover, Q exams then A exams, distinct pages.
-  await page.locator('#btn-print-run').click();await page.waitForFunction(()=>window.__prints===1);assert.equal(await page.locator('#print-area .print-cover').count(),1);
+  await page.locator('#btn-print-run').click();await page.waitForFunction(()=>window.__prints===1);assert.equal(await page.locator('#print-area .print-cover').count(),1);assert.equal(await page.locator('#print-area .print-modal, #print-area input, #print-area button').count(),0,'Print output contains no dialogs/controls');
   assert.deepEqual(await page.locator('#print-area .print-exam-head').allTextContents(),expectedHeads.concat(expectedHeads));
   await page.emulateMedia({media:'print'});await assertHeadingColor('#print-area');await page.emulateMedia({media:null});
   const pdfPath=path.join(evidence,`multi-${width}.pdf`);await page.pdf({path:pdfPath,format:'A4',printBackground:true});
@@ -173,7 +232,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await page.waitForFunction(()=>!document.getElementById('btn-print-run').disabled);assert.equal(await page.evaluate(()=>window.__prints||0),beforePrints);
   await page.evaluate(()=>Object.defineProperty(document.fonts,'ready',{configurable:true,get:()=>window.__originalFonts}));await cover('0','');
   // Borderline and maximum-length cover text must stay entirely on page one.
-  await page.locator('#pr-name-field').check();
+  await checkPrint('#pr-name-field');
   for (const length of [30,60,120]) {
    for (let i=0;i<3;i++)await cover(i,['上','中','下'][i].repeat(length));
    await cover('time','時'.repeat(120));
@@ -184,17 +243,20 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
    for(const text of longPages.slice(1))assert.ok(!/[上中下時]/.test(text),'Cover never spills into exam pages');
   }
   for(let i=0;i<3;i++)await cover(i,i===1?'COMMON COVER':'');await cover('time','各60分');
-  await page.locator('#pr-name-field').uncheck();
+  await checkPrint('#pr-name-field',false);
+  console.log('QA cover lengths ready');
   // Answer-only and problem-only reuse section controls.
-  for(const type of ['本文','設問'])await page.locator(`[data-prsec="${type}"]`).uncheck();assert.equal(await page.locator('#print-preview .print-exam-block').count(),3);assert.ok(!(await page.locator('#print-preview').innerText()).includes('Q11'));
-  for(const type of ['本文','設問'])await page.locator(`[data-prsec="${type}"]`).check();for(const type of ['解答','解説'])await page.locator(`[data-prsec="${type}"]`).uncheck();assert.equal(await page.locator('#print-preview .print-exam-block').count(),3);
-  for(const type of ['解答','解説'])await page.locator(`[data-prsec="${type}"]`).check();
-  await openModal();await page.locator('#pr-set-archive').click();await page.waitForFunction(()=>window.__setsTest.multiPrint.archived&&!window.__setsTest.multiPrint.busy);assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
-  await openModal();await page.locator('#pr-set-archive').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.archived&&!window.__setsTest.multiPrint.busy);
+  for(const type of ['本文','設問'])await checkPrint(`[data-prsec="${type}"]`,false);assert.equal(await page.locator('#print-preview .print-exam-block').count(),3);assert.ok(!(await page.locator('#print-preview').innerText()).includes('Q11'));
+  for(const type of ['本文','設問'])await checkPrint(`[data-prsec="${type}"]`);for(const type of ['解答','解説'])await checkPrint(`[data-prsec="${type}"]`,false);assert.equal(await page.locator('#print-preview .print-exam-block').count(),3);
+  for(const type of ['解答','解説'])await checkPrint(`[data-prsec="${type}"]`);
+  await setName('Retry save draft');failSave=true;await page.locator('#pr-set-save').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&window.__setsTest.multiPrint.error);assert.equal(await page.locator('#pr-set-name').inputValue(),'Retry save draft');assert.equal(await page.locator('#pr-set-modal').isVisible(),true);await page.locator('#pr-set-save').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&!window.__setsTest.multiPrint.error);await closeAny();
+  console.log('QA sections ready');
+  console.log('QA archive operation');await openModal();await page.locator('#pr-set-archive').click();await page.waitForFunction(()=>window.__setsTest.multiPrint.archived&&!window.__setsTest.multiPrint.busy);assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
+  console.log('QA archive operation');await openModal();await page.locator('#pr-set-archive').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.archived&&!window.__setsTest.multiPrint.busy);
   // Failed/missing exam blocks entire output; delayed stale results cannot replace a changed selection.
   failExam=21;await page.evaluate(()=>window.__setsTest.loadMultiPrint());await page.waitForFunction(()=>window.__setsTest.multiPrint.error.includes('21'));assert.equal(await page.locator('#btn-print-run').isDisabled(),true);assert.equal(await page.locator('#print-preview .print-cover').count(),0);
   failExam=null;await page.locator('#pr-multi-retry').click();await waitReady();
-  holdId=13;examHeld=false;await page.evaluate(()=>{window.__setsTest.loadMultiPrint();});while(!examHeld)await new Promise(r=>setTimeout(r,10));
+  holdId=13;examHeld=false;await page.evaluate(()=>{window.__setsTest.loadMultiPrint();});await waitFlag(()=>examHeld,'examHeld');
   await move('[data-set-remove="13"]');holdId=null;releaseExam();await page.waitForTimeout(100);assert.deepEqual(await page.evaluate(()=>window.__setsTest.state.printExam.exams.map(e=>e.id)),[11,21]);
   // Selecting all/none within a year does not clear other universities.
   await page.locator('[data-multi-year="[11,13]"]').check();await waitReady();assert.deepEqual((await page.evaluate(()=>window.__setsTest.multiPrint.ids)).sort(),[11,13,21]);
@@ -204,10 +266,12 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await closeModal();await page.locator('#pr-multi').uncheck();assert.equal(await page.locator('#pr-set-manage').isVisible(),false);assert.equal(await page.locator('[data-multi-exam="11"]').isVisible(),false,'OFF hides multi checkboxes');await page.locator('.tree-row-sched[data-uni="合成大学"][data-year="2026"][data-sched="前期"]').click();await page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='exam');assert.equal(await page.locator('#print-preview .pc-duration').innerText(),'時間：60分');assert.equal(await page.locator('#print-preview .print-cover').count(),1);
   await page.locator('.tree-row-fav').click();await page.locator('[data-favfolder="1"]').click();await page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='favFolder');assert.equal(await page.locator('#print-preview .pc-uni').innerText(),'Fixture favorites');
   await page.locator('#pr-multi').check();await openModal();await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&window.__setsTest.multiPrint.revision);await closeModal();
-  await page.evaluate(()=>Auth.switchUser('user-b'));await page.waitForFunction(()=>window.__setsTest.multiPrint.uid==='user-b');
+  await openModal();await page.evaluate(()=>Auth.switchUser('user-b'));await page.waitForFunction(()=>window.__setsTest.multiPrint.uid==='user-b');
+  assert.equal(await page.locator('.print-modal.open').count(),0);assert.equal(await page.locator('.shell').evaluate(n=>n.inert),false);
+  await page.goBack();await page.waitForFunction(mode=>history.scrollRestoration===mode,initialRestoration);await page.goForward();await page.waitForFunction(mode=>history.scrollRestoration===mode,initialRestoration);assert.equal(await page.locator('.print-modal.open').count(),0,'Old account modal cannot reopen');
   assert.equal(await page.locator('#pr-set-name').inputValue(),'');assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[]);assert.equal(await page.locator('[data-set-cover="1"]').count(),0);assert.equal(await page.evaluate(()=>window.__setsTest.multiPrint.cover.lines[1]),'印刷セット');assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
   assert.deepEqual(errors,[]);assert.equal(f.sql.prepare('SELECT count(*) n FROM favorites').get().n,1);assert.equal(f.sql.prepare('SELECT problem_text FROM questions').get().problem_text,'source');
   console.log(`PASS ${width}px: selection/year/order, shared cover, SQLite re-open/second device/conflict, archive/restore, failures/stale fetch, single/favorite regressions, 7-page A4 PDF`);
   await context.close();f.close();
- }}finally{clearTimeout(deadline);await browser.close();}
+ }}catch(e){console.error('QA failed before cleanup:',e);throw e;}finally{clearTimeout(deadline);await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

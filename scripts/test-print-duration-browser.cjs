@@ -48,7 +48,7 @@ const exams=[{id:11,university_id:1,university_name:'合成大学',year:2026,sch
         return route.fulfill({status:200,contentType:({'.html':'text/html','.js':'application/javascript','.css':'text/css'})[path.extname(file)]||'application/octet-stream',body});
       });
       await context.addInitScript(origin=>{localStorage.setItem('cf_worker_url',origin);localStorage.setItem('exam_lasttab_main','print');window.print=()=>{window.__prints=(window.__prints||0)+1;};},origin);
-      const open=async()=>{await page.goto(origin,{waitUntil:'networkidle'});await page.waitForFunction(()=>window.__durationTest&&window.__durationTest.state.config!==null);await page.locator('.print-settings > summary').click();};
+      const open=async()=>{await page.goto(origin,{waitUntil:'networkidle'});await page.waitForFunction(()=>window.__durationTest&&window.__durationTest.state.config!==null);await page.locator('#pr-settings-open').click();};
       const choose=async id=>{const e=exams.find(e=>e.id===id);await page.evaluate(e=>{const t=window.__durationTest;t.state.printSel={kind:'exam',uni:e.university_name,year:String(e.year),sched:e.schedule};t.loadPrintPreview();},e);await page.waitForFunction(id=>window.__durationTest.state.printExam?.id===id,id);};
       const save=async(key,value)=>{await page.locator('#pr-duration-'+key).fill(value);await page.locator('#pr-duration-save-'+key).click();await page.waitForFunction(()=>!document.getElementById('pr-duration-save-university').disabled);};
       await open(); await choose(11);
@@ -105,6 +105,7 @@ const exams=[{id:11,university_id:1,university_name:'合成大学',year:2026,sch
       await page.evaluate(async()=>{window.__fontResolve();await Promise.resolve();await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));delete document.fonts;});
       assert.equal(await page.evaluate(()=>window.__prints||0),0,'Prepared old print cancels after metadata save starts');
       holdSave=false;releaseSave();await page.waitForFunction(()=>!document.getElementById('btn-print-run').disabled);
+      await page.locator('#pr-settings-modal [data-print-close]').first().click();
       await page.locator('#btn-print-run').click();await page.waitForFunction(()=>window.__prints>0);
       assert.equal(await page.locator('#print-area .pc-duration').innerText(),'時間：90分');
       assert.equal(await page.locator('#print-area').innerHTML(),await page.locator('#print-preview .print-doc').innerHTML());

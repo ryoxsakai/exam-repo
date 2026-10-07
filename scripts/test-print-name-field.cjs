@@ -162,7 +162,7 @@ async function browserTest() {
       const openPage = async () => {
         await page.goto(origin + '/', {waitUntil: 'networkidle'});
         await page.waitForFunction(() => window.__printTest && window.__printTest.state.config !== null);
-        await page.locator('.print-settings > summary').click();
+        await page.locator('#pr-settings-open').click();
         assert.equal(await page.getByLabel('氏名欄を追加', {exact: true}).count(), 1, 'Checkbox has an accessible label');
       };
       const setFixture = async ex => {
@@ -180,6 +180,7 @@ async function browserTest() {
       // Empty cover lines must accept a click across their full width in Chrome,
       // including after deleting all text or adding a new line.
       const verifyCoverFocus = async () => {
+        await page.locator("#pr-settings-modal [data-print-close]").first().click();
         await setFixture(fixture.folder);
         await page.evaluate(() => {
           Store.setPrintFolderTitleLines(55, ['', '演習フォルダ', '']);
@@ -188,6 +189,7 @@ async function browserTest() {
         const empty = page.locator('#print-preview [data-print-title][data-line="0"]');
         await empty.click({position: {x: 20, y: 10}});
         assert.equal(await empty.evaluate(n => document.activeElement === n && n.isContentEditable), true, 'Empty line accepts one click');
+        assert.ok(await empty.evaluate(n => parseFloat(getComputedStyle(n).fontSize)>=16),'Small title input does not trigger iOS font zoom');
         assert.ok(await empty.evaluate(n => n.getBoundingClientRect().height >= 20), 'CSS preserves empty hit area');
         await page.keyboard.insertText('表紙タイトル');
         assert.equal(await empty.evaluate(n => n.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', isComposing: true, bubbles: true, cancelable: true}))), true, 'IME confirmation is not prevented');
@@ -221,6 +223,7 @@ async function browserTest() {
       await verifyCoverFocus();
       assert.equal(await nameBox.isChecked(), false, `${device}: starts OFF`);
       await setFixture(fixture.exam);
+      await page.locator("#pr-settings-open").click();
       await nameBox.check();
       assert.equal(await page.locator('#print-preview .pc-name-field').count(), 1, 'Real change event rerenders preview');
       assert.equal(await page.evaluate(() => localStorage.getItem('exam_print_name_field')), 'true');
@@ -240,11 +243,14 @@ async function browserTest() {
 
       for (const [kind, ex] of [['exam', fixture.exam], ['folder', fixture.folder]]) {
         await setFixture(ex);
+        if (!await page.locator("#pr-settings-modal").isVisible()) await page.locator("#pr-settings-open").click();
         await page.locator('#pr-renumber').check();
         const outputs = {};
         for (const enabled of [false, true]) {
           await page.emulateMedia({media: 'screen'});
+          if (!await page.locator("#pr-settings-modal").isVisible()) await page.locator("#pr-settings-open").click();
           await nameBox.setChecked(enabled);
+          await page.locator("#pr-settings-modal [data-print-close]").first().click();
           const preview = page.locator('#print-preview .print-doc');
           assert.equal(await preview.locator('.pc-name-field').count(), +enabled);
           const screen = await measure(page, '#print-preview .print-cover');
@@ -275,6 +281,7 @@ async function browserTest() {
         results.push({device, kind, pages: outputs.on.pages, off: outputs.off.pdfPath, on: outputs.on.pdfPath});
         await page.emulateMedia({media: 'screen'});
         // Disabled cover also applies to the real print path, not only preview.
+        if (!await page.locator("#pr-settings-modal").isVisible()) await page.locator("#pr-settings-open").click();
         await coverBox.uncheck();
         const previous = await page.evaluate(() => window.__printCalls);
         await page.locator('#btn-print-run-2').click();

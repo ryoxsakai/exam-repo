@@ -224,3 +224,13 @@ Firebase認証付き `GET/POST /api/print-sets`、`GET/PUT /api/print-sets/:id` 
 schemaは既存Workerデプロイに含まれ、認証済み印刷セットAPIの初回利用で `CREATE TABLE IF NOT EXISTS` を実行する追加のみの移行。既存schema.sql全体を本番に再適用しない。新Secret/権限/サービスは不要。
 
 検証: `node scripts/test-print-sets.cjs` は隔離実SQLite再open・他ユーザー・同時版競合・アーカイブ/復元を確認。`node scripts/test-print-sets-browser.cjs` は全通信を合成データに差し替え、Mac ChromeのPC/mobileと7ページA4 PDFを確認（`PANEL_CHROMIUM` / `HEADED=1`に対応、PDF抽出はPython pypdf）。既存の印刷時間・番号・行番号・セクション保存・お気に入り・OAuthの回帰も行う。`.github/workflows/print-sets-test.yml`で同じ隔離テストを実行し、PDF/スクリーンショットを保存する。
+
+### 印刷モーダル（2026-10-06）
+
+通常画面は「印刷設定」「印刷する大問」の入口と選択問数のみ。既存コントロールを各独立モーダルに配置し、値・localStorage・表紙編集・プレビュー/印刷のHTMLは共用する。印刷設定と大問選択は即時反映、印刷セットは保存まで下書き。セット画面は現在のセット/保存済みセットを分離し、新規保存と更新を明示する。
+
+3モーダルは共通の開閉処理でEscape/外側クリック/戻る・進む/フォーカス循環と復帰を扱う。背景をinert・固定し、閉じた位置へ戻す。visualViewportの高さ/offsetTopに追従してキーボード表示時も本文をスクロール可能にする。入力/select/textareaは16px、表紙の小さい文字も編集中のみ16px以上。手動ズームは制限しない。保存/読込待機は閉じる・戻るを停止し、アカウント変更はモーダルを閉じて旧履歴からの復帰を拒否する。
+
+既存印刷セットAPIの任意キー `question_selection`（`exam_id:question_number` → 真偽）で大問の除外を保存/復元する。既存テーブルには認証済み初回呼出で列だけを追加し、旧セットは `{}`（全問）、旧クライアントの省略更新では既存値を保持する。schema.sql全体は再適用しない。選択された試験の順番は従来のexam_idsを保持する。
+
+検証: `npm ci --prefix panel --cache /tmp/exam-npm-cache && npm run build --prefix panel`、既存Node印刷/OAuth回帰、`PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-sets-browser.cjs`（PC1280px/mobile390px・touch、3モーダル/戻る進む/連打/保存・読込待機/失敗再試行/新入力/アカウント切替/単年度と複数とお気に入り/大問除外の別端末復元/7ページA4 PDF）。全通信を合成データ・隔離SQLiteへ向ける。`test-print-name-field.cjs --browser` と `test-print-duration-browser.cjs` で既存表紙/時間/PDFを検証。viewport縮小/panはエミュレーションで、実機iOSキーボード/自動ズームの確認は含まない。
