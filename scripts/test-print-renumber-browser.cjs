@@ -4,20 +4,21 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {execFileSync}=require('node:child_process');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'../panel/node_modules/playwright');
 const root=path.resolve(__dirname,'..'),origin='https://exam-renumber.test';
-const evidence='/tmp/exam-print-sets-qa/renumber'+(process.env.EXAM_RENUMBER_FIXTURES?'-readonly':'');
+const evidence=process.env.EXAM_RENUMBER_EVIDENCE||'/tmp/exam-print-sets-qa/renumber'+(process.env.EXAM_RENUMBER_FIXTURES?'-readonly':'');
 fs.mkdirSync(evidence,{recursive:true});
 function question(id,n,start,nested=false) {
- const labels=Array.from({length:4},(_,i)=>`{{問${start+i}}} QUESTION-${id}-${n}-${i+1}`);
+ const blanks=start===7?[66,68,70,72]:Array.from({length:4},(_,i)=>start+i);
+ const labels=Array.from({length:4},(_,i)=>`{{問${start+i}}} QUESTION-${id}-${n}-${i+1} [[${blanks[i]}]]`);
  if(nested)labels[0]+='\n(1) Lower one\n((1)) First choice\n(4) Lower four\n((4)) Fourth choice\n(6) Lower six';
- return {exam_id:id,question_number:n,category:'長文',problem_text:`{{本文}}\n${'Synthetic passage for line numbering. '.repeat(60)}\n{{問題}}\n(4)__Passage reference.__\n${labels.join('\n')}`,answer_text:labels.map((_,i)=>`{{問${start+i}}} ANSWER-${id}-${n}-${i+1}`).join('\n'),commentary_text:`問${start+3}の説明。\n(4) Lower four explanation.`};
+ return {exam_id:id,question_number:n,category:'長文',_testBlankOrder:blanks,problem_text:`{{本文}}\nOnly [[${blanks[2]}]]${nested?' and [[--'+blanks[3]+'--]]':''}.\n${'Synthetic passage for line numbering. '.repeat(60)}\n{{設問}}\n(4)__Passage reference.__\n${labels.join('\n')}`,answer_text:labels.map((_,i)=>`{{問${start+i}}} {{${blanks[i]}}} ANSWER-${id}-${n}-${i+1}`).join('\n'),commentary_text:`問${start+3}の説明。\n(4) Lower four explanation.`};
 }
 let exams=[{id:11,university_id:1,university_name:'合成医科',year:2026,schedule:'前期',questions:[question(11,1,1),question(11,3,7,true)]},
  {id:21,university_id:2,university_name:'第二テスト大学',year:2025,schedule:'後期',questions:[question(21,7,33,true)]}];
 if(process.env.EXAM_RENUMBER_FIXTURES) {
  exams=process.env.EXAM_RENUMBER_FIXTURES.split(',').map((file,i)=>{
   const ex=JSON.parse(fs.readFileSync(file,'utf8')).exam;
-  const selected=ex.id===970?[4,5]:ex.id===42?[3]:ex.questions.map(q=>q.question_number);
-  return {...ex,university_id:i+1,questions:ex.questions.filter(q=>selected.includes(q.question_number)).map(q=>({...q,exam_id:ex.id}))};
+  const selected=ex.id===970?[4,5]:ex.id===42?[3]:[971,972].includes(ex.id)?[1]:ex.questions.map(q=>q.question_number);
+  return {...ex,university_id:i+1,questions:ex.questions.filter(q=>selected.includes(q.question_number)).map(q=>({...q,exam_id:ex.id,...([971,972].includes(ex.id)?{_testBlankOrder:[1,2,3,4,5,6,7,8]}:{})}))};
  });
 }
 const allQuestions=exams.flatMap(e=>e.questions),favorites=[...allQuestions].reverse();
@@ -76,6 +77,18 @@ const hook='window.__renumberTest={state,runPrint,renderPrintPreview,isPreparing
     assert.deepEqual(actual,expected.map(e=>e.questions),`${width}px ${label} renumber ${on}`);
     const answers=await page.locator('#print-preview .print-part-a .print-q').evaluateAll(rows=>rows.map(row=>[...row.querySelectorAll('.print-field')].filter(f=>f.querySelector('.print-field-label')?.textContent==='解答').flatMap(f=>[...f.querySelectorAll('.question-badge')].map(n=>n.textContent).filter(t=>/^問\d+$/.test(t)))));
     assert.deepEqual(answers,expected.map(e=>e.answers),'Answer labels use the same per-question correspondence');
+    for(let i=0;i<order.length;i++)if(order[i]._testBlankOrder) {
+     const blankExpected=await page.evaluate(({q,on})=>{
+      const resolve=t=>on&&q._testBlankOrder.includes(Number(t))?String(q._testBlankOrder.indexOf(Number(t))+1):t;
+      const extract=(text,selector)=>{const node=document.createElement('div');node.innerHTML=Markup.render(text).html;return [...node.querySelectorAll(selector)].map(n=>n.textContent).filter(t=>/^\d+$/.test(t)).map(resolve);};
+      const secs=Markup.parseSections(q.problem_text),questionSide=Markup.mergeLeadSections(secs.filter(s=>!/解答|解説|和訳|訳|答|講評/.test(s.type)));
+      return {blanks:questionSide.flatMap(s=>extract(s.text,'.blank-badge')),answers:extract(secs.find(s=>s.type==='解答')?.text||q.answer_text||'','.question-badge')};
+     },{q:order[i],on});
+     const blankActual=await page.locator('#print-preview .print-part-q .print-q').nth(i).locator('.blank-badge').allTextContents();
+     assert.deepEqual(blankActual.filter(t=>/^\d+$/.test(t)),blankExpected.blanks,'Partial passage and question-side blank correspondence');
+     const numericAnswers=await page.locator('#print-preview .print-part-a .print-q').nth(i).locator('.print-field').filter({has:page.locator('.print-field-label',{hasText:/^解答$/})}).locator('.question-badge').allTextContents();
+     assert.deepEqual(numericAnswers.filter(t=>/^\d+$/.test(t)),blankExpected.answers,'Bare answer labels use the blank correspondence');
+    }
     if(!on)assert.equal(await page.locator('#print-preview').innerText(),before,'OFF restores the original print content');
     const current=await page.evaluate(()=>{
      const qs=window.__renumberTest.state.printExam.questions;
@@ -90,8 +103,9 @@ const hook='window.__renumberTest={state,runPrint,renderPrintPreview,isPreparing
     const badges=await page.locator('#print-area .question-badge').allTextContents();
     await page.emulateMedia({media:'print'});
     const color=await page.locator('#print-area .question-badge').first().evaluate(n=>getComputedStyle(n).color);
+    const blanks=await page.locator('#print-area .blank-badge').evaluateAll(nodes=>nodes.filter(n=>/^\d+$/.test(n.textContent)).map(n=>({text:n.textContent,size:parseFloat(getComputedStyle(n).fontSize)*.75})));
     const pdf=path.join(evidence,`${width}-${label}-${on?'on':'off'}.pdf`),json=pdf.replace(/\.pdf$/,'.json');
-    fs.writeFileSync(json,JSON.stringify({badges:badges.filter(t=>/^問\d+$/.test(t)),color}));
+    fs.writeFileSync(json,JSON.stringify({badges:badges.filter(t=>/^問\d+$/.test(t)),color,blanks}));
     fs.writeFileSync(pdf.replace(/\.pdf$/,'.html'),await page.locator('#print-area').innerHTML());
     await page.pdf({path:pdf,format:'A4',printBackground:true});await page.emulateMedia({media:'screen'});
     execFileSync('python3',[path.join(__dirname,'verify-print-renumber-pdf.py'),pdf,json],{stdio:'inherit'});

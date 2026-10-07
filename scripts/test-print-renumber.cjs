@@ -13,6 +13,65 @@ assert.equal(r[0].text,'[1] In 1966 [[1]] and [[--2--]].  ##word::問7##\n![問7
 assert.equal(r[1].text,'{{問1}} [[1]]\n((1)) First choice\n((2)) Second choice\n{{問2}} [[2]]');
 assert.equal(r[2].text,'問1：[[1]] = 2\n問2：[[2]] = 1');
 assert.equal(r[3].text,'問1の説明。大問7はそのまま。問2も参照。');
+// Teikyo 2026 I: only blank 3 (and 6 on day two) appears in the passage.
+// Question-side answer slots define the sequence, not that partial passage.
+for(const body of ['Only [[3]].','Only [[3]] and [[--6--]].']) {
+  const teikyo=[{type:'リード文',text:'See [[8]] and [[1]]〜[[8]].'},
+    {type:'本文',text:body},
+    {type:'設問',text:Array.from({length:8},(_,i)=>'{{問'+(i+1)+'}} Question [[ '+(i+1)+' ]]'+(i===2?' repeated [[3]]':'')).join('\n')+'\n{{問9}} [[A]] [[ 　]]'},
+    {type:'解答',text:Array.from({length:8},(_,i)=>'{{'+(i+1)+'}}(('+((i%4)+1)+'))').join(' ')},
+    {type:'解説',text:'[[3]] and [[6]], {{3}} and {{6}}.'}];
+  const before=JSON.stringify(teikyo);
+  assert.deepEqual(renumber(teikyo),teikyo);
+  assert.equal(JSON.stringify(teikyo),before);
+}
+const questionBlanks=renumber([{type:'リード文',text:'[[70]] and [[66]]〜[[70]], [[99]] stays unknown.'},
+  {type:'本文',text:'Only [[--68--]], [[A]] and [[ 　]].'},
+  {type:'設問',text:'{{問7}} First [[66]].\n{{問8}} Second [[68]], repeated [[68]].\n{{問9}} Third [[70]].'},
+  {type:'解答',text:'{{問7}} {{66}}((2))\n{{問8}} {{68}}((3))\n{{問9}} {{70}}((4))'},
+  {type:'解説',text:'[[68]], {{68}} and (66)〜(70).'}]);
+assert.equal(questionBlanks[0].text,'[[3]] and [[1]]〜[[3]], [[99]] stays unknown.');
+assert.equal(questionBlanks[1].text,'Only [[--2--]], [[A]] and [[ 　]].');
+assert.equal(questionBlanks[2].text,'{{問1}} First [[1]].\n{{問2}} Second [[2]], repeated [[2]].\n{{問3}} Third [[3]].');
+assert.equal(questionBlanks[3].text,'{{問1}} {{1}}((2))\n{{問2}} {{2}}((3))\n{{問3}} {{3}}((4))');
+assert.equal(questionBlanks[4].text,'[[2]], {{2}} and (1)〜(3).');
+const partialBlankExam={questions:[{question_number:1,problem_text:'{{本文}}\nOnly [[68]].\n{{設問}}\n{{問7}} [[66]]\n{{問8}} [[68]]\n{{問9}} [[70]]',answer_text:'{{66}} A\n{{68}} B\n{{70}} C'}]};
+const partialBefore=JSON.stringify(partialBlankExam),partialHtml=ctx.testPrint.buildPrintHtml(partialBlankExam,{renumber:true});
+assert(partialHtml.includes('Only <span class="blank-badge">2</span>'));
+for(const type of ['本文','設問','問題','リード文'])ctx.Store.setPrintSection(type,false);
+const partialAnswers=ctx.testPrint.buildPrintHtml(partialBlankExam,{renumber:true});
+assert(!partialAnswers.includes('print-part-q'));
+assert(partialAnswers.includes('question-badge">2</span><span class="qtext">B'));
+for(const type of ['本文','設問','問題','リード文'])ctx.Store.setPrintSection(type,true);
+assert.equal(ctx.testPrint.buildPrintHtml(partialBlankExam,{renumber:true}),partialHtml);
+assert(ctx.testPrint.buildPrintHtml(partialBlankExam,{renumber:false}).includes('blank-badge">68</span>'));
+assert.equal(JSON.stringify(partialBlankExam),partialBefore);
+// Use the stored question order even when the source numbers are nonascending.
+const storedBlankOrder=renumber([{type:'本文',text:'[[66]]'},
+  {type:'設問',text:'{{問7}} [[70]]\n{{問8}} [[66]]'},
+  {type:'設問',text:'{{問9}} [[68]]\n{{問10}} [[80]]'}]);
+assert.equal(storedBlankOrder[0].text,'[[2]]');
+assert.equal(storedBlankOrder[2].text,'{{問3}} [[3]]\n{{問4}} [[4]]');
+assert.equal(renumber([{type:'問題',text:'[[0068]]'},
+  {type:'設問',text:'[[0066]] [[68]] [[70]]'}])[0].text,'[[2]]');
+// Aichi 2025 VI has passage blanks 25..28 followed by separate answer slots
+// 29..32. Its question-side range is a reference, not a complete definition.
+const separateBlankGroups=renumber([{type:'本文',text:'[[25]] [[26]] [[27]] [[28]]'},
+  {type:'設問',text:'{{問25}}〜{{問28}}: [[25]]〜[[28]].\n{{問29}} [[29]]\n{{問30}} [[30]]\n{{問31}} [[31]]\n{{問32}} [[32]]'}]);
+assert.equal(separateBlankGroups[0].text,'[[1]] [[2]] [[3]] [[4]]');
+assert(separateBlankGroups[1].text.includes('[[1]]〜[[4]]'));
+assert(separateBlankGroups[1].text.includes('{{問1}} [[5]]'));
+assert.equal(renumber([{type:'本文',text:'[[66]] [[68]] [[70]]'},
+  {type:'設問',text:'{{問7}} Reference [[70]].'}])[0].text,'[[1]] [[2]] [[3]]');
+const separateBlankIds=renumber([{type:'本文',text:'[[7]]'},
+  {type:'設問',text:'{{問7}} [[8]]\n{{問8}} [[7]]'},
+  {type:'解答',text:'{{問7}} {{8}}\n{{問8}} {{7}}'}]);
+assert.equal(separateBlankIds[0].text,'[[2]]');
+assert.equal(separateBlankIds[1].text,'{{問1}} [[1]]\n{{問2}} [[2]]');
+assert.equal(separateBlankIds[2].text,'{{問1}} {{1}}\n{{問2}} {{2}}');
+// A question-side range alone is a reference, not a new blank definition.
+assert.equal(renumber([{type:'本文',text:'[[71]] [[49]] [[50]]'},
+  {type:'設問',text:'Fill [[49]]〜[[71]].'}])[0].text,'[[1]] [[2]] [[3]]');
 // A passage's (4) must not allocate 問4 before the actual question headings.
 // This reproduces the reported 2, 3, 4, 1 without changing any source order.
 const outOfOrder=[{type:'問題',text:'(4)__Passage reference.__\n{{問1}} First\n{{問2}} Second\n{{問3}} Third\n{{問4}} Fourth'},

@@ -2136,7 +2136,7 @@
       // 助詞の1文字だけで参照と誤判定しない。
       return /^(?:\*\*)?[ \t]*(?:の(?:解答|答え|説明|解説|結果|内容)|(?:を|も|に)?(?:参照|参考)|を(?:見|確認)|について|まで|[〜～~–—-])/.test(text);
     }
-    var definitions = [];
+    var definitions = [], blankDefinitions = [];
     sections.forEach(function (sec) {
       if (isAnswerSide(sec.type) || sec.type === "リード文") return;
       protectedText(sec.text, function (text) {
@@ -2151,10 +2151,21 @@
               named: /^\s*(?:@@)?(?:\*\*)?(?:\{\{\s*問|問)/.test(line), marked: !!m[1]});
           }
         });
-        text.replace(/\[\[\s*(?:--\s*)?(\d+)\s*(?:--)?\s*\]\]/g, function (_, n) { add(blanks, n, true); return _; });
+        text.replace(/\[\[\s*(?:--\s*)?(\d+)\s*(?:--)?\s*\]\]/g, function (_, n) {
+          blankDefinitions.push({n: n, type: sec.type}); return _;
+        });
         return text;
       });
     });
+    // 本文が設問の空所の一部だけを参照する場合は、設問の順で対応付ける。
+    // 本文に独立した空所群がある場合や設問欄のない旧形式は従来順を保つ。
+    var questionBlanks = blankDefinitions.filter(function (d) { return d.type === "設問"; });
+    var passageBlanks = blankDefinitions.filter(function (d) { return d.type === "本文" || d.type === "問題"; });
+    var questionBlankIds = {};
+    questionBlanks.forEach(function (d) { questionBlankIds[String(Number(d.n))] = true; });
+    var preferQuestionBlanks = passageBlanks.length && passageBlanks.every(function (d) { return questionBlankIds[String(Number(d.n))]; });
+    (preferQuestionBlanks ? questionBlanks.concat(blankDefinitions.filter(function (d) { return d.type !== "設問"; })) : blankDefinitions)
+      .forEach(function (d) { add(blanks, d.n, true); });
     // 問Nと(4)/{{4}}は別の番号体系。下位番号や本文の参照で小問を採番しない。
     // 明示的な問題/設問欄があれば、その見出しの表示順を基準にする。
     var namedDefinitions = definitions.filter(function (d) { return d.named; });
