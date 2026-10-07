@@ -40,9 +40,11 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
    const multi=t.printField('解答','{{1}} First paragraph.\n\nSecond paragraph.\n\n{{2}} Another answer.',{optimizeAnswers:true});
    const short=t.printField('解答','{{1}} A\n\n{{2}} B\n\n{{3}} C\n\n{{4}} D',{optimizeAnswers:true});
    const div=document.createElement('div');div.innerHTML=short;
-   return {safe,multi:multi.includes('print-answer-long')&&multi.includes('Second paragraph.'),short:div.querySelectorAll('.print-answer-item').length};
+   const inline=document.createElement('div');inline.innerHTML=t.printField('解答','{{問1}}((d))　{{問2}}((a))　{{問3}}((b))',{optimizeAnswers:true});
+   const reference=document.createElement('div');reference.innerHTML=t.printField('解答','{{問1}} The response refers to {{問2}} for justification.',{optimizeAnswers:true});
+   return {safe,multi:multi.includes('print-answer-long')&&multi.includes('Second paragraph.'),short:div.querySelectorAll('.print-answer-item').length,inline:inline.querySelectorAll('.print-answer-item').length,reference:reference.querySelectorAll('.print-answer-item').length};
   });
-  assert.deepEqual(edgeCases,{safe:true,multi:true,short:4});
+  assert.deepEqual(edgeCases,{safe:true,multi:true,short:4,inline:3,reference:1});
   assert.equal(await page.locator('#pr-optimize-answers').isChecked(),false);assert.equal(await page.locator('#pr-compact-commentary').isChecked(),false);
   const baseline=await page.locator('#print-preview .print-part-a').innerHTML();
   const questionBaseline=await page.locator('#print-preview .print-part-q').innerHTML();

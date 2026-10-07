@@ -2046,7 +2046,19 @@
   function renderOptimizedAnswers(text, options) {
     var lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
     var entries = [], preamble = [], current = null;
-    var marker = /^\s*\{\{((?:問)?[0-9０-９]+(?:[-－.．][0-9０-９]+|[A-Za-z])?|[A-Za-z]|[IVXivx]+)\}\}[ \t　]*(.*)$/;
+    var labelPattern = "((?:問)?[0-9０-９]+(?:[-－.．][0-9０-９]+|[A-Za-z])?|[A-Za-z]|[IVXivx]+)";
+    var marker = new RegExp("^\\s*\\{\\{" + labelPattern + "\\}\\}[ \\t　]*(.*)$");
+    var inlineBoundary = new RegExp("[ \\t　]+(?=\\{\\{" + labelPattern + "\\}\\})", "g");
+    lines = lines.reduce(function (result, line) {
+      if (!marker.test(line)) return result.concat(line);
+      var parts = line.replace(inlineBoundary, "\n").split("\n");
+      // Compact answer lists may share a line. Sentence references to other questions stay inline.
+      var compactList = parts.length > 1 && parts.every(function (part) {
+        var match = part.match(marker), body = match && match[2].trim();
+        return body && body.length <= 80 && !/[.!?。！？](?:\s|$)/.test(body) && !/\{\{/.test(body);
+      });
+      return result.concat(compactList ? parts : line);
+    }, []);
     lines.forEach(function (line) {
       var match = line.match(marker);
       if (match) {
