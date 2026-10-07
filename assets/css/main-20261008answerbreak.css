@@ -1148,6 +1148,8 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 /* ---------- Print: 本文のみ印刷（#print-area 経由） ---------- */
 #print-area { display: none; }
 @media print {
+  /* Screen minimum height must not add a blank sheet to short print output. */
+  body { min-height: 0; }
   body > *:not(#print-area) { display: none !important; }
   /* 背景・装飾をすべて白紙にリセット（バッジ・ハイライトは下記で個別に保持） */
   #print-area * {
