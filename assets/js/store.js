@@ -451,7 +451,7 @@
       return out;
     },
     // 表紙の全行をまとめて保存する。空行も位置を保つため削除せず保存する。
-    setPrintFolderTitleLines: function (folderId, lines, sizes, colors) {
+    setPrintFolderTitleLines: function (folderId, lines, sizes, colors, skipAccount) {
       var m = this.getPrintFolderTitles();
       var out = (Array.isArray(lines) ? lines : []).map(function (line) {
         return String(line || "").trim();
@@ -476,7 +476,7 @@
       if (hasColors) value.colors = outColors;
       m[String(folderId)] = value;
       this.setPrintFolderTitles(m);
-      this.pushPrintTitlesToAccount(m);
+      if (!skipAccount) this.pushPrintTitlesToAccount(m);
     },
     // 1行だけ保存する（part は "top"|"mid"|"bottom"）。空文字にするとその行を未設定に戻し、
     // 3行すべて未設定になればフォルダのキー自体を削除する。ログイン中はアカウントにも保存。

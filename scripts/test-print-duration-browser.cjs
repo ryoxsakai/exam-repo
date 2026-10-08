@@ -108,7 +108,9 @@ const exams=[{id:11,university_id:1,university_name:'合成大学',year:2026,sch
       await page.locator('#pr-settings-modal [data-print-close]').first().click();
       await page.locator('#btn-print-run').click();await page.waitForFunction(()=>window.__prints>0);
       assert.equal(await page.locator('#print-area .pc-duration').innerText(),'時間：90分');
-      assert.equal(await page.locator('#print-area').innerHTML(),await page.locator('#print-preview .print-doc').innerHTML());
+      assert.deepEqual(await page.locator('#print-area .print-part').evaluateAll(nodes=>nodes.map(n=>n.innerHTML)),await page.locator('#print-preview .print-part').evaluateAll(nodes=>nodes.map(n=>n.innerHTML)));
+      assert.deepEqual(await page.locator('#print-area .pc-year,#print-area .pc-uni,#print-area .pc-sched,#print-area .pc-duration').allTextContents(),await page.locator('#print-preview .pc-year,#print-preview .pc-uni,#print-preview .pc-sched,#print-preview .pc-duration').allTextContents());
+      assert.equal(await page.locator('#print-area button').count(),0);
       await page.pdf({path:`/tmp/exam-duration-${width}.pdf`,format:'A4',preferCSSPageSize:true});
       await page.locator('#print-preview .print-cover').screenshot({path:`/tmp/exam-duration-${width}.png`});
       await page.evaluate(()=>{const t=window.__durationTest;t.state.favFolders=[{id:55,name:'Favorite'}];t.state.printExam={kind:'favFolder',folderId:55,questions:[{exam_id:11,question_number:1,problem_text:'Favorite question'}],duration:{effective_minutes:90}};t.renderPrintDurationSettings();t.renderPrintPreview();});

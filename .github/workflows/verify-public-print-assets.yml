@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'index.html'
+      - 'assets/js/api.js'
       - 'assets/js/store.js'
       - 'assets/js/viewer.js'
       - 'assets/css/main*.css'

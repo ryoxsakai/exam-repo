@@ -42,7 +42,7 @@
       var token = await Auth.getIdToken();
       if (!token) throw new Error("印刷セットの保存・読込にはGoogleログインが必要です。");
       return call("/api/print-sets" + (id ? "/" + encodeURIComponent(id) : ""), {
-        method: data ? (id ? "PUT" : "POST") : "GET",
+        method: data ? (id && id !== "reorder" ? "PUT" : "POST") : "GET",
         headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
         ...(data ? {body: JSON.stringify(data)} : {})
       });

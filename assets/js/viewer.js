@@ -749,6 +749,7 @@
         }
         multiPrint.uid = nextUid;
         multiPrint.accountEpoch++; multiPrint.epoch++; multiPrint.list = [];
+        multiPrint.baseline = null; setOrderDraft = null; setOrderBusy = false; renderSetFavorites(); renderPrintSetFavorites();
         multiPrint.id = null; multiPrint.revision = null; multiPrint.archived = false; multiPrint.busy = false;
         if (wasSignedIn) {
           multiPrint.ids = []; multiPrint.name = ""; multiPrint.cover = {lines: ["", "印刷セット", ""], time: ""};
@@ -836,6 +837,7 @@
 
   // お気に入りタブの読み込み・描画
   function loadFavorites(force) {
+    if (el("favorites-sets-toggle").checked) { renderSetFavorites(); refreshPrintSets(); return; }
     var box = el("favorites-area");
     if (!box) return;
     if (!window.Auth || !Auth.getCurrentUser()) {
@@ -883,6 +885,7 @@
   }
 
   function renderFavorites() {
+    if (el("favorites-sets-toggle").checked) return;
     var box = el("favorites-area");
     if (!box) return;
     var hasAny = (state.favRows && state.favRows.length) || (state.favFolders && state.favFolders.length) ||
@@ -2310,16 +2313,17 @@
 
   function buildPrintHtml(ex, opts, useDraftTitles) {
     if (ex.kind === "printSet") return buildMultiPrintHtml(ex, opts, useDraftTitles);
+    if (ex.kind === "exam") ex = Object.assign({}, ex, {folderId: "exam-" + ex.id});
     var html = "";
     if (opts.cover) {
       var coverClass = "print-cover" + (opts.nameField ? " has-name-field" : "");
       var nameField = opts.nameField
         ? '<div class="pc-name-field" aria-label="氏名記入欄"><span>氏名:</span><span class="pc-name-line" aria-hidden="true"></span></div>'
         : "";
-      if (ex.kind === "favFolder") {
+      if (ex.kind === "favFolder" || ex.kind === "exam") {
         // お気に入りフォルダ: 既定3行に加え、必要なら任意の行を追加できる。
         // 編集中の下書きはプレビューだけに使い、印刷には保存済みの文言だけを使う。
-        var lines = favFolderTitleLines(ex.folderId);
+        var lines = favFolderTitleLines(ex.folderId, ex);
         var sizes = favFolderTitleSizes(ex.folderId);
         var colors = favFolderTitleColors(ex.folderId);
         var draft = state.printTitleDrafts && state.printTitleDrafts[String(ex.folderId)];
@@ -2331,10 +2335,11 @@
         var sizeMenuOpen = useDraftTitles && state.printTitleSizeOpen;
         while (lines.length < 3) lines.push("");
         var line = function (cls, index, text) {
+          if (!useDraftTitles) return '<div class="' + cls + (ex.kind !== "exam" || sizes[index] || colors[index] ? ' pc-title-edit' : '') + (sizes[index] ? ' pc-title-size-' + sizes[index] : '') + (colors[index] ? ' pc-title-color-' + colors[index] : '') + '">' + esc(text) + '</div>';
           var isSizeMenuOpen = sizeMenuOpen && String(sizeMenuOpen.folderId) === String(ex.folderId) && Number(sizeMenuOpen.line) === index;
           return '<div class="pc-title-row">' +
             '<div class="' + cls + ' pc-title-edit' + (sizes[index] ? ' pc-title-size-' + sizes[index] : '') + (colors[index] ? ' pc-title-color-' + colors[index] : '') + '" data-print-title="' + esc(String(ex.folderId)) +
-              '" data-line="' + index + '" tabindex="0" role="textbox" aria-label="表紙タイトル' + (index + 1) + '行目" title="空欄はクリック、文字のある行はダブルクリックで編集">' + esc(text) + "</div>" +
+              '"' + (ex.folderId === "print-set" ? ' data-set-cover="' + index + '"' : '') + ' data-line="' + index + '" tabindex="0" role="textbox" aria-label="表紙タイトル' + (index + 1) + '行目" title="空欄はクリック、文字のある行はダブルクリックで編集">' + esc(text) + "</div>" +
             '<button type="button" class="pc-title-settings-toggle" data-print-title-size-toggle="' + esc(String(ex.folderId)) + '" data-line="' + index + '" aria-label="この行の文字設定" aria-expanded="' + (isSizeMenuOpen ? 'true' : 'false') + '"><i class="fa-solid fa-gear"></i></button>' +
             '<div class="pc-title-size-menu" data-print-title-size-menu="' + esc(String(ex.folderId)) + '" data-line="' + index + '"' + (isSizeMenuOpen ? '' : ' hidden') + '>' +
               '<div class="pc-title-setting-line"><span>文字サイズ</span>' + [1,2,3,4,5].map(function (n) { return '<button type="button" data-print-title-size="' + esc(String(ex.folderId)) + '" data-line="' + index + '" data-size="' + n + '"' + (sizes[index] === n ? ' class="selected"' : '') + '>' + n + '</button>'; }).join("") + '</div>' +
@@ -2345,13 +2350,14 @@
         html += '<div class="' + coverClass + '">' +
           lines.map(function (text, index) {
             var cls = index === 0 ? "pc-year" : index === 1 ? "pc-uni" : index === 2 ? "pc-sched" : "pc-extra";
+            if (ex.folderId === "print-set" && (lines.join("").length + multiPrint.cover.time.length > 120 || text.length > 30)) cls += " pc-cover-small";
             return line(cls, index, text);
           }).join("") +
-          '<div class="pc-title-actions" data-print-title-actions="' + esc(String(ex.folderId)) + '">' +
+          (useDraftTitles ? '<div class="pc-title-actions" data-print-title-actions="' + esc(String(ex.folderId)) + '">' +
             '<button type="button" class="btn ghost sm" data-print-title-add="' + esc(String(ex.folderId)) + '"><i class="fa-solid fa-plus"></i> 行を追加</button>' +
             (lines.length > 3 ? '<button type="button" class="btn ghost sm" data-print-title-remove="' + esc(String(ex.folderId)) + '"><i class="fa-solid fa-trash"></i> 追加行を削除</button>' : '') +
-            '<button type="button" class="btn primary sm" data-print-title-save="' + esc(String(ex.folderId)) + '" hidden><i class="fa-solid fa-floppy-disk"></i> 保存</button>' +
-          "</div>" + nameField +
+            '<button type="button" class="btn primary sm" data-print-title-save="' + esc(String(ex.folderId)) + '"' + (ex.folderId === "print-set" || (useDraftTitles && (draft || sizeDraft || colorDraft)) ? '' : ' hidden') + '><i class="fa-solid fa-floppy-disk"></i> 保存</button>' +
+          "</div>" : "") + (ex.kind === "exam" && opts.duration && ex.duration && ex.duration.effective_minutes != null ? '<div class="pc-duration">時間：' + esc(ex.duration.effective_minutes) + '分</div>' : "") + nameField +
           "</div>";
       } else {
         html += '<div class="' + coverClass + '">' +
@@ -2895,7 +2901,14 @@
     };
   }
   // 表紙タイトルの可変行。未保存時だけ従来と同じ「空・フォルダ名・空」の3行を既定にする。
-  function favFolderTitleLines(folderId) {
+  function favFolderTitleLines(folderId, defaults) {
+    if (folderId === "print-set") return multiPrint.cover.lines.slice();
+    if (String(folderId).indexOf("exam-") === 0) {
+      var saved = Store.getPrintFolderTitles()[String(folderId)];
+      if (saved && Array.isArray(saved.lines)) return saved.lines.slice();
+      var ex = defaults || (state.printExam && state.printExam.kind === "exam" && "exam-" + state.printExam.id === folderId ? state.printExam : multiPrint.catalog[Number(String(folderId).slice(5))]);
+      return ex ? [String(ex.year) + "年度", ex.university_name, ex.schedule] : ["", "", ""];
+    }
     var f = (state.favFolders || []).filter(function (x) { return Number(x.id) === Number(folderId); })[0];
     var savedMap = Store.getPrintFolderTitles();
     var hasSaved = Object.prototype.hasOwnProperty.call(savedMap, String(folderId));
@@ -2904,8 +2917,8 @@
     while (lines.length < 3) lines.push("");
     return lines;
   }
-  function favFolderTitleSizes(folderId) { return Store.getPrintFolderTitleSizes(folderId); }
-  function favFolderTitleColors(folderId) { return Store.getPrintFolderTitleColors(folderId); }
+  function favFolderTitleSizes(folderId) { return folderId === "print-set" ? (multiPrint.cover.sizes || []).slice() : Store.getPrintFolderTitleSizes(folderId); }
+  function favFolderTitleColors(folderId) { return folderId === "print-set" ? (multiPrint.cover.colors || []).slice() : Store.getPrintFolderTitleColors(folderId); }
   // 表紙中央の行（一覧・プレビューのタイトル表示用）
   function favFolderTitle(folderId) {
     return favFolderTitleParts(folderId).mid;
@@ -3026,7 +3039,7 @@
         if (!unis[u][y]) unis[u][y] = {};
         unis[u][y][s] = e;
       });
-      var html = '<div class="tree">' + '<div class="print-single-only">' + printFavTreeHtml() + '</div>';
+      var html = '<div class="tree">' + '<div class="print-single-only">' + printFavTreeHtml() + '</div><div class="print-multi-only tree-node" style="flex-direction:column">' + treeRow("fav", "fa-star", "お気に入り") + '<div class="tree-children" id="pr-set-favorites" hidden></div></div>';
       Object.keys(unis).sort(uniCmp).forEach(function (u) {
         html += '<div class="tree-node">' + treeRow("uni", "fa-building-columns", esc(u)) + '<div class="tree-children" hidden>';
         Object.keys(unis[u]).sort(function (a, b) { return Number(b) - Number(a); }).forEach(function (y) {
@@ -3048,6 +3061,7 @@
       state.printTreeLoaded = true;
       wirePrintTree();
       wireMultiTree();
+      renderPrintSetFavorites();
     }).catch(function (e) {
       box.innerHTML = '<div class="tree-msg">' + esc(e.message) + "</div>";
     });
@@ -3088,7 +3102,7 @@
   function multiPayload() {
     var questions = {};
     Object.keys(multiPrint.questionSelection || {}).forEach(function (key) { if (multiPrint.ids.indexOf(Number(key.split(":")[0])) >= 0) questions[key] = multiPrint.questionSelection[key]; });
-    return {name: multiPrint.name, exam_ids: multiPrint.ids.slice(), question_selection: questions, cover: {lines: multiPrint.cover.lines.slice(), time: multiPrint.cover.time}, archived: multiPrint.archived};
+    return {name: multiPrint.name, exam_ids: multiPrint.ids.slice(), question_selection: questions, cover: Object.assign({}, multiPrint.cover, {lines: multiPrint.cover.lines.slice(), time: multiPrint.cover.time}), archived: multiPrint.archived};
   }
   function multiChanged() {
     printRenderRevision++;
@@ -3097,7 +3111,51 @@
     renderMultiControls();
     renderPrintPreview();
   }
+  var setOrderDraft = null, setOrderBusy = false, setOrderRevision = null;
+  function renderSetFavorites() {
+    var active = el("favorites-sets-toggle").checked;
+    el("favorites-area").hidden = active;
+    el("favorites-sets").hidden = !active;
+    ["btn-favorites-new-folder", "btn-favorites-new-section"].forEach(function (id) { el(id).hidden = active; });
+    if (!active) return;
+    var list = setOrderDraft || multiPrint.list;
+    var visible = list.filter(function(s) { return !s.archived; });
+    el("favorites-sets").innerHTML = '<div class="card"><p>保存済み印刷セット（アーカイブを除く）。セットを開くと選択全体を読み込みます。</p>' +
+      visible.map(function (s, v) {
+        var i = list.indexOf(s);
+        return '<div class="toolbar"><button type="button" class="btn ghost" data-open-set="' + esc(s.id) + '">' + esc(s.name) + '</button><span class="spacer"></span>' +
+          [-1,1].map(function (step) { return '<button type="button" class="btn ghost sm" data-order-set="' + i + '" data-step="' + (visible[v + step] ? list.indexOf(visible[v + step]) - i : 0) + '" aria-label="' + esc(s.name) + (step < 0 ? 'を上へ' : 'を下へ') + '"' + (setOrderBusy || v + step < 0 || v + step >= visible.length ? ' disabled' : '') + '>' + (step < 0 ? '↑' : '↓') + '</button>'; }).join('') + '</div>';
+      }).join('') + (!list.some(function(s) { return !s.archived; }) ? '<p>' + (window.Auth && Auth.getCurrentUser() ? '保存済み印刷セットがありません。印刷タブの複数選択から保存できます。' : '印刷セットを見るにはGoogleログインしてください。') + '</p>' : '') +
+      '<div class="toolbar"><button type="button" class="btn" id="set-order-save"' + (!setOrderDraft || setOrderBusy ? ' disabled' : '') + '>順序を保存</button><button type="button" class="btn ghost" id="set-order-cancel"' + (setOrderBusy ? ' disabled' : '') + '>キャンセル</button></div></div>';
+    $all('[data-open-set]', el("favorites-sets")).forEach(function(b) { b.disabled = setOrderBusy || multiPrint.busy; b.onclick = function() { openPrintSet(b.dataset.openSet, true); }; });
+    $all('[data-order-set]', el("favorites-sets")).forEach(function(b) { b.onclick = function() {
+      if (setOrderBusy) return;
+      if (!setOrderDraft) setOrderRevision = multiPrint.orderRevision;
+      setOrderDraft = list.slice(); var i = Number(b.dataset.orderSet), j = i + Number(b.dataset.step);
+      var s = setOrderDraft[i]; setOrderDraft[i] = setOrderDraft[j]; setOrderDraft[j] = s; renderSetFavorites();
+    }; });
+    el("set-order-cancel").onclick = function() { if (!setOrderBusy) { setOrderDraft = null; renderSetFavorites(); } };
+    el("set-order-save").onclick = async function() {
+      if (setOrderBusy || !setOrderDraft) return;
+      var account = multiPrint.accountEpoch, draft = setOrderDraft;
+      setOrderBusy = true; renderSetFavorites();
+      try {
+        await Api.printSets("reorder", {ids: draft.map(function(s) { return s.id; }), revision: setOrderRevision});
+        if (account !== multiPrint.accountEpoch) return;
+        setOrderDraft = null; await refreshPrintSets(); UI.toast("並び順を保存しました", "ok");
+      } catch(e) { if (account === multiPrint.accountEpoch) UI.toast(e.message, "err"); }
+      finally { if (account === multiPrint.accountEpoch) { setOrderBusy = false; renderSetFavorites(); } }
+    };
+  }
+  function renderPrintSetFavorites() {
+    var node = el("pr-set-favorites"); if (!node) return;
+    node.innerHTML = multiPrint.list.filter(function(s) { return !s.archived; }).map(function(s) {
+      return '<button type="button" class="tree-row tree-row-pick" data-open-set="' + esc(s.id) + '"><i class="fa-solid fa-print tree-ic"></i><span class="tree-label">' + esc(s.name) + '</span></button>';
+    }).join('') || '<div class="tree-msg">保存済み印刷セットがありません。</div>';
+    $all('[data-open-set]', node).forEach(function(b) { b.disabled = multiPrint.busy; b.onclick = function() { openPrintSet(b.dataset.openSet); }; });
+  }
   function wireMultiPrint() {
+    el("favorites-sets-toggle").addEventListener("change", function() { renderSetFavorites(); loadFavorites(); });
     el("pr-multi").addEventListener("change", function () {
       if (multiPrint.busy) { this.checked = multiPrint.enabled; return; }
       multiPrint.enabled = this.checked;
@@ -3244,6 +3302,7 @@
   function renderMultiControls() {
     var panel = el("pr-set-modal");
     if (!panel) return;
+    renderPrintSetFavorites();
     el("pr-set-manage").hidden = !multiPrint.enabled;
     el("pr-set-manage").disabled = multiPrint.busy;
     el("pr-set-manage").title = "印刷セット（" + multiPrint.ids.length + "試験）";
@@ -3357,24 +3416,33 @@
       var result = await Api.printSets();
       if (account !== multiPrint.accountEpoch || requestId !== multiPrint.listEpoch) return;
       multiPrint.list = result.print_sets || [];
+      multiPrint.orderRevision = result.order_revision;
+      renderSetFavorites(); renderPrintSetFavorites();
       var selected = el("pr-set-list").value;
       el("pr-set-list").innerHTML = '<option value="">印刷セットを選択</option>' + multiPrint.list.map(function (s) { return '<option value="' + esc(s.id) + '">' + esc(s.name) + (s.archived ? "（アーカイブ）" : "") + '</option>'; }).join("");
       el("pr-set-list").value = selected;
       renderPrintSetLoadButton();
     } catch (e) { if (account === multiPrint.accountEpoch && requestId === multiPrint.listEpoch) UI.toast(e.message, "err"); }
   }
-  async function openPrintSet(id) {
+  async function openPrintSet(id, fromFavorites) {
     if (!id || multiPrint.busy) return;
+    if ((multiPrint.baseline ? JSON.stringify(multiPayload()) !== multiPrint.baseline : multiPrint.ids.length || multiPrint.name.trim() || JSON.stringify(multiPrint.cover) !== JSON.stringify({lines: ["", "印刷セット", ""], time: ""})) &&
+        !window.confirm("未保存の変更があります。選択と表紙を保存済みセットに置き換えますか？（キャンセルで変更を保持）")) return;
     var account = multiPrint.accountEpoch;
     multiPrint.busy = true; renderMultiControls();
     try {
       var result = await Api.printSets(id);
       if (account !== multiPrint.accountEpoch) return;
       var s = result.print_set;
+      if (fromFavorites) {
+        multiPrint.enabled = true; el("pr-multi").checked = true;
+        var tab = $('.tab[data-tab="print"]', el("main-tabs")); if (tab) tab.click();
+      }
       multiPrint.id = s.id; multiPrint.revision = s.revision; multiPrint.name = s.name;
       multiPrint.ids = s.exam_ids.slice(); multiPrint.cover = s.cover; multiPrint.archived = s.archived;
       multiPrint.questionSelection = Object.assign({}, s.question_selection || {});
       state.printQSel = Object.assign({}, multiPrint.questionSelection);
+      multiPrint.baseline = JSON.stringify(multiPayload());
       await loadMultiPrint();
     } catch (e) { if (account === multiPrint.accountEpoch) multiPrint.error = e.message; }
     finally { if (account === multiPrint.accountEpoch) { multiPrint.busy = false; renderMultiControls(); } }
@@ -3396,6 +3464,7 @@
       if (account !== multiPrint.accountEpoch) return;
       if (checked.print_set.revision !== result.print_set.revision) throw new Error("保存後に別端末で更新されました。保存一覧から読み直してください。");
       multiPrint.revision = checked.print_set.revision; multiPrint.archived = checked.print_set.archived;
+      multiPrint.baseline = JSON.stringify(multiPayload());
       UI.toast("印刷セットを保存しました", "ok");
       await refreshPrintSets();
       if (account !== multiPrint.accountEpoch) return;
@@ -3405,16 +3474,19 @@
   }
   function buildMultiPrintHtml(ex, opts, editable) {
     var html = '', c = ex.cover || {lines: [], time: ''};
-    if (!Array.isArray(c.lines) || c.lines.length !== 3 || c.lines.some(function (s) { return typeof s !== 'string' || s.length > 120; }) || typeof c.time !== 'string' || c.time.length > 120) return '';
+    if (!Array.isArray(c.lines) || c.lines.length < 3 || c.lines.length > 20 || c.lines.some(function (s) { return typeof s !== 'string' || s.length > 120; }) || typeof c.time !== 'string' || c.time.length > 120) return '';
     var compact = c.lines.join('').length + c.time.length > 120;
     function line(text, i, cls) {
       var small = compact || text.length > 30 ? ' pc-cover-small' : '';
       return '<div class="' + cls + small + (editable ? ' pc-title-edit' : '') + '"' + (editable ? ' data-print-title="print-set" data-set-cover="' + i + '" data-line="' + i + '" tabindex="0" role="textbox" aria-label="' + (i === 'time' ? '共通表紙の時間（任意）' : '表紙タイトル' + (i+1) + '行目') + '" title="空欄はクリック、文字のある行はダブルクリックで編集"' : '') + '>' + esc(text) + '</div>';
     }
-    if (opts.cover) html += '<div class="print-cover print-set-cover' + (opts.nameField ? ' has-name-field' : '') + '">' +
-      c.lines.map(function (text,i) { return line(text, i, ['pc-year','pc-uni','pc-sched'][i]); }).join('') +
-      (c.time || editable ? '<div class="pc-duration">' + (c.time ? '時間：' : '') + line(c.time, 'time', 'pc-set-time') + '</div>' : '') +
-      (opts.nameField ? '<div class="pc-name-field"><span>氏名:</span><span class="pc-name-line"></span></div>' : '') + '</div>';
+    if (opts.cover) {
+      html += buildPrintHtml({kind: "favFolder", folderId: "print-set", questions: []}, Object.assign({}, opts, {nameField: false}), editable);
+      var time = (c.time || editable ? '<div class="pc-duration">' + (c.time ? '時間：' : '') + line(c.time, 'time', 'pc-set-time') + '</div>' : '');
+      var name = opts.nameField ? '<div class="pc-name-field"><span>氏名:</span><span class="pc-name-line"></span></div>' : '';
+      html = html.replace('<div class="print-cover', '<div class="print-cover print-set-cover' + (opts.nameField ? ' has-name-field' : ''));
+      html = html.slice(0, -6) + time + name + '</div>';
+    }
     [false,true].forEach(function (answerSide) {
       ex.exams.forEach(function (exam) {
         var body = buildPrintHtml(Object.assign({}, exam, {kind:'exam'}), Object.assign({},opts,{cover:false,side:answerSide ? 'answer' : 'question'}));
@@ -3431,7 +3503,7 @@
   var printDurationRevision = 0;
 
   function updatePrintDurationAvailability() {
-    var blocked = !state.printExam || printPreparing || !!printDurationWrite || !!(state.printExam && state.printExam.durationUnverified) || (multiPrint.enabled && (multiPrint.loading || multiPrint.busy || multiPrint.archived || !!multiPrint.error || !multiPrint.ids.length));
+    var blocked = !state.printExam || printTitleSaving || printPreparing || !!printDurationWrite || !!(state.printExam && state.printExam.durationUnverified) || (multiPrint.enabled && (multiPrint.loading || multiPrint.busy || multiPrint.archived || !!multiPrint.error || !multiPrint.ids.length));
     ["btn-print-run", "btn-print-run-2"].forEach(function (id) {
       if (el(id)) el(id).disabled = blocked;
     });
@@ -3561,6 +3633,7 @@
   // 表紙の各行をダブルタップ（ダブルクリック）で編集できるようにする。
   // 保存ボタンを押すまで下書きのまま保持し、印刷には反映しない。
   // 空の行もタップできるよう、CSS の .pc-title-edit で最小の高さと薄いグレーの領域を与えている。
+  var printTitleSaving = false;
   function wirePrintTitleEdit() {
     $all("[data-print-title]", el("print-preview")).forEach(function (node) {
       var folderId = node.getAttribute("data-print-title");
@@ -3657,8 +3730,10 @@
       button.addEventListener("click", function () {
         var folderId = button.getAttribute("data-print-title-add");
         state.printTitleDrafts = state.printTitleDrafts || {};
-        var lines = state.printTitleDrafts[String(folderId)] || favFolderTitleLines(folderId).slice();
+        var lines = folderId === "print-set" ? multiPrint.cover.lines : state.printTitleDrafts[String(folderId)] || favFolderTitleLines(folderId).slice();
+        if (folderId === "print-set" && (multiPrint.busy || lines.length >= 20)) return;
         lines.push("");
+        if (folderId === "print-set") { multiPrint.cover.lines = lines; if (multiPrint.cover.sizes) multiPrint.cover.sizes.length = Math.min(multiPrint.cover.sizes.length, lines.length); if (multiPrint.cover.colors) multiPrint.cover.colors.length = Math.min(multiPrint.cover.colors.length, lines.length); multiChanged(); return; }
         state.printTitleDrafts[String(folderId)] = lines;
         renderPrintPreview();
         var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
@@ -3670,11 +3745,12 @@
       button.addEventListener("click", function () {
         var folderId = button.getAttribute("data-print-title-remove");
         state.printTitleDrafts = state.printTitleDrafts || {};
-        var lines = state.printTitleDrafts[String(folderId)] || favFolderTitleLines(folderId).slice();
-        if (lines.length <= 3) return;
+        var lines = folderId === "print-set" ? multiPrint.cover.lines : state.printTitleDrafts[String(folderId)] || favFolderTitleLines(folderId).slice();
+        if (lines.length <= 3 || (folderId === "print-set" && multiPrint.busy)) return;
         lines.pop();
         if (state.printTitleSizeDrafts && Array.isArray(state.printTitleSizeDrafts[String(folderId)])) state.printTitleSizeDrafts[String(folderId)].pop();
         if (state.printTitleColorDrafts && Array.isArray(state.printTitleColorDrafts[String(folderId)])) state.printTitleColorDrafts[String(folderId)].pop();
+        if (folderId === "print-set") { multiPrint.cover.lines = lines; if (multiPrint.cover.sizes) multiPrint.cover.sizes.length = Math.min(multiPrint.cover.sizes.length, lines.length); if (multiPrint.cover.colors) multiPrint.cover.colors.length = Math.min(multiPrint.cover.colors.length, lines.length); multiChanged(); return; }
         state.printTitleDrafts[String(folderId)] = lines;
         renderPrintPreview();
         var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
@@ -3700,9 +3776,11 @@
         var folderId = button.getAttribute("data-print-title-size");
         var line = Number(button.getAttribute("data-line"));
         state.printTitleSizeDrafts = state.printTitleSizeDrafts || {};
-        var sizes = state.printTitleSizeDrafts[String(folderId)] || favFolderTitleSizes(folderId).slice();
+        if (folderId === "print-set" && multiPrint.busy) return;
+        var sizes = folderId === "print-set" ? (multiPrint.cover.sizes || []) : state.printTitleSizeDrafts[String(folderId)] || favFolderTitleSizes(folderId).slice();
         while (sizes.length <= line) sizes.push(null);
         sizes[line] = Number(button.getAttribute("data-size"));
+        if (folderId === "print-set") { multiPrint.cover.sizes = sizes; multiChanged(); return; }
         state.printTitleSizeDrafts[String(folderId)] = sizes;
         state.printTitleSizeOpen = { folderId: String(folderId), line: line };
         renderPrintPreview();
@@ -3715,9 +3793,11 @@
         var folderId = button.getAttribute("data-print-title-color");
         var line = Number(button.getAttribute("data-line"));
         state.printTitleColorDrafts = state.printTitleColorDrafts || {};
-        var colors = state.printTitleColorDrafts[String(folderId)] || favFolderTitleColors(folderId).slice();
+        if (folderId === "print-set" && multiPrint.busy) return;
+        var colors = folderId === "print-set" ? (multiPrint.cover.colors || []) : state.printTitleColorDrafts[String(folderId)] || favFolderTitleColors(folderId).slice();
         while (colors.length <= line) colors.push(null);
         colors[line] = Number(button.getAttribute("data-color"));
+        if (folderId === "print-set") { multiPrint.cover.colors = colors; multiChanged(); return; }
         state.printTitleColorDrafts[String(folderId)] = colors;
         state.printTitleSizeOpen = { folderId: String(folderId), line: line };
         renderPrintPreview();
@@ -3726,32 +3806,48 @@
       });
     });
     $all("[data-print-title-save]", el("print-preview")).forEach(function (button) {
-      button.addEventListener("click", function () {
+      button.addEventListener("click", async function () {
         var folderId = button.getAttribute("data-print-title-save");
-        var lines = (state.printTitleDrafts && state.printTitleDrafts[String(folderId)]) || favFolderTitleLines(folderId);
-        Store.setPrintFolderTitleLines(
-          folderId,
-          lines,
-          (state.printTitleSizeDrafts && state.printTitleSizeDrafts[String(folderId)]) || favFolderTitleSizes(folderId),
-          (state.printTitleColorDrafts && state.printTitleColorDrafts[String(folderId)]) || favFolderTitleColors(folderId)
-        );
-        if (state.printTitleDrafts) delete state.printTitleDrafts[String(folderId)];
-        if (state.printTitleSizeDrafts) delete state.printTitleSizeDrafts[String(folderId)];
-        if (state.printTitleColorDrafts) delete state.printTitleColorDrafts[String(folderId)];
-        state.printTitleSizeOpen = null;
-        if (state.printExam && String(state.printExam.folderId) === String(folderId)) {
-          state.printExam.titleLines = favFolderTitleLines(folderId);
-          state.printExam.titleParts = favFolderTitleParts(folderId);
-          state.printExam.title = state.printExam.titleParts.mid;
-        }
-        renderPrintPreview();
-        UI.toast("表紙の文字を保存しました", "ok");
+        if (folderId === "print-set") { openPrintModal("pr-set-modal"); return; }
+        if (printTitleSaving) return;
+        var account = multiPrint.accountEpoch;
+        var lines = ((state.printTitleDrafts && state.printTitleDrafts[folderId]) || favFolderTitleLines(folderId)).slice();
+        var sizes = ((state.printTitleSizeDrafts && state.printTitleSizeDrafts[folderId]) || favFolderTitleSizes(folderId)).slice();
+        var colors = ((state.printTitleColorDrafts && state.printTitleColorDrafts[folderId]) || favFolderTitleColors(folderId)).slice();
+        var draftBefore = JSON.stringify([state.printTitleDrafts && state.printTitleDrafts[folderId], state.printTitleSizeDrafts && state.printTitleSizeDrafts[folderId], state.printTitleColorDrafts && state.printTitleColorDrafts[folderId]]);
+        var value = {lines: lines.map(function(line) { return String(line || "").trim(); })};
+        while (value.lines.length < 3) value.lines.push("");
+        if (sizes.some(Boolean)) value.sizes = value.lines.map(function(_,i) { return sizes[i] || null; });
+        if (colors.some(Boolean)) value.colors = value.lines.map(function(_,i) { return colors[i] || null; });
+        printTitleSaving = true; button.disabled = true; updatePrintDurationAvailability();
+        try {
+          if (window.Auth && Auth.getCurrentUser()) {
+            var current = await Api.getUserSettings();
+            if (account !== multiPrint.accountEpoch) return;
+            var map = Object.assign({}, current.print_titles || {}); map[folderId] = value;
+            await Api.updateUserSettings({print_titles: map});
+            var verified = await Api.getUserSettings();
+            if (account !== multiPrint.accountEpoch) return;
+            if (JSON.stringify((verified.print_titles || {})[folderId]) !== JSON.stringify(value)) throw new Error("表紙の保存結果が一致しません。変更を保持しています。再試行してください。");
+          }
+          if (account !== multiPrint.accountEpoch) return;
+          Store.setPrintFolderTitleLines(folderId, lines, sizes, colors, true);
+          var draftNow = JSON.stringify([state.printTitleDrafts && state.printTitleDrafts[folderId], state.printTitleSizeDrafts && state.printTitleSizeDrafts[folderId], state.printTitleColorDrafts && state.printTitleColorDrafts[folderId]]);
+          if (draftBefore === draftNow) {
+            if (state.printTitleDrafts) delete state.printTitleDrafts[folderId];
+            if (state.printTitleSizeDrafts) delete state.printTitleSizeDrafts[folderId];
+            if (state.printTitleColorDrafts) delete state.printTitleColorDrafts[folderId];
+          }
+          state.printTitleSizeOpen = null;
+          renderPrintPreview(); UI.toast("表紙の文字を保存しました", "ok");
+        } catch(e) { if (account === multiPrint.accountEpoch) UI.toast("保存できませんでした。変更を保持しています。" + e.message, "err"); }
+        finally { printTitleSaving = false; updatePrintDurationAvailability(); if (button.isConnected) button.disabled = false; }
       });
     });
   }
 
   function runPrint() {
-    if (printPreparing || (multiPrint.enabled && (multiPrint.busy || multiPrint.loading || multiPrint.error || multiPrint.archived || !multiPrint.ids.length))) return;
+    if (printTitleSaving || printPreparing || (multiPrint.enabled && (multiPrint.busy || multiPrint.loading || multiPrint.error || multiPrint.archived || !multiPrint.ids.length))) return;
     if (printDurationWrite || (state.printExam && state.printExam.durationUnverified)) {
       UI.toast("試験時間の保存・再取得が完了してから印刷してください。確認できない場合は年度・方式を選び直してください。", "err"); return;
     }
@@ -3772,7 +3868,7 @@
         return img.decode ? img.decode().catch(function () {}) : Promise.resolve();
       }));
     }).then(function () {
-      if (printDurationWrite || durationRevision !== printDurationRevision || state.printExam !== selected || selected.durationUnverified || renderRevision !== printRenderRevision || (multiPrint.enabled && (multiPrint.busy || multiPrint.loading || multiPrint.archived))) {
+      if (printTitleSaving || printDurationWrite || durationRevision !== printDurationRevision || state.printExam !== selected || selected.durationUnverified || renderRevision !== printRenderRevision || (multiPrint.enabled && (multiPrint.busy || multiPrint.loading || multiPrint.archived))) {
         UI.toast("印刷準備中に設定が変わりました。保存・再取得完了後に印刷し直してください。", "err"); return;
       }
       if (opts.optimizeChoices) optimizePrintChoices(area, true);

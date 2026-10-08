@@ -13,7 +13,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
  const waitFlag=async(fn,name)=>{for(let i=0;i<1000;i++){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw new Error('Timed out waiting for '+name);};
  const browser=await chromium.launch({headless:!process.env.HEADED,...(process.env.PANEL_CHROMIUM?{executablePath:process.env.PANEL_CHROMIUM}:{})});
  try {for(const width of [1280,390]){
-  const f=fixture();let failExam=null,holdId=null,releaseExam,examHeld=false,holdSave=false,releaseSave,saveHeld=false,failSave=false,holdSetRead=false,setReadHeld=false,releaseSetRead,holdList=false,listHeld=false,releaseList;
+  const f=fixture();let userSettings={},failUserSettings=false;let failExam=null,holdId=null,releaseExam,examHeld=false,holdSave=false,releaseSave,saveHeld=false,failSave=false,holdSetRead=false,setReadHeld=false,releaseSetRead,holdList=false,listHeld=false,releaseList;
   const context=await browser.newContext({viewport:{width,height:960},isMobile:width<640,hasTouch:width<640,serviceWorkers:'block'});
   const errors=[];context.on('page',p=>p.on('pageerror',e=>errors.push(e.message)));
   await context.route('**/*',async route=>{
@@ -21,7 +21,8 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
    if(url.origin!==origin)return route.fulfill({status:200,contentType:req.resourceType()==='stylesheet'?'text/css':'application/javascript',body:''});
    if(url.pathname.startsWith('/api/')){
     let data;
-    if(['/api/user-settings','/api/favorites','/api/config','/api/universities','/api/exams'].includes(url.pathname))assert.equal(req.method(),'GET','No source/favorite/settings test writes');
+    if(['/api/favorites','/api/config','/api/universities','/api/exams'].includes(url.pathname))assert.equal(req.method(),'GET','No source/favorite/settings test writes');
+    if(url.pathname==='/api/user-settings'&&req.method()==='PUT') { if(failUserSettings){failUserSettings=false;return route.fulfill({status:503,json:{error:'Synthetic cover save failure'}});} userSettings={...userSettings,...req.postDataJSON()};return route.fulfill({status:200,contentType:'application/json',body:'{}'}); }
     const sets=url.pathname.match(/^\/api\/print-sets(?:\/([^/]+))?$/);
     if(sets){
      let staleList=false;
@@ -39,7 +40,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
      if(!match[2]&&(failExam===id||!f.sql.prepare('SELECT id FROM exams WHERE id=?').get(id)))return route.fulfill({status:404,contentType:'application/json',body:'{"error":"Synthetic missing exam"}'});
      data=match[2]?{exam_id:id,university_id:e.university_id,university_minutes:60,exam_minutes:null,effective_minutes:60,source:'university'}:{exam:{...e,questions:questions(id)}};
     }else if(url.pathname==='/api/exams')data={exams:exams.filter(e=>(!url.searchParams.get('year')||String(e.year)===url.searchParams.get('year'))&&(!url.searchParams.get('universityName')||e.university_name===url.searchParams.get('universityName'))&&(!url.searchParams.get('schedule')||e.schedule===url.searchParams.get('schedule')))};
-    else data=({'/api/config':{},'/api/universities':{universities:[]},'/api/search':{results:[]},'/api/wordlists':{stop:[],level:[],vocab:[]},'/api/favorites':{favorites:[{id:1,exam_id:11,question_number:1,folder_id:1,sort_order:0}],folders:[{id:1,name:'Fixture favorites',parent_id:null,sort_order:0}],sections:[]},'/api/user-settings':{}})[url.pathname];
+    else data=({'/api/config':{},'/api/universities':{universities:[]},'/api/search':{results:[]},'/api/wordlists':{stop:[],level:[],vocab:[]},'/api/favorites':{favorites:[{id:1,exam_id:11,question_number:1,folder_id:1,sort_order:0}],folders:[{id:1,name:'Fixture favorites',parent_id:null,sort_order:0}],sections:[]},'/api/user-settings':userSettings})[url.pathname];
     assert.ok(data,`Unhandled fixture ${req.method()} ${url.pathname}`);
     return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
    }
@@ -50,7 +51,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
    return route.fulfill({status:200,contentType:({'.html':'text/html','.js':'application/javascript','.css':'text/css'})[path.extname(file)]||'application/octet-stream',body});
   });
   await context.addInitScript(origin=>{if(location.origin!==origin)return;localStorage.setItem('cf_worker_url',origin);localStorage.setItem('exam_lasttab_main','print');window.print=()=>{window.__prints=(window.__prints||0)+1;};},origin);
-  const page=await context.newPage();page.setDefaultTimeout(10000);page.setDefaultNavigationTimeout(15000);console.log('QA started',width);await page.goto(origin,{waitUntil:'networkidle'});await page.locator('[data-multi-exam="11"]').waitFor({state:'attached'});
+  const page=await context.newPage();page.on('dialog', d=>d.accept());page.setDefaultTimeout(10000);page.setDefaultNavigationTimeout(15000);console.log('QA started',width);await page.goto(origin,{waitUntil:'networkidle'});await page.locator('[data-multi-exam="11"]').waitFor({state:'attached'});
   const waitReady=()=>page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='printSet'&&!window.__setsTest.multiPrint.loading);
   const toggle=async()=>{await page.locator('#pr-multi').check();await page.locator('.tree-row-uni').filter({hasText:'合成大学'}).click();await page.locator('.tree-row-uni').filter({hasText:'別大学'}).click();await page.locator('.tree-row-year').filter({hasText:'2026年度'}).nth(0).click();await page.locator('.tree-row-year').filter({hasText:'2026年度'}).nth(1).click();};
   const closeAny=async(p=page)=>{await p.bringToFront();const close=p.locator('.print-modal.open [data-print-close], .print-modal.open [data-set-close]').first();if(await close.count()){await close.click();await p.waitForFunction(()=>!document.querySelector('.print-modal.open'));await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));}};
@@ -325,10 +326,81 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await page.locator('[data-multi-year="[11,13]"]').check();await waitReady();assert.deepEqual((await page.evaluate(()=>window.__setsTest.multiPrint.ids)).sort(),[11,13,21]);
   await page.locator('[data-multi-year="[11,13]"]').uncheck();await waitReady();assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[21]);
   await openModal();await page.locator('#pr-multi-clear').click();await closeModal();assert.equal(await page.locator('#btn-print-run').isDisabled(),true);
+  // Set favorites reuse the existing print node and preserve unsaved selections on cancel.
+  const anotherId='00000000-0000-4000-8000-000000000099';
+  const savedSet=(await f.call('user-a',id)).body.print_set;
+  await f.call('user-a',undefined,{id:anotherId,name:'Favorite second set',exam_ids:[12],cover:{lines:['','SECOND',''],time:''}});
+  await page.evaluate(()=>window.__setsTest.refreshPrintSets());
+  const star=page.locator('.print-multi-only .tree-row-fav');
+  await star.click();assert.equal(await page.locator('#pr-set-favorites [data-open-set]').count(),2);
+  await setName('Protected draft');await closeModal();
+  page.removeAllListeners('dialog');page.once('dialog',d=>d.dismiss());
+  await page.locator(`#pr-set-favorites [data-open-set="${anotherId}"]`).click();
+  assert.equal(await page.evaluate(()=>window.__setsTest.multiPrint.name),'Protected draft');
+  page.on('dialog',d=>d.accept());
+  await page.locator(`#pr-set-favorites [data-open-set="${anotherId}"]`).click();await waitReady();
+  assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[12],'Sets replace selection, never merge');
+  await page.locator('.tab[data-tab="favorites"]').click();await page.locator('#favorites-sets-toggle').check();
+  await page.locator('#favorites-sets [data-open-set]').first().waitFor();
+  const names=()=>page.locator('#favorites-sets [data-open-set]').allTextContents();
+  const originalNames=await names();
+  await page.locator('#favorites-sets [data-order-set]').filter({hasText:'↓'}).first().click();
+  assert.deepEqual(await names(),originalNames.slice().reverse());
+  await page.locator('#set-order-cancel').click();assert.deepEqual(await names(),originalNames);
+  await page.locator('#favorites-sets [data-order-set]').filter({hasText:'↓'}).first().click();
+  failSave=true;await page.locator('#set-order-save').click();await page.waitForFunction(()=>!document.getElementById('set-order-cancel').disabled);
+  assert.deepEqual(await names(),originalNames.slice().reverse(),'Failed order preserves draft');
+  await page.locator('#set-order-save').click();await page.waitForFunction(()=>document.getElementById('set-order-save').disabled&&!document.getElementById('set-order-cancel').disabled);
+  f.reopen();assert.deepEqual((await f.call('user-a')).body.print_sets.map(s=>s.name),originalNames.slice().reverse());
+  assert.deepEqual((await f.call('user-a',id)).body.print_set,savedSet,'Reordering preserves all set metadata');
+  await page.reload({waitUntil:'networkidle'});await page.locator('.tab[data-tab="favorites"]').click();await page.locator('#favorites-sets-toggle').check();
+  await page.waitForFunction(()=>document.querySelectorAll('#favorites-sets [data-open-set]').length===2);
+  assert.deepEqual(await names(),originalNames.slice().reverse(),'Saved order survives reload');
+  await page.locator('#favorites-sets-toggle').uncheck();assert.equal(await page.locator('#favorites-area').isVisible(),true);
+  await page.locator('#favorites-sets-toggle').check();await page.locator(`#favorites-sets [data-open-set="${id}"]`).click();await waitReady();
+  assert.equal(await page.locator('.tab[data-tab="print"]').getAttribute('class').then(c=>c.includes('active')),true);
+  // The existing favorite cover editor is also available for saved/unsaved sets.
+  await page.locator('[data-print-title-add="print-set"]').click();
+  assert.equal(await page.locator('[data-set-cover="3"]').textContent(),'','Added blank row keeps its position');
+  await cover(3,'EXTRA COVER');
+  await page.locator('[data-print-title-size-toggle="print-set"][data-line="3"]').click();
+  await page.locator('[data-print-title-size="print-set"][data-line="3"][data-size="2"]').click();
+  await page.locator('[data-print-title-color="print-set"][data-line="3"][data-color="4"]').click();
+  assert.ok((await page.locator('[data-set-cover="3"]').getAttribute('class')).includes('pc-title-size-2'));
+  await page.locator('#pr-multi').uncheck();await page.locator('#pr-multi').check();await waitReady();
+  assert.equal(await page.locator('[data-set-cover="3"]').textContent(),'EXTRA COVER','Mode switching retains set draft');
+  await openModal();await page.locator('#pr-set-save').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy);await closeModal();
+  assert.deepEqual((await f.call('user-a',id)).body.print_set.cover.lines.slice(3),['EXTRA COVER']);
+  assert.equal((await f.call('user-a',id)).body.print_set.cover.sizes[3],2);
+  await page.evaluate(()=>window.__setsTest.runPrint());await page.waitForFunction(()=>!document.getElementById('btn-print-run').disabled);
+  assert.equal(await page.locator('#print-area .pc-title-size-2.pc-title-color-4').textContent(),'EXTRA COVER');
+  assert.equal(await page.locator('#print-area button').count(),0);
+  await page.locator('[data-print-title-remove="print-set"]').click();assert.equal(await page.locator('[data-set-cover="3"]').count(),0);
+  await page.evaluate(()=>document.querySelectorAll("#pr-tree .tree-children").forEach(n=>n.hidden=false));
   // OFF returns to existing single exam and favorite output with no shared cover.
   await closeModal();await page.locator('#pr-multi').uncheck();assert.equal(await page.locator('#pr-set-manage').isVisible(),false);assert.equal(await page.locator('[data-multi-exam="11"]').isVisible(),false,'OFF hides multi checkboxes');await page.locator('.tree-row-sched[data-uni="合成大学"][data-year="2026"][data-sched="前期"]').click();await page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='exam');assert.equal(await page.locator('#print-preview .pc-duration').innerText(),'時間：60分');assert.equal(await page.locator('#print-preview .print-cover').count(),1);
-  await page.locator('.tree-row-fav').click();await page.locator('[data-favfolder="1"]').click();await page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='favFolder');assert.equal(await page.locator('#print-preview .pc-uni').innerText(),'Fixture favorites');
+  await page.locator('[data-print-title="exam-11"][data-line="1"]').dblclick();
+  await page.locator('[data-print-title="exam-11"][data-line="1"]').fill('EDITED SINGLE');
+  await page.locator('[data-print-title="exam-11"][data-line="1"]').press('Enter');
+  await page.locator('[data-print-title-add="exam-11"]').click();
+  await page.locator('[data-print-title-size-toggle="exam-11"][data-line="1"]').click();
+  await page.locator('[data-print-title-size="exam-11"][data-line="1"][data-size="2"]').click();
+  failUserSettings=true;
+  await page.locator('[data-print-title-save="exam-11"]').click();
+  await page.waitForFunction(()=>!document.querySelector('[data-print-title-save="exam-11"]').disabled);
+  assert.equal(await page.locator('[data-print-title="exam-11"][data-line="1"]').textContent(),'EDITED SINGLE');
+  assert.ok(await page.evaluate(()=>window.__setsTest.state.printTitleDrafts['exam-11']),'Failed cover save retains draft');
+  await page.locator('[data-print-title-save="exam-11"]').click();
+  await page.waitForFunction(()=>!window.__setsTest.state.printTitleDrafts['exam-11']);
+  assert.deepEqual(userSettings.print_titles['exam-11'].lines,['2026年度','EDITED SINGLE','前期','']);
+  await page.evaluate(()=>window.__setsTest.runPrint());await page.waitForFunction(()=>!document.getElementById('btn-print-run').disabled);
+  assert.equal(await page.locator('#print-area .pc-uni').textContent(),'EDITED SINGLE');
+  assert.equal(await page.locator('#print-area .pc-extra').textContent(),'');
+  assert.ok((await page.locator('#print-area .pc-uni').getAttribute('class')).includes('pc-title-size-2'));
+  if (!await page.locator('[data-favfolder="1"]').isVisible()) await page.locator('.print-single-only .tree-row-fav').click();await page.locator('[data-favfolder="1"]').click();await page.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='favFolder');assert.equal(await page.locator('#print-preview .pc-uni').innerText(),'Fixture favorites');
   await page.locator('#pr-multi').check();await openModal();await page.locator('#pr-set-list').selectOption(id);await page.locator('#pr-set-open').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&window.__setsTest.multiPrint.revision);await closeModal();
+  assert.equal(await page.locator('[data-set-cover="3"]').textContent(),'EXTRA COVER','Stored set cover rows restore after load');
+  assert.ok((await page.locator('[data-set-cover="3"]').getAttribute('class')).includes('pc-title-size-2'));
   await openModal();await page.evaluate(()=>Auth.switchUser('user-b'));await page.waitForFunction(()=>window.__setsTest.multiPrint.uid==='user-b');
   assert.equal(await page.locator('.print-modal.open').count(),0);assert.equal(await page.locator('.shell').evaluate(n=>n.inert),false);
   await page.goBack();await page.waitForFunction(mode=>history.scrollRestoration===mode,initialRestoration);await page.goForward();await page.waitForFunction(mode=>history.scrollRestoration===mode,initialRestoration);assert.equal(await page.locator('.print-modal.open').count(),0,'Old account modal cannot reopen');

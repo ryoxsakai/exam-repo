@@ -81,6 +81,8 @@
         <button class="icon-btn" id="btn-favorites-new-section" title="セクションを挿入（印刷時の見出しになります）"><i class="fa-solid fa-bookmark"></i></button>
         <button class="icon-btn" id="btn-favorites-refresh" title="再読み込み"><i class="fa-solid fa-rotate-right"></i></button>
       </div>
+      <div class="toolbar"><label class="hint"><input type="checkbox" id="favorites-sets-toggle"> 印刷セット</label></div>
+      <div id="favorites-sets" hidden></div>
       <div id="favorites-area"></div>
     </section>
 
@@ -498,15 +500,15 @@
   <!-- Firebase Authentication（Googleログイン用。Firestore等は未使用） -->
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="assets/js/store.js?v=20261008questionbreak"></script>
+  <script src="assets/js/store.js?v=20261008allcovers"></script>
   <script src="assets/js/auth.js?v=20260706a"></script>
-  <script src="assets/js/api.js?v=20261008duration"></script>
+  <script src="assets/js/api.js?v=20261008setfavorites"></script>
   <script src="assets/js/ui.js?v=20260726a"></script>
   <script src="assets/js/markup-20261008double.js"></script>
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260923a"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/viewer.js?v=20261008questionbreak"></script>
+  <script src="assets/js/viewer.js?v=20261008allcovers"></script>
   <script src="assets/js/webmcp.js?v=20260826a"></script>
 </body>
 </html>

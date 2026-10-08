@@ -260,7 +260,10 @@ async function browserTest() {
           await page.locator('#btn-print-run').click();
           await page.waitForFunction(n => window.__printCalls === n + 1, previous);
           assert.equal(await page.locator('#print-area .pc-name-field').count(), +enabled, 'Actual runPrint output matches the setting');
-          assert.equal(await page.locator('#print-area').innerHTML(), await preview.innerHTML(), 'Saved preview and real print use the same HTML');
+          assert.deepEqual(await page.locator('#print-area .print-part').evaluateAll(nodes=>nodes.map(n=>n.innerHTML)), await preview.locator('.print-part').evaluateAll(nodes=>nodes.map(n=>n.innerHTML)), 'Question and answer content matches the preview');
+          const coverTexts = node => [...node.querySelectorAll('.pc-year,.pc-uni,.pc-sched,.pc-extra,.pc-name-field')].map(n=>n.textContent);
+          assert.deepEqual(await page.locator('#print-area .print-cover').evaluate(coverTexts), await preview.locator('.print-cover').evaluate(coverTexts), 'Saved cover lines match the preview without editor controls');
+          assert.equal(await page.locator('#print-area button').count(),0, 'Editor controls are removed from print output');
           assert.equal(await page.locator('#print-area .print-part .pc-name-field').count(), 0);
           await page.emulateMedia({media: 'print'});
           const geometry = await measure(page, '#print-area .print-cover');
