@@ -7,9 +7,9 @@ const root=path.resolve(__dirname,'..');
  const page=await browser.newPage({viewport:{width:1000,height:900}});
  page.on('pageerror', e=>console.error('PAGE ERROR',e));
  await page.route('**/*',r=>r.abort());
- await page.setContent('<style>'+fs.readFileSync(root+'/assets/css/main-20261007printlines.css','utf8')+'\n'+fs.readFileSync(root+'/assets/css/print-choices.css','utf8')+'</style><div id="print-preview"></div>');
+ await page.setContent('<style>'+fs.readFileSync(root+'/assets/css/main-20261008double.css','utf8')+'\n'+fs.readFileSync(root+'/assets/css/print-choices.css','utf8')+'</style><div id="print-preview"></div>');
  await page.evaluate(()=>{window.UI={el:id=>document.getElementById(id),escapeHtml:s=>s,$all:(q,r=document)=>Array.from(r.querySelectorAll(q))};window.Store={getPrintFontSize:()=> 'md',getFavCollapsed:()=>({})};});
- await page.addScriptTag({content:fs.readFileSync(root+'/assets/js/markup-20261005aliases.js','utf8')});
+ await page.addScriptTag({content:fs.readFileSync(root+'/assets/js/markup-20261008double.js','utf8')});
  await page.addScriptTag({content:fs.readFileSync(root+'/assets/js/difficulty.js','utf8')});
  await page.addScriptTag({content:fs.readFileSync(root+'/assets/js/viewer.js','utf8').replace('document.addEventListener("DOMContentLoaded", init);','window.testChoices={optimizePrintChoices,printField};')});
  const result=await page.evaluate(()=>{
