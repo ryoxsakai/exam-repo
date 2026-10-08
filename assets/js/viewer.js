@@ -329,7 +329,8 @@
         renderPrintPreview();
       });
     }
-    [["pr-answer-exam-break", "getPrintAnswerExamPageBreak", "setPrintAnswerExamPageBreak"],
+    [["pr-question-exam-break", "getPrintQuestionExamPageBreak", "setPrintQuestionExamPageBreak"],
+     ["pr-answer-exam-break", "getPrintAnswerExamPageBreak", "setPrintAnswerExamPageBreak"],
      ["pr-optimize-answers", "getPrintOptimizeAnswers", "setPrintOptimizeAnswers"],
      ["pr-compact-commentary", "getPrintCompactCommentary", "setPrintCompactCommentary"]].forEach(function (setting) {
       var control = el(setting[0]);
@@ -2429,6 +2430,7 @@
       qSubtitle: el("pr-qsubtitle") ? el("pr-qsubtitle").checked : false,
       lineNumbers: (el("pr-linenum") && el("pr-linenum").checked) || (el("pr-line-refs") && el("pr-line-refs").checked),
       lineReferences: el("pr-line-refs") && el("pr-line-refs").checked,
+      questionExamBreak: el("pr-question-exam-break") ? el("pr-question-exam-break").checked : false,
       answerExamBreak: el("pr-answer-exam-break") ? el("pr-answer-exam-break").checked : false,
       optimizeAnswers: el("pr-optimize-answers") ? el("pr-optimize-answers").checked : false,
       compactCommentary: el("pr-compact-commentary") ? el("pr-compact-commentary").checked : false,
@@ -2776,6 +2778,7 @@
   // プレビュー(.print-doc)と実際の印刷(#print-area.print-out)で同じ指定を使う。
   function printDocClasses(opts) {
     return "fs-" + Store.getPrintFontSize() + " lh-" + Store.getPrintLineHeight() +
+      (opts && opts.questionExamBreak ? " question-exam-break" : "") +
       (opts && opts.answerExamBreak ? " answer-exam-break" : "") +
       (opts && opts.qBreakQ ? " qbreak-q" : "") +
       (opts && opts.qBreakA ? " qbreak-a" : "") +

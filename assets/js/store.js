@@ -37,6 +37,7 @@
     printRenumber: "exam_print_renumber",    // 印刷時だけ小問番号を大問ごとに1から振り直す
     printQSubtitle: "exam_print_qsubtitle",  // 大問見出しを「1. 2018 ○○ 前期 大問3」形式にする
     printWritingLines: "exam_print_writing_lines",
+    printQuestionExamPageBreak: "exam_print_question_exam_break",
     printAnswerExamPageBreak: "exam_print_answer_exam_break",
     printOptimizeAnswers: "exam_print_optimize_answers",
     printCompactCommentary: "exam_print_compact_commentary",
@@ -369,6 +370,8 @@
       n = Number(n);
       write(KEYS.printWritingLines, [5, 10, 15, 20, 25].indexOf(n) >= 0 ? n : 10);
     },
+    getPrintQuestionExamPageBreak: function () { return read(KEYS.printQuestionExamPageBreak, false) === true; },
+    setPrintQuestionExamPageBreak: function (on) { write(KEYS.printQuestionExamPageBreak, !!on); },
     getPrintAnswerExamPageBreak: function () { return read(KEYS.printAnswerExamPageBreak, false) === true; },
     setPrintAnswerExamPageBreak: function (on) { write(KEYS.printAnswerExamPageBreak, !!on); },
     getPrintOptimizeAnswers: function () { return read(KEYS.printOptimizeAnswers, false) === true; },

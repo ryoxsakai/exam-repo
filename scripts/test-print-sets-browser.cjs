@@ -226,18 +226,32 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   // Existing saved sets contain no new option: default remains OFF in this device.
   assert.equal(await page.locator('#pr-answer-exam-break').isChecked(),false);
   const readPages=pdf=>JSON.parse(execFileSync('python3',['-c',"import json,sys;from pypdf import PdfReader;print(json.dumps([p.extract_text() for p in PdfReader(sys.argv[1]).pages]))",pdf],{encoding:'utf8'}));
-  for(const optimized of [false,true]) {
-   await checkPrint('#pr-optimize-answers',optimized);
-   for(const breaks of [false,true]) {
+  assert.equal(await page.locator('#pr-question-exam-break').isChecked(),false);
+  // Same university, different years, plus a different university.
+  await page.evaluate(()=>window.__setsTest.state.printExam.exams[2].year=2025);
+  for(const questionBreaks of [false,true])for(const breaks of [false,true]) {
+    await checkPrint('#pr-question-exam-break',questionBreaks);
     await checkPrint('#pr-answer-exam-break',breaks);
     await page.evaluate(()=>window.__setsTest.runPrint());await page.waitForFunction(()=>!document.getElementById('btn-print-run').disabled);
-    const pdf=path.join(evidence,`answer-break-${width}-${optimized}-${breaks}.pdf`);await page.pdf({path:pdf,format:'A4',printBackground:true});
-    const texts=readPages(pdf);assert.equal(texts.length,breaks?7:5);
-    for(const [i,m] of ['Q11','Q21','Q13'].entries())assert.ok(texts[i+1].includes(m),'Question boundaries unchanged');
-    for(const [i,m] of ['A11','A21','A13'].entries())assert.ok(texts[breaks?i+4:4].includes(m),'Answer boundary follows option');
+    const pdf=path.join(evidence,`exam-break-${width}-${questionBreaks}-${breaks}.pdf`);await page.pdf({path:pdf,format:'A4',printBackground:true});
+    const texts=readPages(pdf);assert.equal(texts.length,1+(questionBreaks?3:1)+(breaks?3:1));
+    for(const [i,m] of ['Q11','Q21','Q13'].entries())assert.ok(texts[questionBreaks?i+1:1].includes(m),'Question boundary follows its option');
+    for(const [i,m] of ['A11','A21','A13'].entries())assert.ok(texts[(questionBreaks?4:2)+(breaks?i:0)].includes(m),'Answer boundary follows its independent option');
     assert.ok(texts.every(t=>t.trim()),'No empty PDF page');
-   }
   }
+  await page.evaluate(()=>window.__setsTest.state.printExam.exams[2].year=2026);
+  // Long question bodies must flow naturally while keeping exam headings with content.
+  const originalProblems=await page.evaluate(()=>window.__setsTest.state.printExam.exams.map(e=>e.questions[0].problem_text));
+  for(const questionBreaks of [false,true]) {
+    await checkPrint('#pr-question-exam-break',questionBreaks);
+    await page.evaluate(()=>window.__setsTest.state.printExam.exams.forEach(e=>{e.questions[0].problem_text+='\n'+Array.from({length:75},(_,i)=>'Long passage line '+i+' flows across A4 sheets.').join('\n');}));
+    await page.evaluate(()=>window.__setsTest.runPrint());await page.waitForFunction(()=>!document.getElementById('btn-print-run').disabled);
+    const pdf=path.join(evidence,`question-long-${width}-${questionBreaks}.pdf`);await page.pdf({path:pdf,format:'A4',printBackground:true});
+    const texts=readPages(pdf);assert.ok(texts.length>7);assert.ok(texts.every(t=>t.trim()));
+    for(const [i,m] of ['Q11','Q21','Q13'].entries())assert.ok(texts.find(t=>t.includes(m)).normalize('NFKC').replace(/\s+/g,' ').includes(expectedHeads[i]));
+    await page.evaluate(values=>window.__setsTest.state.printExam.exams.forEach((e,i)=>e.questions[0].problem_text=values[i]),originalProblems);
+  }
+  await checkPrint('#pr-question-exam-break',true);
   await checkPrint('#pr-optimize-answers',false);
   // Long answers cross A4 pages; each exam heading must stay with its first answer.
   const originalCommentary=await page.evaluate(()=>window.__setsTest.state.printExam.exams.map(e=>e.questions[0].commentary_text));
@@ -256,7 +270,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   // Test reload through Store without disturbing the existing modal/history scenario.
   assert.equal(await page.evaluate(()=>Store.getPrintAnswerExamPageBreak()),true);
   const storagePage=await context.newPage();await storagePage.goto(origin,{waitUntil:'networkidle'});
-  assert.equal(await storagePage.locator('#pr-answer-exam-break').isChecked(),true);await storagePage.close();await page.bringToFront();
+  assert.equal(await storagePage.locator('#pr-question-exam-break').isChecked(),true);assert.equal(await storagePage.locator('#pr-answer-exam-break').isChecked(),true);await storagePage.close();await page.bringToFront();
   await page.evaluate(()=>window.__prints=0);
   // Real print HTML and PDF: one cover, Q exams then A exams, distinct pages.
   await page.locator('#btn-print-run').click();await page.waitForFunction(()=>window.__prints===1);assert.equal(await page.locator('#print-area .print-cover').count(),1);assert.equal(await page.locator('#print-area .print-modal, #print-area input, #print-area button').count(),0,'Print output contains no dialogs/controls');
