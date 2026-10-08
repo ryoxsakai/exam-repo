@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const {createHash} = require('node:crypto');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const index = fs.readFileSync('index.html');
-const files = ['index.html', 'assets/js/store.js', 'assets/js/viewer.js',
+const files = ['index.html', 'assets/js/api.js', 'assets/js/store.js', 'assets/js/viewer.js',
   index.toString().match(/href="(assets\/css\/main[^"?]+)/)[1],
   index.toString().match(/src="(assets\/js\/markup[^"?]+)/)[1],
   'setting/index.html', 'assets/js/settings.js'];

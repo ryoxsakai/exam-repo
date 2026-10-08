@@ -70,7 +70,7 @@ const get = async id => {const r=await call(id); assert.equal(r.status,200); ret
       assert.equal(t.buildPrintHtml(ex,{cover:true,duration:true},draft),plain);
       ex.duration={effective_minutes:60};
       const on=t.buildPrintHtml(ex,{cover:true,duration:true},draft);
-      assert.match(on, /pc-sched">前期<\/div><div class="pc-duration">時間：60分<\/div>/);
+      assert.match(on, /pc-sched[^>]*>前期<\/div>[\s\S]*<div class="pc-duration">時間：60分<\/div>/);
       assert.equal(on.replace('<div class="pc-duration">時間：60分</div>',''),plain);
       assert.doesNotMatch(t.buildPrintHtml(ex,{cover:false,duration:true},draft),/pc-duration/);
       assert.equal(t.buildPrintHtml(ex,{cover:true,duration:false},draft),plain);

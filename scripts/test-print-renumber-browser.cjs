@@ -127,7 +127,7 @@ const hook='window.__renumberTest={state,runPrint,renderPrintPreview,isPreparing
    await cb.check();
   }
   await ready('printSet');await check('multi',allQuestions);
-  await page.locator('#pr-multi').uncheck();await page.locator('.tree-row-fav').click();await page.locator('[data-favfolder="1"]').click();await ready('favFolder');await check('favorite',favorites);
+  await page.locator('#pr-multi').uncheck();await page.locator('.print-single-only .tree-row-fav').click();await page.locator('[data-favfolder="1"]').click();await ready('favFolder');await check('favorite',favorites);
   await page.locator('#pr-questions-open').click();await page.locator('[data-prq]').first().uncheck();await close();
   assert.equal(await page.locator('#print-preview .print-part-q .print-q').count(),favorites.length-1,'Excluded questions remain excluded');
   assert.deepEqual(errors,[]);await context.close();

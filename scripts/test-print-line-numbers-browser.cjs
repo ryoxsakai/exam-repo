@@ -80,7 +80,7 @@ async function waitFlag(fn) {for(let i=0;i<500;i++){if(fn())return;await pause(1
   for(const id of [11,21])await page.locator(`[data-multi-exam="${id}"]`).check();await ready('printSet');
   await checkCase('multi','md','3','Times New Roman, serif');await page.locator('#pr-set-manage').click();
   assert.deepEqual(await page.locator('#pr-multi-selection li > span').allTextContents(),['2021 大阪医科薬科 前期','2026 合成大学']);await close();
-  await page.locator('#pr-multi').uncheck();await page.locator('.tree-row-fav').click();await page.locator('[data-favfolder="1"]').click();await ready('favFolder');
+  await page.locator('#pr-multi').uncheck();await page.locator('.print-single-only .tree-row-fav').click();await page.locator('[data-favfolder="1"]').click();await ready('favFolder');
   await checkCase('favorite','md','3','Times New Roman, serif');
   if(width===1280) {
    // The existing readiness guard must await both a real delayed font and image.
