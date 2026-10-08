@@ -1,0 +1,29 @@
+name: Test double underline and highlight markup
+on:
+  pull_request:
+    paths:
+      - 'assets/js/**'
+      - 'assets/css/**'
+      - 'index.html'
+      - 'setting/index.html'
+      - 'scripts/test-markup-double.cjs'
+      - '.github/workflows/markup-double-test.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  markup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --prefix panel
+      - run: ./panel/node_modules/.bin/playwright install --with-deps chromium
+      - run: node scripts/test-markup-double.cjs --browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exam-double-underline-qa
+          path: /tmp/exam-double-*
