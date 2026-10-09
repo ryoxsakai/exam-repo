@@ -3218,6 +3218,7 @@
   function renderSetFavorites() {
     el("favorites-area").hidden = false;
     ["btn-favorites-new-folder", "btn-favorites-new-section"].forEach(function (id) { el(id).hidden = false; });
+    el("btn-favorites-new-section").title = isSetFavorites() ? "セクションを挿入" : "セクションを挿入（印刷時の見出しになります）";
     if (!isSetFavorites()) return;
     el("favorites-area").innerHTML = '<div class="fav-tree">' + renderFavContainer(null, 0, true) + '</div>';
   }
