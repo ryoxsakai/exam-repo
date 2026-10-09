@@ -41,6 +41,7 @@ jobs:
       - run: python -m pip install pypdf==6.14.2 PyMuPDF==1.26.6
       - name: Desktop and mobile UI, modal history, saved selections and A4 PDF
         run: |
+          node scripts/test-print-refresh-network.cjs
           node scripts/test-print-ui-sync.cjs
           node scripts/test-print-university-settings.cjs
           node scripts/test-print-choices.cjs
