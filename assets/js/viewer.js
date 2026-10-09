@@ -758,6 +758,7 @@
         if (el("pr-set-list")) el("pr-set-list").innerHTML = "";
         if (multiPrint.enabled) { loadMultiPrint(); refreshPrintSets(); }
       }
+      favoritesLoadEpoch++; favoritesLoadPending = null;
       state.favSet = null;  // ログイン状態が変わったらキャッシュ破棄
       state.favRows = [];
       state.favFolders = [];
@@ -796,13 +797,19 @@
   }
 
   // お気に入り一覧を取得しキャッシュ（Set("examId:qnum") と生データ）。未ログイン時は空。
+  var favoritesLoadEpoch = 0, favoritesLoadPending = null;
   function ensureFavoritesLoaded(force, rejectOnError) {
-    if (state.favSet && !force) return Promise.resolve(state.favSet);
     if (!window.Auth || !Auth.getCurrentUser()) {
+      favoritesLoadEpoch++; favoritesLoadPending = null;
       state.favSet = new Set(); state.favRows = []; state.favFolders = []; state.favSections = [];
       return Promise.resolve(state.favSet);
     }
-    return Api.getFavorites().then(function (data) {
+    if (favoritesLoadPending && !force) return favoritesLoadResult(favoritesLoadPending, rejectOnError);
+    if (state.favSet && !force) return Promise.resolve(state.favSet);
+    var requestId = ++favoritesLoadEpoch, account = multiPrint.accountEpoch;
+    var request = Api.getFavorites().then(function (data) {
+      if (account !== multiPrint.accountEpoch) return state.favSet;
+      if (requestId !== favoritesLoadEpoch) return favoritesLoadPending || state.favSet;
       state.favRows = data.favorites || [];
       state.favFolders = data.folders || [];
       state.favSections = data.sections || [];
@@ -812,10 +819,23 @@
       // 削除済みフォルダの折りたたみ状態も削除し、際限なく増えないようにする
       Store.pruneFavCollapsed(state.favFolders.map(function (f) { return f.id; }));
       return state.favSet;
-    }).catch(function (e) {
-      if (rejectOnError) { state.favSet = null; throw e; }
-      state.favSet = new Set();
-      return state.favSet;
+    }, function (e) {
+      if (account !== multiPrint.accountEpoch) return state.favSet;
+      if (requestId !== favoritesLoadEpoch) return favoritesLoadPending || state.favSet;
+      state.favSet = null;
+      throw e;
+    }).finally(function () {
+      if (favoritesLoadPending === request) favoritesLoadPending = null;
+    });
+    favoritesLoadPending = request;
+    return favoritesLoadResult(request, rejectOnError);
+  }
+
+  function favoritesLoadResult(request, rejectOnError) {
+    return request.catch(function (e) {
+      if (rejectOnError) throw e;
+      // A tolerant caller may show an empty result, but cannot validate old rows.
+      return new Set();
     });
   }
 
@@ -2865,22 +2885,43 @@
   // 印刷タブを開いたとき：ツリー（大学→年度→方式）とプレビューを用意
   function openPrintTab() {
     // Refresh source lists while keeping loaded single exams and unsaved set drafts.
+    var account = multiPrint.accountEpoch, wasMulti = multiPrint.enabled;
+    var favoriteSelection = !wasMulti && state.printSel.kind === "favFolder";
+    if (favoriteSelection) {
+      // Invalidate both the old preview and any pending body load before the GET.
+      state.printSel = Object.assign({}, state.printSel);
+      state.printExam = null;
+      printRenderRevision++;
+      renderPrintDurationSettings();
+      renderPrintSectionControls();
+      el("print-preview").innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> お気に入りを更新中…</div></div>';
+    }
+    var selection = state.printSel;
+    // Independent endpoints: a favorites outage must not block saved-set updates.
+    if (window.Auth && Auth.getCurrentUser()) refreshPrintSets();
+    // A tree selection during this refresh must also fetch, not reuse old rows.
+    state.favSet = null;
     ensureFavoritesLoaded(true, true).then(function () {
+      if (account !== multiPrint.accountEpoch || state.printSel !== selection || multiPrint.enabled !== wasMulti) return;
       loadPrintTree(true);
-      if (window.Auth && Auth.getCurrentUser()) refreshPrintSets();
-      if (!multiPrint.enabled && state.printSel.kind === "favFolder") {
-        // Invalidate older folder loads and retain exclusions for surviving questions.
-        state.printSel = Object.assign({}, state.printSel);
-        loadPrintFavFolder(Number(state.printSel.folderId), true);
+      if (favoriteSelection) {
+        loadPrintFavFolder(Number(selection.folderId), true);
       } else if (!state.printExam && !multiPrint.loading && !multiPrint.busy) {
         loadPrintPreview();
       }
     }).catch(function (e) {
+      if (account !== multiPrint.accountEpoch || state.printSel !== selection || multiPrint.enabled !== wasMulti) return;
       UI.toast(e.message || "お気に入りの更新に失敗しました", "err");
+      if (favoriteSelection) renderPrintFavoriteRefreshError(e);
       // Favorite service failures must not prevent ordinary exam printing.
       loadPrintTree(true);
-      if (!state.printExam && state.printSel.kind !== "favFolder" && !multiPrint.loading && !multiPrint.busy) loadPrintPreview();
+      if (!state.printExam && !favoriteSelection && !multiPrint.loading && !multiPrint.busy) loadPrintPreview();
     });
+  }
+
+  function renderPrintFavoriteRefreshError(e) {
+    el("print-preview").innerHTML = '<div class="card"><p class="hint" role="status">' + esc(e.message || "お気に入りの更新に失敗しました") + '</p><button type="button" class="btn ghost" id="pr-favorites-retry">再読み込み</button></div>';
+    el("pr-favorites-retry").addEventListener("click", openPrintTab);
   }
 
   /* --- 印刷タブ: お気に入りフォルダを一括印刷する --- */
@@ -2976,7 +3017,7 @@
     renderPrintDurationSettings();
     var box = el("print-preview");
     box.innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
-    ensureFavoritesLoaded().then(function () {
+    ensureFavoritesLoaded(false, true).then(function () {
       if (multiPrint.enabled || state.printSel !== selection) return;
       var entries = favEntriesInFolder(folderId);
       var favs = entries.filter(function (e) { return e.kind === "favorite"; }).map(function (e) { return e.favorite; });
@@ -3038,7 +3079,7 @@
       });
     }).catch(function (e) {
       if (multiPrint.enabled || state.printSel !== selection) return;
-      box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message || e) + "</div></div>";
+      renderPrintFavoriteRefreshError(e);
     });
   }
 
