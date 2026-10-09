@@ -8,7 +8,8 @@ const {handlePrintSets}=require(out);
 function fixture() {
   const filename=path.join(tmp,Math.random().toString(36)+'.sqlite');
   let sql=new DatabaseSync(filename);
-  sql.exec(`CREATE TABLE exams(id INTEGER PRIMARY KEY); INSERT INTO exams VALUES (11),(12),(13),(21);
+  sql.exec(`CREATE TABLE favorite_folders(id INTEGER PRIMARY KEY,uid TEXT,name TEXT,parent_id INTEGER,sort_order INTEGER,kind TEXT DEFAULT 'folder');
+    CREATE TABLE exams(id INTEGER PRIMARY KEY); INSERT INTO exams VALUES (11),(12),(13),(21);
     CREATE TABLE questions(exam_id INTEGER, question_number INTEGER, problem_text TEXT); INSERT INTO questions VALUES (11,1,'source');
     CREATE TABLE favorites(uid TEXT,exam_id INTEGER,question_number INTEGER); INSERT INTO favorites VALUES ('user-a',11,1);`);
   const db={prepare(text) {let values=[];return {bind(...v){values=v;return this;}, async first(){return sql.prepare(text).get(...values)||null;},async all(){return {results:sql.prepare(text).all(...values)};},async run(){return sql.prepare(text).run(...values);}};}};

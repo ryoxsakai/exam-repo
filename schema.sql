@@ -271,3 +271,10 @@ CREATE TABLE IF NOT EXISTS print_sets (
   revision INTEGER NOT NULL DEFAULT 1, archived INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL, PRIMARY KEY (uid, id)
 );
+
+-- Classification is independent of set contents/revisions. Folder deletion promotes
+-- placements to the parent; no cascading FK may delete a saved print set.
+CREATE TABLE IF NOT EXISTS print_set_placements (
+  uid TEXT NOT NULL, set_id TEXT NOT NULL, folder_id INTEGER, sort_order INTEGER NOT NULL,
+  PRIMARY KEY (uid, set_id)
+);

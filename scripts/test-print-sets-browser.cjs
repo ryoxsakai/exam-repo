@@ -341,23 +341,14 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await page.locator(`#pr-set-favorites [data-open-set="${anotherId}"]`).click();await waitReady();
   assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[12],'Sets replace selection, never merge');
   await page.locator('.tab[data-tab="favorites"]').click();await page.locator('#favorites-sets-toggle').check();
-  await page.locator('#favorites-sets [data-open-set]').first().waitFor();
-  const names=()=>page.locator('#favorites-sets [data-open-set]').allTextContents();
+  await page.locator('#favorites-area [data-open-set]').first().waitFor();
+  const names=()=>page.locator('#favorites-area [data-open-set]').evaluateAll(es=>es.map(e=>e.closest('.fav-row').querySelector('.fav-name').textContent));
   const originalNames=await names();
-  await page.locator('#favorites-sets [data-order-set]').filter({hasText:'↓'}).first().click();
-  assert.deepEqual(await names(),originalNames.slice().reverse());
-  await page.locator('#set-order-cancel').click();assert.deepEqual(await names(),originalNames);
-  await page.locator('#favorites-sets [data-order-set]').filter({hasText:'↓'}).first().click();
-  failSave=true;await page.locator('#set-order-save').click();await page.waitForFunction(()=>!document.getElementById('set-order-cancel').disabled);
-  assert.deepEqual(await names(),originalNames.slice().reverse(),'Failed order preserves draft');
-  await page.locator('#set-order-save').click();await page.waitForFunction(()=>document.getElementById('set-order-save').disabled&&!document.getElementById('set-order-cancel').disabled);
-  f.reopen();assert.deepEqual((await f.call('user-a')).body.print_sets.map(s=>s.name),originalNames.slice().reverse());
-  assert.deepEqual((await f.call('user-a',id)).body.print_set,savedSet,'Reordering preserves all set metadata');
   await page.reload({waitUntil:'networkidle'});await page.locator('.tab[data-tab="favorites"]').click();await page.locator('#favorites-sets-toggle').check();
-  await page.waitForFunction(()=>document.querySelectorAll('#favorites-sets [data-open-set]').length===2);
-  assert.deepEqual(await names(),originalNames.slice().reverse(),'Saved order survives reload');
+  await page.waitForFunction(()=>document.querySelectorAll('#favorites-area [data-open-set]').length===2);
+  assert.deepEqual(await names(),originalNames,'Legacy saved order survives reload');
   await page.locator('#favorites-sets-toggle').uncheck();assert.equal(await page.locator('#favorites-area').isVisible(),true);
-  await page.locator('#favorites-sets-toggle').check();await page.locator(`#favorites-sets [data-open-set="${id}"]`).click();await waitReady();
+  await page.locator('#favorites-sets-toggle').check();await page.locator(`#favorites-area [data-open-set="${id}"]`).click();await waitReady();
   assert.equal(await page.locator('.tab[data-tab="print"]').getAttribute('class').then(c=>c.includes('active')),true);
   // The existing favorite cover editor is also available for saved/unsaved sets.
   await page.locator('[data-print-title-add="print-set"]').click();

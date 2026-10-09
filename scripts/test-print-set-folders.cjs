@@ -1,0 +1,27 @@
+const assert=require('node:assert/strict'),{fixture}=require('./print-set-folders-fixture.cjs');
+(async()=>{const f=fixture();try{
+ const s={id:'00000000-0000-4000-8000-000000000001',name:'Legacy',exam_ids:[11],cover:{lines:['','Book',''],time:'60',sizes:[1,2,3]},question_selection:{'11:1':false}};
+ assert.equal((await f.call('print-sets',s)).status,200);
+ const parent=(await f.call('favorite-folders',{name:'Parent'})).body.folder.id;
+ const child=(await f.call('favorite-folders',{name:'Child',parentId:parent})).body.folder.id;
+ const section=(await f.call('favorite-folders',{name:'Heading',kind:'section'})).body.folder.id;
+ const before=(await f.call('print-sets/'+s.id)).body.print_set;
+ const move=parentId=>f.call('favorite-folders/reorder',{parentId,items:[{type:'printSet',setId:s.id}]});
+ assert.equal((await move(child)).status,200);f.reopen();
+ let saved=(await f.call('print-sets/'+s.id)).body.print_set;assert.equal(saved.folder_id,child);assert.equal(saved.sort_order,0);
+ const content=o=>{const {folder_id,sort_order,...rest}=o;return rest;};assert.deepEqual(content(saved),content(before));
+ assert.equal((await move(section)).status,404);assert.equal((await move(9999)).status,404);
+ assert.equal((await f.call('favorite-folders/reorder',{parentId:null,items:[{type:'printSet',setId:s.id}]},'POST','b')).status,404);
+ assert.equal((await f.call('favorite-folders/reorder',{parentId:null,items:[{type:'printSet',setId:s.id},{type:'printSet',setId:s.id}]})).status,400);
+ assert.equal((await f.call('favorite-folders/reorder',{items:[{type:'unknown'}]})).status,400);
+ assert.equal((await f.call('favorite-folders/reorder',{parentId:null,items:[{type:'printSet',setId:s.id}]},'POST',null)).status,401);
+ assert.equal((await f.call('favorite-folders/'+child,undefined,'DELETE')).status,200);assert.equal((await f.call('print-sets/'+s.id)).body.print_set.folder_id,parent);
+ assert.equal((await f.call('favorite-folders/'+parent,undefined,'DELETE')).status,200);assert.equal((await f.call('print-sets/'+s.id)).body.print_set.folder_id,null);
+ assert.equal((await f.call('print-sets/'+s.id,{...s,name:'Content update',revision:1},'PUT')).status,200);
+ assert.equal((await f.call('print-sets/'+s.id)).body.print_set.revision,2);
+ assert.equal((await move(null)).status,200);
+ assert.equal((await f.call('print-sets/'+s.id,{...s,name:'Content update',revision:2,archived:true},'PUT')).status,200);
+ assert.equal((await move(null)).status,404);assert.equal((await f.call('print-sets')).body.print_sets.length,1);
+ assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM questions').get().n,1);
+ console.log('PASS: real Worker isolated SQLite placement/reopen, content preservation, folder deletion promotion, authorization, invalid targets, archive protection');
+}finally{f.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
