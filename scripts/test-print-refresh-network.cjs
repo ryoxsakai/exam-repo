@@ -88,9 +88,9 @@ fs.mkdirSync(evidence, {recursive: true});
         await blocked();
         // Reselecting a cached tree row while GET is pending must stay blocked.
         await page.locator('[data-favfolder="1"]').click();
-        await waitFor(() => favoriteReplies.length === 2, 'fresh GET on pending tree selection');
+        await page.waitForTimeout(100);
+        assert.equal(favoriteReplies.length, 1, 'Pending folder selection must share the active GET');
         await blocked();
-        favoriteReplies.shift()(failure);
         favoriteReplies.shift()(failure);
         await page.waitForFunction(() => document.getElementById('pr-favorites-retry'));
         await blocked();
@@ -145,6 +145,55 @@ fs.mkdirSync(evidence, {recursive: true});
         favoritesMode = 'normal';
         await page.locator('#pr-multi').uncheck();
         await page.waitForFunction(() => __refresh.state.printExam?.kind === 'favFolder');
+      }
+      if (!only || only === 'epoch') {
+        // Newer B wins even if older A completes after B has rendered.
+        const older = structuredClone(source);
+        source = structuredClone(source);
+        source.folders[0].name = 'Latest folder';
+        source.favorites.reverse().forEach((f, i) => f.sort_order = i);
+        const latestIds = source.favorites.map(f => f.exam_id);
+        favoritesMode = 'hold';
+        await page.evaluate(() => __refresh.openPrintTab());
+        await waitFor(() => favoriteReplies.length === 1, 'older A');
+        await page.evaluate(() => __refresh.openPrintTab());
+        await waitFor(() => favoriteReplies.length === 2, 'newer B');
+        favoriteReplies.pop()(success(source));
+        await page.waitForFunction(ids => __refresh.state.printExam?.questions[0].exam_id === ids[0], latestIds);
+        favoriteReplies.shift()(success(older));
+        await page.waitForTimeout(100);
+        assert.deepEqual(await page.evaluate(() => __refresh.state.favRows.map(f => f.exam_id)), latestIds, 'Newest response must own the shared favorites cache');
+        assert.equal(await page.evaluate(() => __refresh.state.favFolders[0].name), 'Latest folder');
+        const readsBeforeCachedSelection = favoriteReads;
+        if (!await page.locator('[data-favfolder="1"]').isVisible()) await page.locator('#pr-tree .print-single-only .tree-row-fav').click();
+        await page.locator('[data-favfolder="1"]').click();
+        await page.waitForFunction(ids => __refresh.state.printExam?.questions[0].exam_id === ids[0], latestIds);
+        assert.equal(favoriteReads, readsBeforeCachedSelection);
+        // An old failure must not invalidate the newer successful cache.
+        await page.evaluate(() => __refresh.openPrintTab());
+        await waitFor(() => favoriteReplies.length === 1, 'older failing A');
+        await page.evaluate(() => __refresh.openPrintTab());
+        await waitFor(() => favoriteReplies.length === 2, 'newer successful B');
+        favoriteReplies.pop()(success(source));
+        await page.waitForFunction(() => __refresh.state.printExam?.kind === 'favFolder');
+        favoriteReplies.shift()(failure);
+        await page.waitForTimeout(100);
+        assert.equal(await page.evaluate(() => __refresh.state.favSet !== null), true);
+        assert.deepEqual(await page.evaluate(() => __refresh.state.favRows.map(f => f.exam_id)), latestIds);
+        // Latest failure must stay invalid, even after an older success arrives.
+        await page.evaluate(() => __refresh.openPrintTab());
+        await waitFor(() => favoriteReplies.length === 1, 'older successful A');
+        await page.evaluate(() => __refresh.openPrintTab());
+        await waitFor(() => favoriteReplies.length === 2, 'newer failing B');
+        favoriteReplies.pop()(failure);
+        await page.waitForFunction(() => document.getElementById('pr-favorites-retry'));
+        favoriteReplies.shift()(success(older));
+        await page.waitForTimeout(100);
+        await blocked();
+        assert.equal(await page.evaluate(() => __refresh.state.favSet), null);
+        favoritesMode = 'normal';
+        await page.locator('#pr-favorites-retry').click();
+        await page.waitForFunction(ids => __refresh.state.printExam?.questions[0].exam_id === ids[0], latestIds);
       }
       if (!only || only === 'sets') {
         // Healthy print-set endpoint must update while favorites is pending/failing.

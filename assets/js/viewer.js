@@ -758,6 +758,7 @@
         if (el("pr-set-list")) el("pr-set-list").innerHTML = "";
         if (multiPrint.enabled) { loadMultiPrint(); refreshPrintSets(); }
       }
+      favoritesLoadEpoch++; favoritesLoadPending = null;
       state.favSet = null;  // ログイン状態が変わったらキャッシュ破棄
       state.favRows = [];
       state.favFolders = [];
@@ -796,13 +797,19 @@
   }
 
   // お気に入り一覧を取得しキャッシュ（Set("examId:qnum") と生データ）。未ログイン時は空。
+  var favoritesLoadEpoch = 0, favoritesLoadPending = null;
   function ensureFavoritesLoaded(force, rejectOnError) {
-    if (state.favSet && !force) return Promise.resolve(state.favSet);
     if (!window.Auth || !Auth.getCurrentUser()) {
+      favoritesLoadEpoch++; favoritesLoadPending = null;
       state.favSet = new Set(); state.favRows = []; state.favFolders = []; state.favSections = [];
       return Promise.resolve(state.favSet);
     }
-    return Api.getFavorites().then(function (data) {
+    if (favoritesLoadPending && !force) return favoritesLoadResult(favoritesLoadPending, rejectOnError);
+    if (state.favSet && !force) return Promise.resolve(state.favSet);
+    var requestId = ++favoritesLoadEpoch, account = multiPrint.accountEpoch;
+    var request = Api.getFavorites().then(function (data) {
+      if (account !== multiPrint.accountEpoch) return state.favSet;
+      if (requestId !== favoritesLoadEpoch) return favoritesLoadPending || state.favSet;
       state.favRows = data.favorites || [];
       state.favFolders = data.folders || [];
       state.favSections = data.sections || [];
@@ -812,10 +819,23 @@
       // 削除済みフォルダの折りたたみ状態も削除し、際限なく増えないようにする
       Store.pruneFavCollapsed(state.favFolders.map(function (f) { return f.id; }));
       return state.favSet;
-    }).catch(function (e) {
-      if (rejectOnError) { state.favSet = null; throw e; }
-      state.favSet = new Set();
-      return state.favSet;
+    }, function (e) {
+      if (account !== multiPrint.accountEpoch) return state.favSet;
+      if (requestId !== favoritesLoadEpoch) return favoritesLoadPending || state.favSet;
+      state.favSet = null;
+      throw e;
+    }).finally(function () {
+      if (favoritesLoadPending === request) favoritesLoadPending = null;
+    });
+    favoritesLoadPending = request;
+    return favoritesLoadResult(request, rejectOnError);
+  }
+
+  function favoritesLoadResult(request, rejectOnError) {
+    return request.catch(function (e) {
+      if (rejectOnError) throw e;
+      // A tolerant caller may show an empty result, but cannot validate old rows.
+      return new Set();
     });
   }
 
