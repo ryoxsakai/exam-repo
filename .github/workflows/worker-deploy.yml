@@ -47,12 +47,12 @@ jobs:
           site_url=https://exam.lrnr.jp
           for attempt in $(seq 1 30); do
             if curl --max-time 20 -fsSL "$site_url/?publication=$PUBLICATION_SHA" -o "$check_dir/index.html" &&
-               curl --max-time 20 -fsSL "$site_url/assets/css/main-20261008questionbreak.css?publication=$PUBLICATION_SHA" -o "$check_dir/main.css" &&
+               curl --max-time 20 -fsSL "$site_url/assets/css/main-20261008printui.css?publication=$PUBLICATION_SHA" -o "$check_dir/main.css" &&
                curl --max-time 20 -fsSL "$site_url/assets/js/viewer.js?publication=$PUBLICATION_SHA" -o "$check_dir/viewer.js" &&
                curl --max-time 20 -fsSL "$site_url/assets/js/markup-20261008double.js?publication=$PUBLICATION_SHA" -o "$check_dir/markup.js" &&
                cmp -s assets/js/markup-20261008double.js "$check_dir/markup.js" &&
                cmp -s index.html "$check_dir/index.html" &&
-               cmp -s assets/css/main-20261008questionbreak.css "$check_dir/main.css" &&
+               cmp -s assets/css/main-20261008printui.css "$check_dir/main.css" &&
                cmp -s assets/js/viewer.js "$check_dir/viewer.js"; then
               echo "Published print HTML, CSS and JS match $PUBLICATION_SHA at $site_url"
               sha256sum "$check_dir/index.html" "$check_dir/main.css" "$check_dir/viewer.js"

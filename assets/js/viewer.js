@@ -885,6 +885,8 @@
   }
 
   function renderFavorites() {
+    // A mutation can finish after the user has already switched to printing.
+    if ($('.tab[data-tab="print"].active', el("main-tabs"))) openPrintTab();
     if (el("favorites-sets-toggle").checked) return;
     var box = el("favorites-area");
     if (!box) return;
@@ -1204,7 +1206,9 @@
         questionNumber: it.favorite.question_number
       };
     });
-    Api.reorderFavorites(targetParentId, apiItems).catch(function (e) {
+    Api.reorderFavorites(targetParentId, apiItems).then(function () {
+      if ($('.tab[data-tab="print"].active', el("main-tabs"))) openPrintTab();
+    }).catch(function (e) {
       UI.toast(e.message || "並べ替えに失敗しました", "err");
       loadFavorites(true);
     });
@@ -2860,11 +2864,22 @@
 
   // 印刷タブを開いたとき：ツリー（大学→年度→方式）とプレビューを用意
   function openPrintTab() {
-    // ツリー冒頭の「お気に入り」ノードを描くためお気に入りを先に読み込む
-    // （未ログイン・取得失敗時も案内文を出して残りのツリーは通常どおり表示する）。
-    ensureFavoritesLoaded().catch(function () {}).then(function () {
-      loadPrintTree();
-      loadPrintPreview();
+    // Refresh source lists while keeping loaded single exams and unsaved set drafts.
+    ensureFavoritesLoaded(true, true).then(function () {
+      loadPrintTree(true);
+      if (window.Auth && Auth.getCurrentUser()) refreshPrintSets();
+      if (!multiPrint.enabled && state.printSel.kind === "favFolder") {
+        // Invalidate older folder loads and retain exclusions for surviving questions.
+        state.printSel = Object.assign({}, state.printSel);
+        loadPrintFavFolder(Number(state.printSel.folderId), true);
+      } else if (!state.printExam && !multiPrint.loading && !multiPrint.busy) {
+        loadPrintPreview();
+      }
+    }).catch(function (e) {
+      UI.toast(e.message || "お気に入りの更新に失敗しました", "err");
+      // Favorite service failures must not prevent ordinary exam printing.
+      loadPrintTree(true);
+      if (!state.printExam && state.printSel.kind !== "favFolder" && !multiPrint.loading && !multiPrint.busy) loadPrintPreview();
     });
   }
 
@@ -2955,8 +2970,10 @@
   }
 
   // 選択したお気に入りフォルダの大問を集めてプレビュー用データを作る
-  function loadPrintFavFolder(folderId) {
+  function loadPrintFavFolder(folderId, preserveSelection) {
     var selection = state.printSel;
+    state.printExam = null;
+    renderPrintDurationSettings();
     var box = el("print-preview");
     box.innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
     ensureFavoritesLoaded().then(function () {
@@ -3010,12 +3027,17 @@
           title: favFolderTitle(folderId), titleParts: favFolderTitleParts(folderId),
           questions: questions, items: items
         };
+        var previous = preserveSelection ? state.printQSel : {};
         state.printQSel = {};
-        questions.forEach(function (q) { state.printQSel[printQKey(q)] = true; });
+        questions.forEach(function (q) {
+          var key = printQKey(q);
+          state.printQSel[key] = previous[key] !== false;
+        });
         renderPrintSectionControls();
         renderPrintPreview();
       });
     }).catch(function (e) {
+      if (multiPrint.enabled || state.printSel !== selection) return;
       box.innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message || e) + "</div></div>";
     });
   }
