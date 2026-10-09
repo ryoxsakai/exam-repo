@@ -1,5 +1,5 @@
 import { handlePrintDuration, handleUniversityPrintDuration, ensurePrintDurationSchema, planUniversityPrintDurationMerge, planExamPrintDurationMerge, planExamPrintDurationMove } from "./print-duration";
-import { handlePrintSets } from "./print-sets";
+import { printSetPlacementSchema, printSetSchema, handlePrintSets } from "./print-sets";
 import { handleMcpRoute, safeEqual, type McpEnv } from "./mcp";
 import { extractZenyakuTitle, readUniversityIndex, safeRefreshUniversityIndex, invalidateAllUniversityIndexes } from "./university-index";
 
@@ -421,6 +421,8 @@ async function ensureMigrations(env: Env) {
   await ensureFavoriteFoldersTable(env);
   await ensureFavoriteFolderKindColumn(env);
   await ensureFavoriteFolderColumns(env);
+  await env.DB.prepare(printSetSchema).run();
+  await env.DB.prepare(printSetPlacementSchema).run();
   await ensureUserSettingsTable(env);
   await ensureUserSettingsPrintTitlesColumn(env);
   await dropUnusedIndexes(env);
@@ -1870,6 +1872,7 @@ export default {
               ? env.DB.prepare("UPDATE favorites SET folder_id = NULL WHERE folder_id = ? AND uid = ?").bind(id, uid)
               : env.DB.prepare("UPDATE favorites SET folder_id = ? WHERE folder_id = ? AND uid = ?").bind(parentId, id, uid),
             ...copyMoveStatements,
+            env.DB.prepare("UPDATE print_set_placements SET folder_id = ? WHERE folder_id = ? AND uid = ?").bind(parentId, id, uid),
             env.DB.prepare("DELETE FROM favorite_folders WHERE id = ? AND uid = ?").bind(id, uid),
           ]);
           return json({ success: true }, 200, origin);
@@ -1882,11 +1885,14 @@ export default {
         //   更新文も共通で、違いは循環参照チェックの対象外という点だけ（配下を持てないため）。
         //   移動元コンテナ側に残る要素の sort_order は詰め直さない（歯抜けでも ORDER BY sort_order には影響しない）。
         if (path === "/api/favorite-folders/reorder" && request.method === "POST") {
-          type Item = { type: "folder" | "section" | "favorite"; id?: number; entryId?: string; examId?: number; questionNumber?: number };
+          type Item = { type: "folder" | "section" | "favorite" | "printSet"; setId?: string; id?: number; entryId?: string; examId?: number; questionNumber?: number };
           type Body = { parentId?: number | null; items?: Item[] };
           const body = await request.json<Body>().catch(() => ({}) as Body);
           const parentId = body.parentId != null ? Number(body.parentId) : null;
           const items = Array.isArray(body.items) ? body.items : [];
+          if (items.length > 2000 || items.some(it => !it || typeof it !== "object" || !["folder", "section", "favorite", "printSet"].includes(it.type))) {
+            return json({ error: "並べ替えの入力が不正です。" }, 400, origin);
+          }
 
           // 移動先はフォルダのみ（セクションは中身を持てないので親になれない）
           if (parentId != null && !(await isFavoriteFolder(env, uid, parentId))) {
@@ -1910,6 +1916,16 @@ export default {
             }
           }
 
+          // Placement metadata never writes set contents or their CAS revisions.
+          const setIds = new Set<string>();
+          for (const item of items) {
+            if (item.type !== "printSet") continue;
+            if (typeof item.setId !== "string" || setIds.has(item.setId)) return json({ error: "印刷セットの入力が不正です。" }, 400, origin);
+            setIds.add(item.setId);
+            const owned = await env.DB.prepare("SELECT id FROM print_sets WHERE uid=? AND id=? AND archived=0").bind(uid, item.setId).first();
+            if (!owned) return json({ error: "印刷セットが見つかりません。" }, 404, origin);
+          }
+
           // 同じ大問の元行とコピー行を同じフォルダへ重ねない。通常クライアントは移動先の
           // 全要素を送るため、ここでコピー同士も含めて衝突を検出できる。
           const resolvedFavorites = new Map<number, ResolvedFavoriteEntry>();
@@ -1927,6 +1943,8 @@ export default {
           }
 
           const stmts = items.map((it, idx) => {
+            if (it.type === "printSet") return env.DB.prepare(`INSERT INTO print_set_placements(uid,set_id,folder_id,sort_order) VALUES (?,?,?,?)
+              ON CONFLICT(uid,set_id) DO UPDATE SET folder_id=excluded.folder_id,sort_order=excluded.sort_order`).bind(uid,it.setId,parentId,idx);
             if (it.type === "folder" || it.type === "section") {
               return env.DB.prepare(
                 "UPDATE favorite_folders SET parent_id = ?, sort_order = ? WHERE id = ? AND uid = ?"

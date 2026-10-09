@@ -6,10 +6,14 @@ export const printSetSchema = `CREATE TABLE IF NOT EXISTS print_sets (
   revision INTEGER NOT NULL DEFAULT 1, archived INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL, PRIMARY KEY (uid, id))`;
 
+export const printSetPlacementSchema = `CREATE TABLE IF NOT EXISTS print_set_placements (
+  uid TEXT NOT NULL, set_id TEXT NOT NULL, folder_id INTEGER, sort_order INTEGER NOT NULL,
+  PRIMARY KEY (uid, set_id))`;
+
 function output(row: any) {
   return { id: row.id, name: row.name, exam_ids: JSON.parse(row.exam_ids),
     cover: JSON.parse(row.cover), question_selection: JSON.parse(row.question_selection || "{}"), revision: row.revision,
-    archived: !!row.archived, updated_at: row.updated_at };
+    archived: !!row.archived, updated_at: row.updated_at, folder_id: row.folder_id ?? null, sort_order: row.sort_order ?? null };
 }
 const validId = (id: unknown): id is string => typeof id === "string" && /^[a-zA-Z0-9-]{16,64}$/.test(id);
 
@@ -20,6 +24,7 @@ export async function handlePrintSets(request: Request, db: any, uid: string | n
   if (!["GET", "POST", "PUT"].includes(request.method) ||
       (request.method === "POST" && id && id !== "reorder") || (request.method === "PUT" && !id)) return error("対応していない操作です。", 405);
   await db.prepare(printSetSchema).run();
+  await db.prepare(printSetPlacementSchema).run();
   // Additive migration for sets saved before question selections were included.
   const columns = await db.prepare("PRAGMA table_info(print_sets)").all();
   if (!columns.results.some((column: any) => column.name === "question_selection")) {
@@ -46,13 +51,13 @@ export async function handlePrintSets(request: Request, db: any, uid: string | n
       .bind(JSON.stringify(body.ids), uid, body.revision, uid, body.ids.length, JSON.stringify(body.ids), uid).first();
     return row ? {status: 200, body: {order_revision: row.revision}} : error("別端末で一覧や並び順が更新されました。並び順を保持しています。「キャンセル」で並べ替えを取り消し、一覧を再読込してから再試行してください。", 409);
   }
-  const read = () => db.prepare("SELECT * FROM print_sets WHERE uid = ? AND id = ?").bind(uid, id).first();
+  const read = () => db.prepare("SELECT s.*, p.folder_id, p.sort_order FROM print_sets s LEFT JOIN print_set_placements p ON p.uid=s.uid AND p.set_id=s.id WHERE s.uid = ? AND s.id = ?").bind(uid, id).first();
   if (request.method === "GET") {
     if (id) {
       const row = await read();
       return row ? { status: 200, body: { print_set: output(row) } } : error("印刷セットが見つかりません。", 404);
     }
-    const rows = await db.prepare("SELECT * FROM print_sets WHERE uid = ? ORDER BY updated_at DESC, id").bind(uid).all();
+    const rows = await db.prepare("SELECT s.*, p.folder_id, p.sort_order FROM print_sets s LEFT JOIN print_set_placements p ON p.uid=s.uid AND p.set_id=s.id WHERE s.uid = ? ORDER BY s.updated_at DESC, s.id").bind(uid).all();
     const order = await db.prepare("SELECT * FROM print_set_order WHERE uid=?").bind(uid).first();
     const ids: string[] = JSON.parse(order.ids);
     const rank = (id: string) => { const i = ids.indexOf(id); return i < 0 ? ids.length : i; };
@@ -122,6 +127,9 @@ export async function handlePrintSets(request: Request, db: any, uid: string | n
       WHERE uid=? AND id=? AND revision=? RETURNING *`)
       .bind(name,ids,cover,questions,b.archived ? 1 : 0,new Date().toISOString(),uid,id,b.revision).first();
     if (!row) return error("別端末で更新されたか保存結果が未確認です。入力を保持しています。保存一覧から読み直すか、新しいセットとして保存してください。", 409);
+  }
+  if (request.method === "PUT") {
+    row.folder_id = previous?.folder_id; row.sort_order = previous?.sort_order;
   }
   return { status: 200, body: { print_set: output(row) } };
 }

@@ -749,7 +749,7 @@
         }
         multiPrint.uid = nextUid;
         multiPrint.accountEpoch++; multiPrint.epoch++; multiPrint.list = [];
-        multiPrint.baseline = null; setOrderDraft = null; setOrderBusy = false; renderSetFavorites(); renderPrintSetFavorites();
+        multiPrint.baseline = null; setOrderBusy = false; renderSetFavorites(); renderPrintSetFavorites();
         multiPrint.id = null; multiPrint.revision = null; multiPrint.archived = false; multiPrint.busy = false;
         if (wasSignedIn) {
           multiPrint.ids = []; multiPrint.name = ""; multiPrint.cover = {lines: ["", "印刷セット", ""], time: ""};
@@ -857,7 +857,11 @@
 
   // お気に入りタブの読み込み・描画
   function loadFavorites(force) {
-    if (el("favorites-sets-toggle").checked) { renderSetFavorites(); refreshPrintSets(); return; }
+    if (isSetFavorites()) {
+      renderSetFavorites(); refreshPrintSets();
+      ensureFavoritesLoaded(force).then(renderSetFavorites).catch(function(e) { UI.toast(e.message, "err"); });
+      return;
+    }
     var box = el("favorites-area");
     if (!box) return;
     if (!window.Auth || !Auth.getCurrentUser()) {
@@ -875,6 +879,7 @@
   // ツリー内の1件を表す一意キー。フォルダは "folder:<id>"、セクションは "section:<id>"、
   // お気に入り配置は "fav:base:<id>" / "fav:copy:<id>"。entry_id が無い旧APIだけ従来キーへ退避する。
   function favNodeKey(it) {
+    if (it.kind === "printSet") return "set:" + it.printSet.id;
     if (it.kind === "folder") return "folder:" + it.folder.id;
     if (it.kind === "section") return "section:" + it.section.id;
     return "fav:" + (it.favorite.entry_id || ("legacy:" + it.favorite.exam_id + ":" + it.favorite.question_number));
@@ -882,13 +887,13 @@
 
   // ツリー内の1件の sort_order（フォルダ・セクション・お気に入りで持ち主が違うだけ）
   function favNodeSortOrder(it) {
-    var rec = it.kind === "folder" ? it.folder : it.kind === "section" ? it.section : it.favorite;
+    var rec = it.kind === "folder" ? it.folder : it.kind === "section" ? it.section : it.kind === "printSet" ? it.printSet : it.favorite;
     return Number(rec.sort_order) || 0;
   }
 
   // 指定コンテナ（フォルダ id。null=ルート直下）の子要素を、
   // フォルダ・セクション・お気に入りをまとめて sort_order 順に返す
-  function favChildrenOf(parentId) {
+  function favChildrenOf(parentId, sets) {
     var inContainer = function (v) { return (v == null ? null : Number(v)) === parentId; };
     var folders = (state.favFolders || []).filter(function (f) {
       return inContainer(f.parent_id);
@@ -899,6 +904,11 @@
     var favs = (state.favRows || []).filter(function (f) {
       return inContainer(f.folder_id);
     }).map(function (f) { return { kind: "favorite", favorite: f }; });
+    if (sets) favs = multiPrint.list.filter(function (s) {
+      var parent = s.folder_id;
+      if (parent != null && !(state.favFolders || []).some(function(f) { return Number(f.id) === Number(parent); })) parent = null;
+      return !s.archived && inContainer(parent);
+    }).map(function(s, i) { return {kind: "printSet", printSet: Object.assign({}, s, {sort_order: s.sort_order == null ? 100000 + multiPrint.list.indexOf(s) : s.sort_order})}; });
     var items = folders.concat(sections, favs);
     items.sort(function (a, b) { return favNodeSortOrder(a) - favNodeSortOrder(b); });
     return items;
@@ -907,7 +917,7 @@
   function renderFavorites() {
     // A mutation can finish after the user has already switched to printing.
     if ($('.tab[data-tab="print"].active', el("main-tabs"))) openPrintTab();
-    if (el("favorites-sets-toggle").checked) return;
+    if (isSetFavorites()) { renderSetFavorites(); return; }
     var box = el("favorites-area");
     if (!box) return;
     var hasAny = (state.favRows && state.favRows.length) || (state.favFolders && state.favFolders.length) ||
@@ -919,21 +929,21 @@
     box.innerHTML = '<div class="fav-tree">' + renderFavContainer(null, 0) + "</div>";
   }
 
-  function renderFavContainer(parentId, depth) {
-    var items = favChildrenOf(parentId);
+  function renderFavContainer(parentId, depth, sets) {
+    var items = favChildrenOf(parentId, sets);
     var html = '<div class="fav-children" data-parent="' + (parentId == null ? "root" : parentId) + '">';
-    items.forEach(function (it) { html += renderFavNode(it, depth); });
+    items.forEach(function (it) { html += renderFavNode(it, depth, sets); });
     if (!items.length && depth > 0) html += '<div class="fav-drop-hint">ここにドラッグで移動</div>';
     html += "</div>";
     return html;
   }
 
-  function renderFavNode(it, depth) {
+  function renderFavNode(it, depth, sets) {
     var key = favNodeKey(it);
     if (it.kind === "folder") {
       var f = it.folder;
       var collapsed = !!state.favCollapsed[f.id];
-      var childCount = favChildrenOf(Number(f.id)).length;
+      var childCount = favChildrenOf(Number(f.id), sets).length;
       return '<div class="fav-node fav-folder" data-node="' + key + '">' +
         '<div class="fav-row" draggable="true">' +
           '<span class="fav-drag-handle" title="ドラッグ／長押しで並べ替え"><i class="fa-solid fa-grip-vertical"></i></span>' +
@@ -949,7 +959,7 @@
             '<button class="icon-btn sm" data-fav-delete-folder="' + f.id + '" title="フォルダを削除"><i class="fa-solid fa-trash"></i></button>' +
           "</span>" +
         "</div>" +
-        (collapsed ? "" : renderFavContainer(Number(f.id), depth + 1)) +
+        (collapsed ? "" : renderFavContainer(Number(f.id), depth + 1, sets)) +
         "</div>";
     }
     if (it.kind === "section") {
@@ -967,6 +977,10 @@
           "</span>" +
         "</div></div>";
     }
+    if (it.kind === "printSet") return '<div class="fav-node fav-item" data-node="' + key + '"><div class="fav-row" draggable="true">' +
+      '<span class="fav-drag-handle" title="ドラッグ／長押しで並べ替え"><i class="fa-solid fa-grip-vertical"></i></span>' +
+      '<i class="fa-solid fa-print fav-folder-ic"></i><span class="fav-meta"><span class="fav-name">' + esc(it.printSet.name) + '</span></span>' +
+      '<span class="fav-actions"><button class="icon-btn sm" data-open-set="' + esc(it.printSet.id) + '" title="印刷セットを開く"' + (multiPrint.busy || setOrderBusy ? ' disabled' : '') + '><i class="fa-solid fa-file-lines"></i></button></span></div></div>';
     var r = it.favorite;
     var entryId = r.entry_id || ("legacy:" + r.exam_id + ":" + r.question_number);
     var uniFull = r.university_name || "";
@@ -1004,6 +1018,8 @@
 
     box.addEventListener("click", function (e) {
       var t = e.target;
+      var setBtn = t.closest && t.closest("[data-open-set]");
+      if (setBtn) { openPrintSet(setBtn.dataset.openSet, true); return; }
       var viewBtn = t.closest && t.closest("[data-view]");
       if (viewBtn) {
         var vp = viewBtn.getAttribute("data-view").split(":");
@@ -1164,11 +1180,13 @@
 
   // ドロップを確定: 移動元の除去→移動先コンテナへの挿入をローカルで組み立てて楽観的に再描画し、
   // /api/favorite-folders/reorder で確定する（失敗時はサーバー状態で再読み込み）
-  function commitFavDrop(dragKey, dropInfo) {
-    if (!dropInfo || !dragKey) return;
+  function commitFavDrop(dragKey, dropInfo, dragMode) {
+    if (dragMode !== undefined && dragMode !== isSetFavorites()) return;
+    if (!dropInfo || !dragKey || setOrderBusy || (isSetFavorites() && multiPrint.busy)) return;
     if (dropInfo.before === dragKey || dropInfo.after === dragKey) return; // 自分自身の上へのドロップは無視
+    var placementSnapshot = isSetFavorites() ? JSON.parse(JSON.stringify({sets: multiPrint.list, folders: state.favFolders, sections: state.favSections})) : null;
     var dragParts = dragKey.split(":");
-    var dragKind = dragParts[0] === "folder" ? "folder" : dragParts[0] === "section" ? "section" : "favorite";
+    var dragKind = dragParts[0] === "folder" ? "folder" : dragParts[0] === "section" ? "section" : dragParts[0] === "set" ? "printSet" : "favorite";
     var isDragFolder = dragKind === "folder";
     var isDragSection = dragKind === "section";
     var dragFolderId = isDragFolder ? Number(dragParts[1]) : null;
@@ -1185,7 +1203,7 @@
       }
     }
 
-    var items = favChildrenOf(targetParentId).filter(function (it) {
+    var items = favChildrenOf(targetParentId, isSetFavorites()).filter(function (it) {
       if (isDragFolder) return !(it.kind === "folder" && Number(it.folder.id) === dragFolderId);
       if (isDragSection) return !(it.kind === "section" && Number(it.section.id) === dragSectionId);
       return favNodeKey(it) !== dragKey;
@@ -1195,10 +1213,12 @@
       ? { kind: "folder", folder: (state.favFolders || []).filter(function (f) { return Number(f.id) === dragFolderId; })[0] }
       : isDragSection
       ? { kind: "section", section: (state.favSections || []).filter(function (s) { return Number(s.id) === dragSectionId; })[0] }
+      : dragKind === "printSet"
+      ? {kind: "printSet", printSet: multiPrint.list.find(function(s) { return s.id === dragParts[1]; })}
       : { kind: "favorite", favorite: (state.favRows || []).filter(function (f) {
           return favNodeKey({ kind: "favorite", favorite: f }) === dragKey;
         })[0] };
-    if (!dragItem.folder && !dragItem.section && !dragItem.favorite) return;
+    if (!dragItem.folder && !dragItem.section && !dragItem.favorite && !dragItem.printSet) return;
 
     var insertIndex = items.length;
     if (dropInfo.before || dropInfo.after) {
@@ -1212,13 +1232,17 @@
     items.forEach(function (it, idx) {
       if (it.kind === "folder") { it.folder.parent_id = targetParentId; it.folder.sort_order = idx; }
       else if (it.kind === "section") { it.section.parent_id = targetParentId; it.section.sort_order = idx; }
-      else { it.favorite.folder_id = targetParentId; it.favorite.sort_order = idx; }
+      else if (it.kind === "printSet") {
+        var saved = multiPrint.list.find(function(s) { return s.id === it.printSet.id; });
+        saved.folder_id = targetParentId; saved.sort_order = idx;
+      } else { it.favorite.folder_id = targetParentId; it.favorite.sort_order = idx; }
     });
     renderFavorites();
 
     var apiItems = items.map(function (it) {
       if (it.kind === "folder") return { type: "folder", id: it.folder.id };
       if (it.kind === "section") return { type: "section", id: it.section.id };
+      if (it.kind === "printSet") return {type: "printSet", setId: it.printSet.id};
       return {
         type: "favorite",
         entryId: it.favorite.entry_id,
@@ -1226,11 +1250,25 @@
         questionNumber: it.favorite.question_number
       };
     });
+    var account = multiPrint.accountEpoch, sets = isSetFavorites();
+    if (sets) { setOrderBusy = true; renderSetFavorites(); }
     Api.reorderFavorites(targetParentId, apiItems).then(function () {
+      if (account !== multiPrint.accountEpoch) return;
+      if (sets) return Promise.all([refreshPrintSets(), ensureFavoritesLoaded(true)]).then(function() {
+        if (account !== multiPrint.accountEpoch) return;
+        renderFavorites(); renderPrintSetFavorites();
+      });
       if ($('.tab[data-tab="print"].active', el("main-tabs"))) openPrintTab();
     }).catch(function (e) {
+      if (account !== multiPrint.accountEpoch) return;
+      if (placementSnapshot) {
+        multiPrint.list = placementSnapshot.sets; state.favFolders = placementSnapshot.folders; state.favSections = placementSnapshot.sections;
+        renderFavorites(); renderPrintSetFavorites();
+      }
       UI.toast(e.message || "並べ替えに失敗しました", "err");
-      loadFavorites(true);
+      if (!sets) loadFavorites(true);
+    }).finally(function() {
+      if (account === multiPrint.accountEpoch && sets) { setOrderBusy = false; renderSetFavorites(); renderPrintSetFavorites(); }
     });
   }
 
@@ -1241,7 +1279,7 @@
       var row = e.target.closest && e.target.closest(".fav-row");
       var node = row && row.closest(".fav-node");
       if (!node) return;
-      state.favDrag = { key: node.getAttribute("data-node") };
+      state.favDrag = { key: node.getAttribute("data-node"), sets: isSetFavorites() };
       node.classList.add("dragging");
       try { e.dataTransfer.setData("text/plain", state.favDrag.key); } catch (err) {}
       e.dataTransfer.effectAllowed = "move";
@@ -1260,10 +1298,10 @@
       if (!state.favDrag) return;
       e.preventDefault();
       var dropInfo = computeFavDropTarget(e.clientX, e.clientY);
-      var dragKey = state.favDrag.key;
+      var dragKey = state.favDrag.key, dragMode = state.favDrag.sets;
       clearFavDragVisuals();
       state.favDrag = null;
-      commitFavDrop(dragKey, dropInfo);
+      commitFavDrop(dragKey, dropInfo, dragMode);
     });
   }
 
@@ -1283,6 +1321,7 @@
       favTouch = {
         node: node,
         key: node.getAttribute("data-node"),
+        sets: isSetFavorites(),
         startX: touch.clientX,
         startY: touch.clientY,
         dragging: false,
@@ -1313,9 +1352,9 @@
         e.preventDefault();
         var touch = (e.changedTouches && e.changedTouches[0]) || favTouch;
         var info = computeFavDropTarget(touch.clientX, touch.clientY);
-        var dragKey = favTouch.key;
+        var dragKey = favTouch.key, dragMode = favTouch.sets;
         endFavTouchDrag();
-        commitFavDrop(dragKey, info);
+        commitFavDrop(dragKey, info, dragMode);
       }
       favTouch = null;
     });
@@ -1680,11 +1719,11 @@
   }
   function deleteFavoriteFolderConfirm(id) {
     var folder = (state.favFolders || []).filter(function (f) { return Number(f.id) === id; })[0];
-    if (!confirm("フォルダ「" + (folder ? folder.name : "") + "」を削除しますか？（中のお気に入り・サブフォルダは親フォルダへ移動されます）")) return;
+    if (!confirm("フォルダ「" + (folder ? folder.name : "") + "」を削除しますか？（中のお気に入り・印刷セット・サブフォルダは親フォルダへ移動されます）")) return;
     Api.deleteFavoriteFolder(id).then(function () {
       return ensureFavoritesLoaded(true);
     }).then(function () {
-      renderFavorites();
+      refreshPrintSets(); renderFavorites();
       UI.toast("フォルダを削除しました", "ok");
     }).catch(function (e) { UI.toast(e.message || "削除に失敗しました", "err"); });
   }
@@ -2903,7 +2942,7 @@
     state.favSet = null;
     ensureFavoritesLoaded(true, true).then(function () {
       if (account !== multiPrint.accountEpoch || state.printSel !== selection || multiPrint.enabled !== wasMulti) return;
-      loadPrintTree(true);
+      loadPrintTree(true); renderPrintSetFavorites();
       if (favoriteSelection) {
         loadPrintFavFolder(Number(selection.folderId), true);
       } else if (!state.printExam && !multiPrint.loading && !multiPrint.busy) {
@@ -3174,47 +3213,27 @@
     renderMultiControls();
     renderPrintPreview();
   }
-  var setOrderDraft = null, setOrderBusy = false, setOrderRevision = null;
+  var setOrderBusy = false;
+  function isSetFavorites() { return !!(el("favorites-sets-toggle") && el("favorites-sets-toggle").checked); }
   function renderSetFavorites() {
-    var active = el("favorites-sets-toggle").checked;
-    el("favorites-area").hidden = active;
-    el("favorites-sets").hidden = !active;
-    ["btn-favorites-new-folder", "btn-favorites-new-section"].forEach(function (id) { el(id).hidden = active; });
-    if (!active) return;
-    var list = setOrderDraft || multiPrint.list;
-    var visible = list.filter(function(s) { return !s.archived; });
-    el("favorites-sets").innerHTML = '<div class="card"><p>保存済み印刷セット（アーカイブを除く）。セットを開くと選択全体を読み込みます。</p>' +
-      visible.map(function (s, v) {
-        var i = list.indexOf(s);
-        return '<div class="toolbar"><button type="button" class="btn ghost" data-open-set="' + esc(s.id) + '">' + esc(s.name) + '</button><span class="spacer"></span>' +
-          [-1,1].map(function (step) { return '<button type="button" class="btn ghost sm" data-order-set="' + i + '" data-step="' + (visible[v + step] ? list.indexOf(visible[v + step]) - i : 0) + '" aria-label="' + esc(s.name) + (step < 0 ? 'を上へ' : 'を下へ') + '"' + (setOrderBusy || v + step < 0 || v + step >= visible.length ? ' disabled' : '') + '>' + (step < 0 ? '↑' : '↓') + '</button>'; }).join('') + '</div>';
-      }).join('') + (!list.some(function(s) { return !s.archived; }) ? '<p>' + (window.Auth && Auth.getCurrentUser() ? '保存済み印刷セットがありません。印刷タブの複数選択から保存できます。' : '印刷セットを見るにはGoogleログインしてください。') + '</p>' : '') +
-      '<div class="toolbar"><button type="button" class="btn" id="set-order-save"' + (!setOrderDraft || setOrderBusy ? ' disabled' : '') + '>順序を保存</button><button type="button" class="btn ghost" id="set-order-cancel"' + (setOrderBusy ? ' disabled' : '') + '>キャンセル</button></div></div>';
-    $all('[data-open-set]', el("favorites-sets")).forEach(function(b) { b.disabled = setOrderBusy || multiPrint.busy; b.onclick = function() { openPrintSet(b.dataset.openSet, true); }; });
-    $all('[data-order-set]', el("favorites-sets")).forEach(function(b) { b.onclick = function() {
-      if (setOrderBusy) return;
-      if (!setOrderDraft) setOrderRevision = multiPrint.orderRevision;
-      setOrderDraft = list.slice(); var i = Number(b.dataset.orderSet), j = i + Number(b.dataset.step);
-      var s = setOrderDraft[i]; setOrderDraft[i] = setOrderDraft[j]; setOrderDraft[j] = s; renderSetFavorites();
-    }; });
-    el("set-order-cancel").onclick = function() { if (!setOrderBusy) { setOrderDraft = null; renderSetFavorites(); } };
-    el("set-order-save").onclick = async function() {
-      if (setOrderBusy || !setOrderDraft) return;
-      var account = multiPrint.accountEpoch, draft = setOrderDraft;
-      setOrderBusy = true; renderSetFavorites();
-      try {
-        await Api.printSets("reorder", {ids: draft.map(function(s) { return s.id; }), revision: setOrderRevision});
-        if (account !== multiPrint.accountEpoch) return;
-        setOrderDraft = null; await refreshPrintSets(); UI.toast("並び順を保存しました", "ok");
-      } catch(e) { if (account === multiPrint.accountEpoch) UI.toast(e.message, "err"); }
-      finally { if (account === multiPrint.accountEpoch) { setOrderBusy = false; renderSetFavorites(); } }
-    };
+    el("favorites-area").hidden = false;
+    ["btn-favorites-new-folder", "btn-favorites-new-section"].forEach(function (id) { el(id).hidden = false; });
+    if (!isSetFavorites()) return;
+    el("favorites-area").innerHTML = '<div class="fav-tree">' + renderFavContainer(null, 0, true) + '</div>';
   }
   function renderPrintSetFavorites() {
     var node = el("pr-set-favorites"); if (!node) return;
-    node.innerHTML = multiPrint.list.filter(function(s) { return !s.archived; }).map(function(s) {
-      return '<button type="button" class="tree-row tree-row-pick" data-open-set="' + esc(s.id) + '"><i class="fa-solid fa-print tree-ic"></i><span class="tree-label">' + esc(s.name) + '</span></button>';
-    }).join('') || '<div class="tree-msg">保存済み印刷セットがありません。</div>';
+    function container(pid, seen) {
+      if (seen.has(pid)) return '';
+      var next = new Set(seen); next.add(pid);
+      return favChildrenOf(pid, true).map(function(it) {
+        if (it.kind === "printSet") return '<button type="button" class="tree-row tree-row-pick" data-open-set="' + esc(it.printSet.id) + '"><i class="fa-solid fa-print tree-ic"></i><span class="tree-label">' + esc(it.printSet.name) + '</span></button>';
+        if (it.kind === "section") return '<div class="tree-row"><i class="fa-solid fa-bookmark tree-ic"></i><span class="tree-label">' + esc(it.section.name) + '</span></div>';
+        return '<div class="tree-node"><button type="button" class="tree-row" data-set-folder="' + it.folder.id + '"><i class="fa-solid fa-folder tree-ic"></i><span class="tree-label">' + esc(it.folder.name) + '</span></button><div class="tree-children"' + (state.favCollapsed[it.folder.id] ? ' hidden' : '') + '>' + container(Number(it.folder.id), next) + '</div></div>';
+      }).join('');
+    }
+    node.innerHTML = container(null, new Set()) || '<div class="tree-msg">保存済み印刷セットがありません。</div>';
+    $all('[data-set-folder]', node).forEach(function(b) { b.onclick = function() { b.nextElementSibling.hidden = !b.nextElementSibling.hidden; }; });
     $all('[data-open-set]', node).forEach(function(b) { b.disabled = multiPrint.busy; b.onclick = function() { openPrintSet(b.dataset.openSet); }; });
   }
   function wireMultiPrint() {
@@ -3488,7 +3507,7 @@
     } catch (e) { if (account === multiPrint.accountEpoch && requestId === multiPrint.listEpoch) UI.toast(e.message, "err"); }
   }
   async function openPrintSet(id, fromFavorites) {
-    if (!id || multiPrint.busy) return;
+    if (!id || multiPrint.busy || setOrderBusy) return;
     if ((multiPrint.baseline ? JSON.stringify(multiPayload()) !== multiPrint.baseline : multiPrint.ids.length || multiPrint.name.trim() || JSON.stringify(multiPrint.cover) !== JSON.stringify({lines: ["", "印刷セット", ""], time: ""})) &&
         !window.confirm("未保存の変更があります。選択と表紙を保存済みセットに置き換えますか？（キャンセルで変更を保持）")) return;
     var account = multiPrint.accountEpoch;
