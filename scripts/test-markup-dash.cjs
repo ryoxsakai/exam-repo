@@ -9,7 +9,7 @@ for (const input of ['word--word', 'word -- word', 'word  --\tword', 'word　--�
 }
 for (const input of ['--word', 'word--', '--']) assert.ok(M.render(input).html.includes(dash), input);
 assert.ok(M.render('a--b--c').html.includes('a' + dash + 'b' + dash + 'c'));
-for (const input of ['a-b', 'a - b', 'a---b', 'a-----b', 'a—b', 'a —— b', '---', '`a--b`', '``a--b``',
+for (const input of ['a-b', 'a - b', 'a---b', 'a-----b', 'a—b', 'a —— b', '---', '`a--b`', '``a--b``', '``a`--b``', '<CODE>a--b</CODE>',
   'https://example.test/a--b?q=--', 'www.example.test/a--b', '<!-- a--b -->', '<!-- a\n--b -->',
   '<a href="a--b">', '\\--', '```js\na--b\n```', '~~~\na--b\n~~~', '```js\na--b', '<code>a--b</code>', '<pre>a--b</pre>', '[link](./a--b)']) {
   const html = M.render(input).html; assert.ok(!html.includes('em-dash'), input);

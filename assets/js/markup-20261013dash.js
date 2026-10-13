@@ -450,7 +450,7 @@
     footnotes.literals = [];
     // Preserve comments, HTML, fenced/inline code and escaped hyphens verbatim.
     // Tokens are local to this render; saved source and strip() remain unchanged.
-    source = source.replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[ \t]*$|(?![\s\S]))|<!--(?:[\s\S]*?-->|[\s\S]*$)|<(?:code|pre)\b[^>]*>[\s\S]*?<\/(?:code|pre)>|<\/?[A-Za-z][^>]*>|(?<!!)\[[^\]\n]*\]\([^\n)]*\)|(`+)[^`]*?\2|\\--/gm, function (literal) {
+    source = source.replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[ \t]*$|(?![\s\S]))|<!--(?:[\s\S]*?-->|[\s\S]*$)|<(?:code|pre)\b[^>]*>[\s\S]*?<\/(?:code|pre)>|<\/?[A-Za-z][^>]*>|(?<!!)\[[^\]\n]*\]\([^\n)]*\)|(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\2(?!`)|\\--/gmi, function (literal) {
       return footnotes.literalPrefix + (footnotes.literals.push(literal) - 1) + "\uE001";
     });
     var lines = source.split("\n");
