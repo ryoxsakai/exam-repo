@@ -110,6 +110,17 @@
       var m;
       out = maybeWidenTrailingSpace(out, rem[0]);
 
+      // Opaque source fragments never enter typography or the exam notation parser.
+      if (footnotes.literalPrefix && rem.indexOf(footnotes.literalPrefix) === 0) {
+        var literalEnd = rem.indexOf("\uE001", footnotes.literalPrefix.length);
+        var literalIndex = Number(rem.slice(footnotes.literalPrefix.length, literalEnd));
+        out += esc(footnotes.literals[literalIndex]);
+        rem = rem.slice(literalEnd + 1); continue;
+      }
+      if ((m = rem.match(/^(?:https?:\/\/|ftp:\/\/|mailto:|www\.)[^\s<>"`]+/i))) {
+        out += esc(m[0]); rem = rem.slice(m[0].length); continue;
+      }
+
       // 括弧付き空所は1つのまとまりにし、前後の空白を均等なCSS余白へ置き換える。
       // 行の両端揃えでも、空所と括弧の間だけが広がらないようにする。
       if ((m = rem.match(/^([（(])[ \t\u3000]*(\[\[[^\]\r\n]*\]\])[ \t\u3000]*([）)])/))) {
@@ -264,6 +275,8 @@
       var end = 1;
       while (end < rem.length) {
         var ch = rem[end];
+        if ((footnotes.literalPrefix && rem.indexOf(footnotes.literalPrefix, end) === end) ||
+            /^(?:https?:\/\/|ftp:\/\/|mailto:|www\.)/i.test(rem.slice(end))) break;
         // 文中の A__語__ / 1__語__ でも記号の直前で区切り、下付きとして処理する。
         if (/[A-Z0-9]/.test(ch) && /\s/.test(rem[end - 1]) &&
             (rem.slice(end + 1, end + 3) === "==" || rem.slice(end + 1, end + 3) === "__" || rem.slice(end + 1, end + 3) === "~~")) break;
@@ -283,12 +296,11 @@
         if (p === "." && !q && ABBREV.test(w)) return full;
         return w + p + q + "&nbsp;&nbsp;";
       });
-      // 前後に空白がある単独・二連のハイフンは表示時にダッシュとして扱う。
-      plain = plain.replace(/([ \t\u3000])--?(?=[ \t\u3000])/g, "$1—");
-      // 既存の全角ダッシュ1〜2個も含め、前後を半角スペース1つに揃える。
-      plain = plain.replace(/[ \t\u3000]*(—+)[ \t\u3000]*/g, function (full, dashes) {
-        return dashes.length <= 2 ? ' <span class="em-dash">——</span> ' : full;
-      });
+      // Only an exact double hyphen in prose is a dash. Preserve single hyphens,
+      // longer runs and existing Unicode dashes. Normalize adjacent horizontal space.
+      plain = plain.replace(/[ \t\u3000]*(?<!-)--(?!-)[ \t\u3000]*/g,
+        ' <span class="em-dash">——</span> ').replace(/<\/span>  <span class="em-dash">/g,
+        '</span> <span class="em-dash">');
       out += plain;
       rem = rem.slice(end);
     }
@@ -432,7 +444,16 @@
   function render(text, opts) {
     var paraNum = opts && opts.paraNum;
     var footnotes = [];
-    var lines = String(text == null ? "" : text).split("\n");
+    var source = String(text == null ? "" : text);
+    footnotes.literalPrefix = "\uE000";
+    while (source.indexOf(footnotes.literalPrefix) >= 0) footnotes.literalPrefix += "\uE000";
+    footnotes.literals = [];
+    // Preserve comments, HTML, fenced/inline code and escaped hyphens verbatim.
+    // Tokens are local to this render; saved source and strip() remain unchanged.
+    source = source.replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[ \t]*$|(?![\s\S]))|<!--(?:[\s\S]*?-->|[\s\S]*$)|<(?:code|pre)\b[^>]*>[\s\S]*?<\/(?:code|pre)>|<\/?[A-Za-z][^>]*>|(?<!!)\[[^\]\n]*\]\([^\n)]*\)|(`+)[^`]*?\2|\\--/gm, function (literal) {
+      return footnotes.literalPrefix + (footnotes.literals.push(literal) - 1) + "\uE001";
+    });
+    var lines = source.split("\n");
     var interviewAliases = interviewSpeakers(lines);
     var translationLabels = opts && opts.zenyaku ? sourceDialogueLabels(opts.dialogueSource) : {};
     var html = "";
@@ -529,6 +550,18 @@
       });
       html += "</ol></div>";
     }
+    // Some notation payloads (image captions, badge labels, note attributes) are
+    // escaped directly rather than passed through inline(). Restore those too.
+    footnotes.literals.forEach(function (literal, index) {
+      var token = footnotes.literalPrefix + index + "\uE001";
+      html = html.split(token).join(esc(literal));
+      footnotes.forEach(function (note) {
+        note.word = note.word.split(token).join(literal);
+        note.translation = note.translation.split(token).join(literal);
+      });
+    });
+    delete footnotes.literalPrefix;
+    delete footnotes.literals;
     return { html: html, footnotes: footnotes };
   }
 

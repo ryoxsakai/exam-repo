@@ -49,8 +49,8 @@ jobs:
             if curl --max-time 20 -fsSL "$site_url/?publication=$PUBLICATION_SHA" -o "$check_dir/index.html" &&
                curl --max-time 20 -fsSL "$site_url/assets/css/main-20261008printui.css?publication=$PUBLICATION_SHA" -o "$check_dir/main.css" &&
                curl --max-time 20 -fsSL "$site_url/assets/js/viewer.js?publication=$PUBLICATION_SHA" -o "$check_dir/viewer.js" &&
-               curl --max-time 20 -fsSL "$site_url/assets/js/markup-20261008double.js?publication=$PUBLICATION_SHA" -o "$check_dir/markup.js" &&
-               cmp -s assets/js/markup-20261008double.js "$check_dir/markup.js" &&
+               curl --max-time 20 -fsSL "$site_url/assets/js/markup-20261013dash.js?publication=$PUBLICATION_SHA" -o "$check_dir/markup.js" &&
+               cmp -s assets/js/markup-20261013dash.js "$check_dir/markup.js" &&
                cmp -s index.html "$check_dir/index.html" &&
                cmp -s assets/css/main-20261008printui.css "$check_dir/main.css" &&
                cmp -s assets/js/viewer.js "$check_dir/viewer.js"; then

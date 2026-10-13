@@ -279,3 +279,7 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 解答面の大学・年度・方式区切りの改ページは既定OFF。設定モーダルの「解答面：大学ごとに改ページ（印刷セット）」でONにすると従来同様各試験を新ページにする。`exam_print_answer_exam_break` に端末保存し、未設定はOFF。保存セットの形式は変えず、問題編と問題→解答の境界改ページ、単一試験・お気に入りは従来通り。`test-print-sets-browser.cjs` でPC/mobile、端末再読込、既存保存セット、最適化ON/OFF、両面/解答のみの実A4 PDFを検証。
 
 新ハイライトは `::内容::` / `::内容:::blue`。内部の `##語::訳##` 語注・通常下線・波線も使用可能。旧色指定 `==内容==:色` は互換ハイライトとして保持し、新規作成は `::` を使う。色指定のない旧 `==内容==` は二重下線になるため、本番公開前に既存データを監査する。
+
+### 二重ハイフンの表示（2026-10-13）
+
+本文の `word--word`、`word -- word` は保存内容を変えず `word —— word` と表示する。前後の横方向の空白は1つに揃える。単独ハイフン、3個以上のハイフン、既存のUnicodeダッシュ、空所 `[[--A--]]`、表の区切り、URL、画像URL、HTMLコメント・タグ、コード、エスケープした `\--` は保持する。閲覧・登録/取り込み編集プレビュー・印刷・Exam会話パネルは共通の `Markup.render` を使う。`Markup.strip` と保存処理は変更しない。回帰: `node scripts/test-markup-dash.cjs`、`PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-markup-dash.cjs --browser`。
