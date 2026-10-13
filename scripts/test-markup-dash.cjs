@@ -11,10 +11,11 @@ for (const input of ['--word', 'word--', '--']) assert.ok(M.render(input).html.i
 assert.ok(M.render('a--b--c').html.includes('a' + dash + 'b' + dash + 'c'));
 for (const input of ['a-b', 'a - b', 'a---b', 'a-----b', 'a—b', 'a —— b', '---', '`a--b`', '``a--b``', '``a`--b``', '<CODE>a--b</CODE>',
   'https://example.test/a--b?q=--', 'www.example.test/a--b', '<!-- a--b -->', '<!-- a\n--b -->',
-  '<a href="a--b">', '\\--', '```js\na--b\n```', '~~~\na--b\n~~~', '```js\na--b', '<code>a--b</code>', '<pre>a--b</pre>', '[link](./a--b)']) {
+  '<a href="a--b">', '\\--', '```js\na--b\n```', '~~~\na--b\n~~~', '```js\na--b', '<code>a--b</code>', '<pre>a--b</pre>', '[link](./a--b)', '[link](./a--b "title ) --")', '[link](<./a_(--b>)', '[link](https://example.test/a_(b)--c)', '[link](./a_(b_(c))--d)', '[link](./a_\\(b\\)--c)', '<a title="1 > 0" href="a--b">', "<a title='1 > 0' href='a--b'>"]) {
   const html = M.render(input).html; assert.ok(!html.includes('em-dash'), input);
 }
 assert.equal((M.render('a -- -- b').html.match(/em-dash/g)||[]).length, 2);
+assert.doesNotMatch(M.render('![alt](a.png){caption="`[link](./a--b)`"}').html, /[\uE000\uE001]/);
 assert.match(M.render('----').html, /exam-hr/);
 assert.match(M.render('| a--b | c |\n| --- | :--: |\n| d--e | f |').html, /<table/);
 assert.equal((M.render('| a--b | c |\n| --- | :--: |\n| d--e | f |').html.match(/em-dash/g)||[]).length, 2);

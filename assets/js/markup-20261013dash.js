@@ -448,11 +448,40 @@
     footnotes.literalPrefix = "\uE000";
     while (source.indexOf(footnotes.literalPrefix) >= 0) footnotes.literalPrefix += "\uE000";
     footnotes.literals = [];
-    // Preserve comments, HTML, fenced/inline code and escaped hyphens verbatim.
-    // Tokens are local to this render; saved source and strip() remain unchanged.
-    source = source.replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[ \t]*$|(?![\s\S]))|<!--(?:[\s\S]*?-->|[\s\S]*$)|<(?:code|pre)\b[^>]*>[\s\S]*?<\/(?:code|pre)>|<\/?[A-Za-z][^>]*>|(?<!!)\[[^\]\n]*\]\([^\n)]*\)|(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\2(?!`)|\\--/gmi, function (literal) {
+    function protectLiteral(literal) {
+      footnotes.literals.forEach(function (previous, index) {
+        literal = literal.split(footnotes.literalPrefix + index + "\uE001").join(previous);
+      });
       return footnotes.literalPrefix + (footnotes.literals.push(literal) - 1) + "\uE001";
-    });
+    }
+    // Link destinations can contain balanced/escaped parentheses. Mask complete
+    // links before tokenizing HTML/code so nested literals cannot leak tokens.
+    var linkStart = /(?<!!)\[[^\]\n]*\]\(/g, link, lastLink = 0, linked = "";
+    while ((link = linkStart.exec(source))) {
+      var depth = 1, pos = link.index + link[0].length, quote = "", angle = false;
+      for (; pos < source.length && source[pos] !== "\n"; pos++) {
+        if (source[pos] === "\\") { pos++; continue; }
+        if (quote) { if (source[pos] === quote) quote = ""; continue; }
+        if (angle) { if (source[pos] === ">") angle = false; continue; }
+        if ((source[pos] === '"' || source[pos] === "'") && /\s/.test(source[pos - 1])) {
+          quote = source[pos]; continue;
+        }
+        if (source[pos] === "<" && (pos === link.index + link[0].length || /\s/.test(source[pos - 1]))) {
+          angle = true; continue;
+        }
+        if (source[pos] === "(") depth++;
+        if (source[pos] === ")" && --depth === 0) break;
+      }
+      if (depth !== 0) continue;
+      linked += source.slice(lastLink, link.index) + protectLiteral(source.slice(link.index, pos + 1));
+      lastLink = pos + 1;
+      linkStart.lastIndex = lastLink;
+    }
+    source = linked + source.slice(lastLink);
+    // Preserve comments, HTML, fenced/inline code and escaped hyphens verbatim.
+    // Quoted attributes may contain > without terminating an HTML tag.
+    // Tokens are local to this render; saved source and strip() remain unchanged.
+    source = source.replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[ \t]*$|(?![\s\S]))|<!--(?:[\s\S]*?-->|[\s\S]*$)|<(?:code|pre)\b(?:[^>"']|"[^"]*"|'[^']*')*>[\s\S]*?<\/(?:code|pre)>|<\/?[A-Za-z](?:[^>"']|"[^"]*"|'[^']*')*>|(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\2(?!`)|\\--/gmi, protectLiteral);
     var lines = source.split("\n");
     var interviewAliases = interviewSpeakers(lines);
     var translationLabels = opts && opts.zenyaku ? sourceDialogueLabels(opts.dialogueSource) : {};
