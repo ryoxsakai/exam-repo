@@ -348,7 +348,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await page.waitForFunction(()=>document.querySelectorAll('#favorites-area [data-open-set]').length===2);
   assert.deepEqual(await names(),originalNames,'Legacy saved order survives reload');
   await page.locator('#favorites-sets-toggle').uncheck();assert.equal(await page.locator('#favorites-area').isVisible(),true);
-  await page.locator('#favorites-sets-toggle').check();await page.locator(`#favorites-area [data-open-set="${id}"]`).click();await waitReady();
+  await page.locator('#favorites-sets-toggle').check();await page.locator(`#favorites-area [data-open-set="${id}"]`).click();await page.waitForFunction(()=>document.querySelector('.tab[data-tab="print"]').classList.contains('active'));await waitReady();
   assert.equal(await page.locator('.tab[data-tab="print"]').getAttribute('class').then(c=>c.includes('active')),true);
   // The existing favorite cover editor is also available for saved/unsaved sets.
   await page.locator('[data-print-title-add="print-set"]').click();

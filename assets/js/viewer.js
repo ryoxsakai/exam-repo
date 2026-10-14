@@ -747,7 +747,6 @@
         savePrintDraft();
         var hadPrintDraftOwner = printDraftReady;
         printDraftReady = false;
-        var wasSignedIn = !!multiPrint.uid;
         if (printModalSession) {
           dismissPrintModal();
           history.replaceState(Object.assign({}, history.state, {examPrintModal: null}), "");
