@@ -37,3 +37,16 @@ for (const style of ['__', '~~', '==']) {
   }
 }
 console.log('PASS: outer prose parentheses remain normal with nested adjacent markers');
+
+for (const marker of ['あ', 'ア', 'a', 'z', 'ん', 'ン']) {
+ for (const style of ['__', '~~', '==']) {
+  for (const prefix of ['', '本文 ', '(本文 ']) {
+   const html = M.render(prefix + marker + style + '文字' + style).html;
+   assert.ok(html.includes('<sub class="underline-marker">' + marker + '</sub>'), prefix + marker + style);
+  }
+ }
+}
+for (const input of ['data__word__', 'かな__文字__']) {
+ assert.doesNotMatch(M.render(input).html, /<sub /);
+}
+console.log('PASS: bare kana and lowercase markers; word endings stay normal');
