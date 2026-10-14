@@ -8,6 +8,7 @@ on:
       - 'setting/index.html'
       - 'scripts/test-markup-double.cjs'
       - 'scripts/test-markup-dash.cjs'
+      - 'scripts/test-blank-sentence-spacing.cjs'
       - '.github/workflows/markup-double-test.yml'
   workflow_dispatch:
 permissions:
@@ -25,6 +26,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk poppler-utils
       - run: node scripts/test-markup-double.cjs --browser
       - run: node scripts/test-markup-dash.cjs --browser
+      - run: node scripts/test-blank-sentence-spacing.cjs --browser
       - uses: actions/upload-artifact@v4
         if: always()
         with:

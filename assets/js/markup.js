@@ -133,7 +133,15 @@
       // 左右の間隔はどちらもスペース文字で確保（行頭・行末ではブラウザが
       // スペースを消すため CSS マージンより自然に揃う）
       if ((m = rem.match(/^\[\[([^\]]*)\]\]/))) {
-        if (!leadLine && out && !/[\s(\[{「『（【]$/.test(out)) out += " ";
+        // A sentence-insertion blank gets the same two-space gap on both sides.
+        var beforeBlank = out.replace(/<[^>]*>/g, "").replace(/(?:&nbsp;|[ \t\u3000])+$/, "");
+        var sentenceEnd = beforeBlank.match(/([A-Za-z]*)([.?!])([”’"')\]）】」』]*)$/);
+        var afterBlank = rem.slice(m[0].length).replace(/^[ \t\u3000]+/, "");
+        var sentenceBlank = !leadLine && sentenceEnd &&
+          !(sentenceEnd[2] === "." && !sentenceEnd[3] && ABBREV.test(sentenceEnd[1])) &&
+          afterBlank && !/^[.,;:!?\]）)」』】。、！？]/.test(afterBlank);
+        if (sentenceBlank) out = out.replace(/(?:&nbsp;|[ \t\u3000])+$/, "") + "&nbsp;&nbsp;";
+        else if (!leadLine && out && !/(?:[\s(\[{「『（【]|&nbsp;)$/.test(out)) out += " ";
         // 先頭が -- のもの（[[--]] [[----]] [[-- --]] [[--A--]] 等）は3倍幅の空欄。
         // 前後のダッシュのみ除いた中身をラベルとして表示する（空白は保持。
         // [[-- --]]=半角スペース / [[--　--]]=全角スペース が中に入る）。
@@ -145,7 +153,10 @@
         }
         rem = rem.slice(m[0].length);
         // 括弧で囲んだ空所 ([[3]]) は閉じ括弧をバッジの直後へ寄せる。
-        if (rem[0] === ")" || rem[0] === "）") {
+        if (sentenceBlank) {
+          out += "&nbsp;&nbsp;";
+          rem = rem.replace(/^[ \t\u3000]+/, "");
+        } else if (rem[0] === ")" || rem[0] === "）") {
           out += '<span class="blank-close">' + rem[0] + "</span>";
           rem = rem.slice(1);
         } else if (!leadLine && rem.length && !/^[\s.,;:!?\]）」』】。、！？]/.test(rem)) out += " ";
