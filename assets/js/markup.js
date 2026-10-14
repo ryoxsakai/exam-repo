@@ -296,7 +296,20 @@
         if (p === "." && !q && ABBREV.test(w)) return full;
         return w + p + q + "&nbsp;&nbsp;";
       });
-      // Only an exact double hyphen in prose is a dash. Preserve single hyphens,
+      // A spaced single hyphen between prose words is usually an OCR dash.
+      // Keep numeric operands/ranges and single-letter algebraic variables unchanged.
+      plain = plain.replace(/[ \t\u3000]+-(?!-)[ \t\u3000]+/g, function (full, offset, text) {
+        var left = text.slice(0, offset).match(/([A-Za-z]+(?:[’'][A-Za-z]+)*)[”’"')\]]*$/);
+        var right = text.slice(offset + full.length).match(/^[“‘"'(\[]*([A-Za-z]+(?:[’'][A-Za-z]+)*)/);
+        function proseWord(match) { return match && (match[1].length > 1 || /^(?:a|A|I)$/.test(match[1])); }
+        if (!proseWord(left) || !proseWord(right)) return full;
+        // A letter suffix/prefix inside a number, identifier or unit is not prose.
+        var before = text.slice(0, offset - left[0].length);
+        var after = text.slice(offset + full.length + right[0].length);
+        if (/[A-Za-z0-9_\-]$/.test(before) || /^[A-Za-z0-9_\-]/.test(after)) return full;
+        return ' <span class="em-dash">——</span> ';
+      });
+      // An exact double hyphen is also a dash. Preserve unspaced single hyphens,
       // longer runs and existing Unicode dashes. Normalize adjacent horizontal space.
       plain = plain.replace(/[ \t\u3000]*(?<!-)--(?!-)[ \t\u3000]*/g,
         ' <span class="em-dash">——</span> ').replace(/<\/span>  <span class="em-dash">/g,
@@ -497,6 +510,16 @@
       if (trimmed === "") { html += '<div style="height:.6em"></div>'; paraStart = true; continue; }
       if (trimmed === "----") { html += '<hr class="exam-hr">'; paraStart = true; continue; }
 
+      // Convert prose list markers only; keep negative numbers and algebra intact.
+      var bulletLine = false;
+      var bullet = trimmed.match(/^-[ \t\u3000]+(.+)$/);
+      if (bullet) {
+        var bulletText = bullet[1].replace(/^(?:(?:\*\*|__|~~|::)|[“‘"'(\[])+/, "");
+        if (/^(?:[A-Za-z]{2,}(?![A-Za-z0-9_])|[aAI][ \t]+[A-Za-z]|[\u3040-\u30ff\u3400-\u9fff])/.test(bulletText)) {
+          line = "・ " + bullet[1]; trimmed = line; bulletLine = true;
+        }
+      }
+
       // Markdown 風テーブル（ヘッダ行 + 区切り行 |---|---| が続く場合）
       if (trimmed.indexOf("|") >= 0 && i + 1 < lines.length && isTableSep(lines[i + 1])) {
         var tbl = renderTable(lines, i, footnotes);
@@ -542,7 +565,7 @@
         }
       }
       // @@ 行頭タグ → 強制字下げなし（indent 抑制）
-      var noIndent = false;
+      var noIndent = bulletLine;
       if (/^\s*@@/.test(line)) {
         noIndent = true;
         line = line.replace(/^\s*@@\s?/, "");
