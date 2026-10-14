@@ -1394,3 +1394,10 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
     page-break-before: left; break-before: left;
   }
 }
+
+/* Quoted exchanges share the text column to the right of the question badge. */
+.exam-doc .question-block-header.quoted-dialogue {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline;
+}
+.exam-doc .quoted-dialogue > .qtext { display: block; min-width: 0; }
+.exam-doc .quoted-dialogue .blk { text-indent: 0; }

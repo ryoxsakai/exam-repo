@@ -544,6 +544,24 @@
       var qm = trimmed.match(/^\{\{([^}]+)\}\}/);
       if (qm) {
         var rest = trimmed.slice(qm[0].length).trim();
+        // Keep a quoted exchange in one badge/body layout, including soft wraps.
+        if (/^[“‘"']/.test(rest)) {
+          var quotedLines = '<span class="blk">' + inline(rest, footnotes) + '</span>';
+          var nextLine = i + 1;
+          while (nextLine < lines.length) {
+            var quoteLine = nextLine;
+            while (quoteLine < lines.length && !lines[quoteLine].trim()) quoteLine++;
+            if (quoteLine >= lines.length || !/^[“‘"']/.test(lines[quoteLine].trim())) break;
+            for (var gap = nextLine; gap < quoteLine; gap++) quotedLines += '<div style="height:.6em"></div>';
+            quotedLines += '<span class="blk">' + inline(lines[quoteLine], footnotes) + '</span>';
+            i = quoteLine;
+            nextLine = quoteLine + 1;
+          }
+          html += '<div class="question-block-header quoted-dialogue"><span class="question-badge">' +
+            esc(qm[1]) + '</span><div class="qtext">' + quotedLines + '</div></div>';
+          paraStart = true;
+          continue;
+        }
         html += '<div class="question-block-header"><span class="question-badge">' +
                 esc(qm[1]) + "</span>" +
                 (rest ? '<span class="qtext">' + inline(rest, footnotes) + "</span>" : "") +
