@@ -311,3 +311,7 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 ### 文間空所の左右間隔（2026-10-15）
 
 英文の文末 `.?!`（閉じ引用符を含む）の後にある `[[A]]` 等の文挿入空所は、左右をそれぞれ `&nbsp;&nbsp;` へ正規化する。左側の文末空白と空所用空白の重複も除去。文頭の接続表現用空所の直後にカンマがある場合も対象。文中の通常空所・略語直後・行末・括弧内は従来の間隔。保存データは変更せず表示に適用。公開パーサーは `markup-20261015blankspace.js`。検証は `test-blank-sentence-spacing.cjs --browser`（PC/mobileの左右実測とPDF）、既存markup/dash/dialogue回帰。
+
+### 箇条書きのぶら下げ（2026-10-15）
+
+文章と判定した行頭 `- ` の表示に `bullet-line` を付け、記号は幅1.3emの `bullet-marker`、本文は `bullet-text` に分ける。左padding1.3emと初行の負のtext-indentで、2行目以降も本文開始位置に揃える。全訳の字下げ抑制時、閲覧、印刷で共通。負数や数式の判定は変更しない。公開JS/CSSは `20261015bullets`。`test-bullet-indent.cjs` はPC/mobile・画面/印刷で3行以上の文字座標を実測し、脚注重複なしと通常段落・負数保持も検証する。

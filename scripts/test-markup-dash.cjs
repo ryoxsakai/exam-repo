@@ -47,9 +47,9 @@ assert.ok(M.render('\uE000a--b').html.includes('\uE000a' + dash + 'b'));
 assert.equal(JSON.stringify(M.render('a--b').footnotes), '[]');
 assert.equal(M.strip('a--b'), 'a--b');
 for (const file of ['index.html', 'setting/index.html']) {
- const html=fs.readFileSync(root+'/'+file,'utf8'); assert.match(html,/markup-20261015quoted\.js/);
+ const html=fs.readFileSync(root+'/'+file,'utf8'); assert.match(html,/markup-20261015bullets\.js/);
 }
-assert.equal(source, fs.readFileSync(root+'/assets/js/markup-20261015quoted.js','utf8'));
+assert.equal(source, fs.readFileSync(root+'/assets/js/markup-20261015bullets.js','utf8'));
 assert.match(fs.readFileSync(root+'/panel/app.js','utf8'), /import '\.\.\/assets\/js\/markup\.js'/);
 console.log('PASS: prose dashes, spacing, literal protection, exam notation, tables, source preservation, all released consumers');
 if (process.argv.includes('--browser')) (async () => {

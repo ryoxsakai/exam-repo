@@ -9,6 +9,7 @@ on:
       - 'scripts/test-markup-double.cjs'
       - 'scripts/test-markup-dash.cjs'
       - 'scripts/test-blank-sentence-spacing.cjs'
+      - 'scripts/test-bullet-indent.cjs'
       - '.github/workflows/markup-double-test.yml'
   workflow_dispatch:
 permissions:
@@ -27,6 +28,7 @@ jobs:
       - run: node scripts/test-markup-double.cjs --browser
       - run: node scripts/test-markup-dash.cjs --browser
       - run: node scripts/test-blank-sentence-spacing.cjs --browser
+      - run: node scripts/test-bullet-indent.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

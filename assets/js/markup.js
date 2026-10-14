@@ -615,11 +615,13 @@
         ? !badgeNum && !/^\[[^\[\]]{1,2}\]/.test(trimmed) && !/^《/.test(trimmed)
         : (paraStart && (paraNum ? (!badgeNum && /^["'“‘]?[A-Za-z]/.test(trimmed)) : /^["'“‘]?[A-Z]/.test(trimmed))));
       var prefix = badgeNum ? '<span class="para-badge">' + esc(badgeNum) + "</span>" : "";
-      var content = speaker
+      var content = bulletLine
+        ? '<span class="bullet-marker">・ </span><span class="bullet-text">' + inline(bullet[1], footnotes, leadLine) + '</span>'
+        : speaker
         ? esc(speaker.prefix || "") + '<strong class="dialogue-speaker">' + esc(speaker[1] + speaker[2]) + '</strong>' +
           inline(trimmed.slice(speaker[0].length), footnotes)
         : inline(line, footnotes, leadLine);
-      html += '<span class="blk' + (indent ? " indent" : "") + (speaker ? " dialogue-line" : "") + (leadLine ? " lead-line" : "") + '">' + prefix + content + "</span>";
+      html += '<span class="blk' + (bulletLine ? " bullet-line" : "") + (indent ? " indent" : "") + (speaker ? " dialogue-line" : "") + (leadLine ? " lead-line" : "") + '">' + prefix + content + "</span>";
       paraStart = false;
     }
 

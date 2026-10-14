@@ -1401,3 +1401,7 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 }
 .exam-doc .quoted-dialogue > .qtext { display: block; min-width: 0; }
 .exam-doc .quoted-dialogue .blk { text-indent: 0; }
+
+/* Hanging bullet: wrapped lines start at the first line's body text. */
+.exam-doc .blk.bullet-line { padding-left: 1.3em; text-indent: -1.3em; }
+.exam-doc .bullet-marker { display: inline-block; width: 1.3em; text-indent: 0; text-align: left; }
