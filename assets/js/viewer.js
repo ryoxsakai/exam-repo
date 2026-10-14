@@ -3362,6 +3362,15 @@
     el("pr-set-new").addEventListener("click", function () {
       multiPrint.id = null; multiPrint.revision = null; multiPrint.archived = false; multiChanged();
     });
+    el("pr-set-reset").addEventListener("click", function () {
+      if (multiPrint.busy) return;
+      multiPrint.ids = []; multiPrint.name = "";
+      multiPrint.cover = {lines: ["", "印刷セット", ""], time: ""};
+      multiPrint.id = null; multiPrint.revision = null; multiPrint.archived = false; multiPrint.baseline = null;
+      multiPrint.questionSelection = {}; state.printQSel = {};
+      el("pr-set-list").value = "";
+      loadMultiPrint();
+    });
     el("pr-set-save").addEventListener("click", function () { savePrintSet(); });
     el("pr-set-refresh").addEventListener("click", refreshPrintSets);
     el("pr-set-open").addEventListener("click", function () { openPrintSet(el("pr-set-list").value); });
