@@ -67,7 +67,7 @@
     UI.setActiveTab(el("set-tabs"), active);
 
     // モーダル配線
-    ["edit-modal", "label-batch-modal", "search-modal", "exam-modal", "wordlist-modal", "preview-modal", "syntax-modal", "regex-help-modal"].forEach(function (id) { UI.wireModal(el(id)); });
+    ["edit-modal", "label-batch-modal", "search-modal", "exam-modal", "wordlist-modal", "preview-modal", "syntax-modal", "regex-help-modal", "university-duration-modal"].forEach(function (id) { UI.wireModal(el(id)); });
 
     wireMain();
     wireConn();
@@ -2152,6 +2152,7 @@
   var uniYomiRows = [];  // [{ id, name, reading }]（編集中の値）
   var uniYomiOriginal = {}, uniYomiSaving = false;
   function wireUniYomi() {
+    el("university-duration-apply").addEventListener("click", applyUniversityDurationDetails);
     if (el("uniyomi-save")) el("uniyomi-save").addEventListener("click", saveUniYomi);
     if (el("uniyomi-reload")) el("uniyomi-reload").addEventListener("click", loadUniYomi);
   }
@@ -2164,9 +2165,9 @@
     Api.getUniversities().then(function (d) {
       var us = (d.universities || []).slice();
       us.sort(function (a, b) { return (a.reading || a.name).localeCompare(b.reading || b.name, "ja") || a.name.localeCompare(b.name, "ja"); });
-      state.universities = us.map(function (u) { return { id: u.id, name: u.name, reading: u.reading || "", abbreviation: u.abbreviation || "", print_minutes: u.print_minutes == null ? null : u.print_minutes }; });
+      state.universities = us.map(function (u) { return { id: u.id, name: u.name, reading: u.reading || "", abbreviation: u.abbreviation || "", print_combined: !!u.print_combined, print_minutes: u.print_minutes == null ? null : u.print_minutes }; });
       uniYomiOriginal = {};
-      uniYomiRows = state.universities.map(function (u) { uniYomiOriginal[u.id] = Object.assign({}, u); return Object.assign({}, u, {print_minutes: u.print_minutes == null ? "" : String(u.print_minutes)}); });
+      uniYomiRows = state.universities.map(function (u) { uniYomiOriginal[u.id] = Object.assign({}, u); return Object.assign({}, u, {duration_schedules: null, print_minutes: u.print_minutes == null ? "" : String(u.print_minutes)}); });
       renderUniYomi();
     }).catch(function (e) {
       box.innerHTML = '<div class="empty"><i class="fa-solid fa-triangle-exclamation ic"></i>' + esc(e.message) + "</div>";
@@ -2182,6 +2183,7 @@
         '<input class="edit-item-input edit-item-reading" type="text" data-yomi="' + i + '" value="' + esc(u.reading) + '" placeholder="よみがな（ひらがな）" />' +
         '<input class="edit-item-input edit-item-abbr" type="text" data-abbr="' + i + '" value="' + esc(u.abbreviation || "") + '" placeholder="略称（表示用・任意）" />' +
         '<label class="uniyomi-duration"><input class="edit-item-input" type="number" min="1" max="1440" step="1" data-minutes="' + i + '" value="' + esc(u.print_minutes) + '" placeholder="未登録" aria-label="' + esc(u.name) + 'の試験時間（分）" /><span>分</span></label>' +
+        '<button type="button" class="btn uniyomi-detail" data-duration-detail="' + i + '">詳細</button>' +
         "</li>";
     });
     box.innerHTML = h + "</ul>";
@@ -2191,9 +2193,44 @@
     $all("[data-abbr]", box).forEach(function (inp) {
       inp.addEventListener("input", function () { uniYomiRows[+inp.getAttribute("data-abbr")].abbreviation = inp.value; });
     });
+    $all("[data-duration-detail]", box).forEach(function (button) {
+      button.addEventListener("click", function () { openUniversityDurationDetails(+button.dataset.durationDetail); });
+    });
     $all("[data-minutes]", box).forEach(function (inp) {
       inp.addEventListener("input", function () { uniYomiRows[+inp.getAttribute("data-minutes")].print_minutes = inp.value; });
     });
+  }
+  var universityDurationIndex = null, universityDurationEpoch = 0;
+  function openUniversityDurationDetails(index) {
+    var row = uniYomiRows[index], epoch = ++universityDurationEpoch;
+    universityDurationIndex = index;
+    el("university-duration-title").textContent = row.name + "の試験時間";
+    el("university-duration-combined").checked = row.print_combined;
+    el("university-duration-parent").value = row.print_minutes;
+    el("university-duration-ways").textContent = "読み込み中…";
+    el("university-duration-apply").disabled = true;
+    UI.openModal(el("university-duration-modal"));
+    Api.getUniversityPrintDuration(row.id).then(function (d) {
+      if (epoch !== universityDurationEpoch || uniYomiRows[index] !== row) return;
+      el("university-duration-ways").innerHTML = d.schedules.length ? d.schedules.map(function (r, i) {
+        var value = row.duration_schedules && Object.prototype.hasOwnProperty.call(row.duration_schedules, r.schedule) ? row.duration_schedules[r.schedule] : r.minutes;
+        return '<label style="display:flex;align-items:center;gap:12px;margin:10px 0"><span style="flex:1">' + esc(r.schedule) + '</span><input type="number" min="1" max="1440" step="1" data-duration-schedule="' + esc(r.schedule) + '" value="' + esc(value == null ? "" : value) + '" placeholder="全体の時間を使用" style="width:150px" /><span>分</span></label>';
+      }).join("") : '<p class="hint">登録済みの試験方式がありません。</p>';
+      el("university-duration-apply").disabled = false;
+    }).catch(function (e) { if (epoch === universityDurationEpoch) el("university-duration-ways").textContent = e.message; });
+  }
+  function applyUniversityDurationDetails() {
+    var row = uniYomiRows[universityDurationIndex];
+    if (!row) return;
+    var inputs = [el("university-duration-parent")].concat($all("[data-duration-schedule]", el("university-duration-ways")));
+    if (inputs.some(function (input) { var value = input.value.trim(), n = Number(value); return value && (!/^\d+$/.test(value) || !Number.isInteger(n) || n < 1 || n > 1440); })) { toast("時間は1〜1440の整数（分）で入力してください", "err"); return; }
+    row.print_minutes = el("university-duration-parent").value;
+    row.print_combined = el("university-duration-combined").checked;
+    row.duration_schedules = Object.create(null);
+    inputs.slice(1).forEach(function (input) { row.duration_schedules[input.dataset.durationSchedule] = input.value.trim() ? Number(input.value) : null; });
+    UI.closeModal(el("university-duration-modal"));
+    renderUniYomi();
+    toast("時間設定を反映しました。下の「保存」で保存してください", "ok");
   }
   function saveUniYomi() {
     if (uniYomiSaving) return;
@@ -2209,7 +2246,14 @@
         tasks.push(function () { return Api.updateUniversity(u.id, u.name, reading, abbr).then(function () { o.reading = reading; o.abbreviation = abbr; }); });
       }
       var minutes = u.print_minutes.trim() ? Number(u.print_minutes) : null;
-      if (minutes !== o.print_minutes) tasks.push(function () { return Api.saveUniversityPrintDuration(u.id, minutes).then(function () { o.print_minutes = minutes; }); });
+      if (minutes !== o.print_minutes || u.print_combined !== o.print_combined || u.duration_schedules) tasks.push(function () {
+        var data = {university_minutes: minutes, combined: u.print_combined};
+        if (u.duration_schedules) data.schedules = u.duration_schedules;
+        return Api.saveUniversityPrintDurationDetails(u.id, data).then(function () { return Api.getUniversityPrintDuration(u.id); }).then(function (d) {
+          if (d.university_minutes !== minutes || d.combined !== u.print_combined || (u.duration_schedules && Object.keys(u.duration_schedules).some(function (key) { var row = d.schedules.find(function (r) { return r.schedule === key; }); return (row ? row.minutes : null) !== u.duration_schedules[key]; }))) throw new Error("時間設定を確認できません");
+          o.print_minutes = minutes; o.print_combined = u.print_combined; u.duration_schedules = null;
+        });
+      });
     });
     if (!tasks.length) { toast("変更はありません", "ok"); return; }
     uniYomiSaving = true;

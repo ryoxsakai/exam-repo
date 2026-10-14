@@ -2435,7 +2435,7 @@
             '<button type="button" class="btn ghost sm" data-print-title-add="' + esc(String(ex.folderId)) + '"><i class="fa-solid fa-plus"></i> 行を追加</button>' +
             (lines.length > 3 ? '<button type="button" class="btn ghost sm" data-print-title-remove="' + esc(String(ex.folderId)) + '"><i class="fa-solid fa-trash"></i> 追加行を削除</button>' : '') +
             '<button type="button" class="btn primary sm" data-print-title-save="' + esc(String(ex.folderId)) + '"' + (ex.folderId === "print-set" || (useDraftTitles && (draft || sizeDraft || colorDraft)) ? '' : ' hidden') + '><i class="fa-solid fa-floppy-disk"></i> 保存</button>' +
-          "</div>" : "") + (ex.kind === "exam" && opts.duration && ex.duration && ex.duration.effective_minutes != null ? '<div class="pc-duration">時間：' + esc(ex.duration.effective_minutes) + '分</div>' : "") + nameField +
+          "</div>" : "") + (ex.kind === "exam" && opts.duration && ex.duration && ex.duration.effective_minutes != null ? '<div class="pc-duration">' + (ex.duration.combined ? '英数合計　' : '時間：') + esc(ex.duration.effective_minutes) + '分</div>' : "") + nameField +
           "</div>";
       } else {
         html += '<div class="' + coverClass + '">' +
@@ -2443,7 +2443,7 @@
           '<div class="pc-uni">' + esc(ex.university_name) + "</div>" +
           '<div class="pc-sched">' + esc(ex.schedule) + "</div>" +
           (opts.duration && ex.kind === "exam" && ex.duration && ex.duration.effective_minutes != null
-            ? '<div class="pc-duration">時間：' + esc(ex.duration.effective_minutes) + '分</div>' : "") + nameField + "</div>";
+            ? '<div class="pc-duration">' + (ex.duration.combined ? '英数合計　' : '時間：') + esc(ex.duration.effective_minutes) + '分</div>' : "") + nameField + "</div>";
       }
     }
     var qs = printQuestions(ex);
@@ -3614,7 +3614,7 @@
         var body = buildPrintHtml(Object.assign({}, exam, {kind:'exam'}), Object.assign({},opts,{cover:false,side:answerSide ? 'answer' : 'question'}));
         var minutes = exam.duration && exam.duration.effective_minutes;
         var time = opts.duration && Number.isInteger(minutes) && minutes >= 1 && minutes <= 1440
-          ? '<span class="print-exam-time">' + esc(minutes) + '分</span>' : '';
+          ? '<span class="print-exam-time">' + (exam.duration.combined ? '英数合計　' : '') + esc(minutes) + '分</span>' : '';
         if (body) html += '<section class="print-exam-block print-exam-' + (answerSide ? 'a' : 'q') + '"><h2 class="print-exam-head"><span class="print-exam-label">' + esc(printExamLabel(exam)) + '</span>' + time + '</h2>' + body + '</section>';
       });
     });
@@ -3645,7 +3645,7 @@
       el("pr-duration-exam").value = d.exam_minutes == null ? "" : d.exam_minutes;
     }
     el("pr-duration-source").textContent = printDurationWrite ? "試験時間を保存・再取得中です（印刷は停止中です）。" : ex.durationUnverified ? "時間の保存・再取得を確認できません。年度・方式を選び直してください（印刷は停止中です）。" : d.source === "unset" ? "使用時間：未登録（表紙には表示しません）" :
-      "使用時間：" + d.effective_minutes + "分（" + (d.source === "exam" ? "この年度・方式の例外" : "大学の初期値") + "）";
+      (d.combined ? "使用時間：英数合計　" : "使用時間：") + d.effective_minutes + "分（" + (d.source === "exam" ? "この年度・方式の例外" : d.source === "schedule" ? "方式の設定" : "大学の初期値") + "）";
     ["pr-duration-save-university", "pr-duration-save-exam", "pr-duration-reset", "pr-duration-university", "pr-duration-exam"].forEach(function (id) { el(id).disabled = !!printDurationWrite; });
   }
 

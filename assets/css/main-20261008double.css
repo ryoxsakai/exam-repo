@@ -1374,3 +1374,5 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 .print-exam-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1em; }
 .print-exam-label { min-width: 0; overflow-wrap: anywhere; }
 .print-exam-time { flex-shrink: 0; margin-left: auto; white-space: nowrap; font-size: .85em; }
+
+.uniyomi-detail { flex: 0 0 auto; white-space: nowrap; }
