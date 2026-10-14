@@ -299,3 +299,5 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 検証: `PANEL_CHROMIUM=/path/to/chromium PLAYWRIGHT_MODULE=playwright node scripts/test-print-booklet-browser.cjs`。PC/mobile、設定再読込、実印刷経路、表紙有無・問題0〜3ページ・単一/セット・番号ON/OFFの128通りの実PDFと350文の自然改ページで欠落・番号・物理偶数開始を確認。PDFは `/tmp/exam-booklet-*.pdf`。
 
 ページ番号の表記は「1」「- 1 -」「－ 1 －」「1 / n」から選択可能。`exam_print_page_number_style` に保存し未設定・不正値はplain。番号OFF時は選択欄を無効化し値は保持。分母は表紙だけを除外した物理ページ数（白紙も含む）で、白紙には番号を印字しない。
+
+大学単位の印刷では `data-print-badge-scope` に大学ID（なければ大学名・試験ID）を設定し、`{{}}` のquestion-badge幅を印刷対象の大学全体で統一する。問題・解答面、大問、セット内の同一大学の年度・方式をまたいで共有。異なる大学は別幅、お気に入りは従来の大問単位。対象を除外した際は自然幅から再計測して縮小する。`test-print-answers-browser.cjs` でPC/mobileのプレビュー・実印刷と大学間の分離・再計測を確認。

@@ -10,7 +10,7 @@ const questions=[
  {exam_id:11,question_number:3,category:'英作文',problem_text:'{{問題}}\nWrite an essay.',answer_text:'A plain model essay.\n\nIts paragraphs remain unchanged.'}
 ];
 const source=JSON.stringify(questions);
-const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runPrint,printField};';
+const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runPrint,printField,alignPrintQuestionBadges};';
 (async()=>{
  const browser=await chromium.launch({headless:true,...(process.env.PANEL_CHROMIUM?{executablePath:process.env.PANEL_CHROMIUM}:{})});
  try{for(const width of [1280,390]){
@@ -61,8 +61,23 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   assert.equal(await page.locator('#pr-optimize-answers').isChecked(),false);assert.equal(await page.locator('#pr-compact-commentary').isChecked(),false);
   const equalBadges=async root=>{
     const groups=await page.locator(root+' .print-q').evaluateAll(qs=>qs.map(q=>[...q.querySelectorAll('.question-badge')].map(b=>b.getBoundingClientRect().width)));
-    assert.ok(groups.every(ws=>!ws.length||Math.max(...ws)-Math.min(...ws)<.1),'Badge widths match within each question');
+    const widths=groups.flat();
+    assert.ok(widths.length>1);
+    assert.ok(Math.max(...widths)-Math.min(...widths)<.1,'Badge widths match across the entire university, including questions and answers');
   };
+  const scopeCheck=await page.evaluate(()=>{
+    const root=document.createElement('div');root.className='print-doc';
+    root.innerHTML=['a','a','b',''].map((scope,i)=>'<div class="print-q"'+(scope?' data-print-badge-scope="'+scope+'"':'')+'>'+__answersTest.printField('設問',i===0?'{{問123}}':'{{問1}}',{})+'</div>').join('');
+    document.body.appendChild(root);__answersTest.alignPrintQuestionBadges(root);
+    const widths=[...root.querySelectorAll('.question-badge')].map(b=>b.getBoundingClientRect().width);
+    root.querySelector('.print-q').remove();__answersTest.alignPrintQuestionBadges(root);
+    const reduced=root.querySelector('.question-badge').getBoundingClientRect().width;
+    root.remove();return {widths,reduced};
+  });
+  assert.ok(Math.abs(scopeCheck.widths[0]-scopeCheck.widths[1])<.1);
+  assert.ok(scopeCheck.widths[1]>scopeCheck.widths[2]);
+  assert.ok(scopeCheck.widths[1]>scopeCheck.widths[3]);
+  assert.ok(scopeCheck.reduced<scopeCheck.widths[1]);
   await equalBadges('#print-preview');
   const baseline=await page.locator('#print-preview .print-part-a').innerHTML();
   const questionBaseline=await page.locator('#print-preview .print-part-q').innerHTML();

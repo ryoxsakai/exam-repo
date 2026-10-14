@@ -2497,7 +2497,8 @@
           inner += '<div class="print-section-head">' + esc(pendingSection.name) + "</div>";
           pendingSection = null;
         }
-        inner += '<div class="print-q"><div class="print-q-head">' + esc(printQHeading(q, seqOf[printQKey(q)], opts)) + "</div>";
+        var badgeScope = ex.kind === "exam" ? ' data-print-badge-scope="' + esc("university:" + (ex.university_id || ex.university_name || ex.id)) + '"' : "";
+        inner += '<div class="print-q"' + badgeScope + '><div class="print-q-head">' + esc(printQHeading(q, seqOf[printQKey(q)], opts)) + "</div>";
         secs.forEach(function (s) { inner += printField(s.type, s.text, opts, q.problem_text); });
         if (!answerSide && opts.writingSpace && q.category === "英作文") {
           var lines = [5, 10, 15, 20, 25].indexOf(Number(opts.writingLines)) >= 0 ? Number(opts.writingLines) : 10;
@@ -2857,14 +2858,23 @@
       root.style.position = "absolute"; root.style.left = "-100000px";
       root.style.visibility = "hidden";
     }
+    // University printouts share a width across questions, answers and exam dates.
+    // Unscoped favorite questions retain their individual width groups.
+    var scopes = new Map();
     $all(".print-q", root).forEach(function (question) {
-      var badges = $all(".question-badge", question), widest = 0;
+      var key = question.getAttribute("data-print-badge-scope") || question;
+      var badges = scopes.get(key) || [];
+      scopes.set(key, badges.concat($all(".question-badge", question)));
+    });
+    scopes.forEach(function (badges) {
+      var widest = 0;
       badges.forEach(function (badge) { badge.style.width = ""; });
       badges.forEach(function (badge) {
         widest = Math.max(widest, badge.getBoundingClientRect().width);
       });
       if (widest) badges.forEach(function (badge) { badge.style.width = Math.ceil(widest * 100) / 100 + "px"; });
-    });    if (hidden) {
+    });
+    if (hidden) {
       if (oldStyle === null) root.removeAttribute("style");
       else root.setAttribute("style", oldStyle);
     }
