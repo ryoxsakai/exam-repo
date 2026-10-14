@@ -33,6 +33,13 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   const page=await context.newPage();page.setDefaultTimeout(15000);
   const load=async()=>{await page.goto(origin,{waitUntil:'networkidle'});await page.waitForFunction(()=>window.__answersTest?.state.config!==null);await page.evaluate(exam=>{const t=__answersTest;t.state.printSel={kind:'exam',uni:exam.university_name,year:String(exam.year),sched:exam.schedule};t.loadPrintPreview();},exam);await page.waitForFunction(()=>__answersTest.state.printExam?.id===11);await page.locator('#pr-settings-open').click();};
   await load();
+  const spacing=await page.evaluate(()=>{
+    const d=document.createElement('div');d.className='print-doc';
+    d.innerHTML=__answersTest.printField('解答','{{1}}[E]-[B]-[D]-[C]',{optimizeAnswers:true});document.body.appendChild(d);
+    const badges=[...d.querySelectorAll('.para-badge')];
+    const result=badges.map(b=>getComputedStyle(b).marginRight);d.remove();return result;
+  });
+  assert.deepEqual(spacing,['0px','0px','0px','0px']);
   const mixed=await page.evaluate(()=>{
     const text='{{1}}((a))　{{2}} ア-((c)) イ-((b))　{{3}} I-((c)) II-((a))　{{4}} '+ '長い日本語の記述解答です。'.repeat(12)+'　{{5}} 全訳下線部参照。　{{6}} (1)-((a)) (2)-((b))';
     const d=document.createElement('div');d.innerHTML=__answersTest.printField('解答',text,{optimizeAnswers:true});
