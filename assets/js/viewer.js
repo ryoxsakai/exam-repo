@@ -329,7 +329,9 @@
         renderPrintPreview();
       });
     }
-    [["pr-question-exam-break", "getPrintQuestionExamPageBreak", "setPrintQuestionExamPageBreak"],
+    [["pr-answer-left", "getPrintAnswerLeft", "setPrintAnswerLeft"],
+     ["pr-page-numbers", "getPrintPageNumbers", "setPrintPageNumbers"],
+     ["pr-question-exam-break", "getPrintQuestionExamPageBreak", "setPrintQuestionExamPageBreak"],
      ["pr-answer-exam-break", "getPrintAnswerExamPageBreak", "setPrintAnswerExamPageBreak"],
      ["pr-optimize-footnotes", "getPrintOptimizeFootnotes", "setPrintOptimizeFootnotes"],
      ["pr-optimize-answers", "getPrintOptimizeAnswers", "setPrintOptimizeAnswers"],
@@ -2508,6 +2510,8 @@
 
   function printOptions() {
     return {
+      answerLeft: el("pr-answer-left").checked,
+      pageNumbers: el("pr-page-numbers").checked,
       cover: el("pr-cover").checked,
       duration: el("pr-duration") ? el("pr-duration").checked : false,
       nameField: el("pr-name-field") ? el("pr-name-field").checked : false,
@@ -2895,6 +2899,8 @@
     return "fs-" + Store.getPrintFontSize() + " lh-" + Store.getPrintLineHeight() +
       (opts && opts.questionExamBreak ? " question-exam-break" : "") +
       (opts && opts.answerExamBreak ? " answer-exam-break" : "") +
+      (opts && opts.answerLeft ? " answer-left" : "") +
+      (opts && opts.pageNumbers ? " print-page-numbers" : "") +
       (opts && opts.qBreakQ ? " qbreak-q" : "") +
       (opts && opts.qBreakA ? " qbreak-a" : "") +
       (opts && opts.sBreakQ ? " sbreak-q" : "") +
@@ -4081,7 +4087,17 @@
       if (opts.optimizeChoices) optimizePrintChoices(area, true);
       if (opts.optimizeAnswers) layoutPrintAnswerGroups(area, true);
       if (opts.lineNumbers) applyPrintLineNumbers(area, true);
+      if (opts.answerLeft || opts.pageNumbers) {
+        return PrintBooklet.prepare(area, opts).then(function (frame) {
+          if (printTitleSaving || printDurationWrite || durationRevision !== printDurationRevision || selected.durationUnverified || renderRevision !== printRenderRevision || state.printExam !== selected || (multiPrint.enabled && (multiPrint.busy || multiPrint.loading || multiPrint.archived))) {
+            frame.remove(); UI.toast("印刷準備中に設定が変わりました。印刷し直してください。", "err"); return;
+          }
+          frame.contentWindow.focus(); frame.contentWindow.print();
+        });
+      }
       window.print();
+    }).catch(function (error) {
+      UI.toast("印刷を準備できませんでした：" + error.message, "err");
     }).finally(function () { printPreparing = false; updatePrintDurationAvailability(); });
   }
 

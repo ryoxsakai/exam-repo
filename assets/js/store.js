@@ -25,6 +25,8 @@
     regDraft:      "exam_reg_draft",         // 問題登録フォームの下書き（リロードしても保持）
     printSections: "exam_print_sections",    // 印刷対象セクション {種別: bool}（全問題で共有）
     printDuration: "exam_print_duration",
+    printAnswerLeft: "exam_print_answer_left",
+    printPageNumbers: "exam_print_page_numbers",
     printNameField: "exam_print_name_field", // 印刷の表紙右下に氏名記入欄を追加する
     printHideLabels: "exam_print_hide_labels", // 印刷時に「問題」「本文」「設問」のセクション名を出さない
     printQPageBreak: "exam_print_qbreak",    // （旧）印刷時に大問ごとに改ページする。下の面別キーへ移行済み
@@ -373,6 +375,10 @@
     },
     getPrintQuestionExamPageBreak: function () { return read(KEYS.printQuestionExamPageBreak, false) === true; },
     setPrintQuestionExamPageBreak: function (on) { write(KEYS.printQuestionExamPageBreak, !!on); },
+    getPrintAnswerLeft: function () { return read(KEYS.printAnswerLeft, false) === true; },
+    setPrintAnswerLeft: function (on) { write(KEYS.printAnswerLeft, !!on); },
+    getPrintPageNumbers: function () { return read(KEYS.printPageNumbers, false) === true; },
+    setPrintPageNumbers: function (on) { write(KEYS.printPageNumbers, !!on); },
     getPrintAnswerExamPageBreak: function () { return read(KEYS.printAnswerExamPageBreak, false) === true; },
     setPrintAnswerExamPageBreak: function (on) { write(KEYS.printAnswerExamPageBreak, !!on); },
     getPrintOptimizeFootnotes: function () { return read(KEYS.printOptimizeFootnotes, false) === true; },

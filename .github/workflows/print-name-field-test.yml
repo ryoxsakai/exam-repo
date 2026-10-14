@@ -42,6 +42,7 @@ jobs:
         run: |
           node scripts/test-print-name-field.cjs --browser
           node scripts/test-print-duration-browser.cjs
+          node scripts/test-print-booklet-browser.cjs
       - name: Preserve print preview and PDF evidence
         if: always()
         uses: actions/upload-artifact@v4

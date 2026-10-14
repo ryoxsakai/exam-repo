@@ -1386,3 +1386,11 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 .mode-toggle:has(input:disabled) { opacity: .5; cursor: default; }
 
 .uniyomi-detail { flex: 0 0 auto; white-space: nowrap; }
+
+/* Physical page parity stays independent of the displayed folio counter. */
+@media print {
+  #print-area.print-out.answer-left > .print-part-a,
+  #print-area.print-out.answer-left > .print-exam-a:not(.print-exam-a ~ .print-exam-a) {
+    page-break-before: left; break-before: left;
+  }
+}
