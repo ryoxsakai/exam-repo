@@ -2781,6 +2781,7 @@
     lineNumberFrame = requestAnimationFrame(function () {
       lineNumberFrame = 0;
       var preview = el("print-preview");
+      if (preview) alignPrintQuestionBadges(preview);
       if (preview && preview.querySelector(".print-choice-group")) optimizePrintChoices(preview);
       if (preview && preview.querySelector(".print-answer-group")) layoutPrintAnswerGroups(preview);
       if (preview && preview.querySelector(".linenum-target")) applyPrintLineNumbers(preview);
@@ -2823,6 +2824,27 @@
       }
     });
     layoutPrintGroups(root, forPrint, ".print-choice-group", ".answer-choice-text", false);
+  }
+
+  function alignPrintQuestionBadges(root) {
+    var oldStyle = root.getAttribute("style");
+    var hidden = !root.getBoundingClientRect().width;
+    if (hidden) {
+      root.style.setProperty("display", "block", "important");
+      root.style.position = "absolute"; root.style.left = "-100000px";
+      root.style.visibility = "hidden";
+    }
+    $all(".print-q", root).forEach(function (question) {
+      var badges = $all(".question-badge", question), widest = 0;
+      badges.forEach(function (badge) { badge.style.width = ""; });
+      badges.forEach(function (badge) {
+        widest = Math.max(widest, badge.getBoundingClientRect().width);
+      });
+      if (widest) badges.forEach(function (badge) { badge.style.width = Math.ceil(widest * 100) / 100 + "px"; });
+    });    if (hidden) {
+      if (oldStyle === null) root.removeAttribute("style");
+      else root.setAttribute("style", oldStyle);
+    }
   }
 
   function layoutPrintAnswerGroups(root, forPrint) {
@@ -3719,9 +3741,10 @@
     var html = buildPrintHtml(state.printExam, opts, true);
     if (!html) { el("print-preview").innerHTML = '<div class="card"><div class="empty"><i class="fa-solid fa-inbox ic"></i>印刷対象がありません。チェックや登録内容を確認してください。</div></div>'; return; }
     el("print-preview").innerHTML = '<div class="print-doc ' + printDocClasses(opts) + '">' + html + "</div>";
+    alignPrintQuestionBadges(el("print-preview"));
     if (opts.optimizeChoices) optimizePrintChoices(el("print-preview"));
     if (opts.optimizeAnswers) layoutPrintAnswerGroups(el("print-preview"));
-    if (opts.optimizeChoices || opts.optimizeAnswers) watchPreviewLineNumbers();
+    watchPreviewLineNumbers();
     wirePrintTitleEdit();
     if (el("pr-duration")) el("pr-duration").disabled = state.printExam.kind !== "printSet" && (!opts.cover || state.printExam.kind !== "exam");
     if (opts.lineNumbers) {
@@ -3971,6 +3994,7 @@
       if (printTitleSaving || printDurationWrite || durationRevision !== printDurationRevision || state.printExam !== selected || selected.durationUnverified || renderRevision !== printRenderRevision || (multiPrint.enabled && (multiPrint.busy || multiPrint.loading || multiPrint.archived))) {
         UI.toast("印刷準備中に設定が変わりました。保存・再取得完了後に印刷し直してください。", "err"); return;
       }
+      alignPrintQuestionBadges(area);
       if (opts.optimizeChoices) optimizePrintChoices(area, true);
       if (opts.optimizeAnswers) layoutPrintAnswerGroups(area, true);
       if (opts.lineNumbers) applyPrintLineNumbers(area, true);

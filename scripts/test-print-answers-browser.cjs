@@ -52,6 +52,11 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   });
   assert.deepEqual(edgeCases,{safe:true,multi:true,short:4,inline:3,reference:1});
   assert.equal(await page.locator('#pr-optimize-answers').isChecked(),false);assert.equal(await page.locator('#pr-compact-commentary').isChecked(),false);
+  const equalBadges=async root=>{
+    const groups=await page.locator(root+' .print-q').evaluateAll(qs=>qs.map(q=>[...q.querySelectorAll('.question-badge')].map(b=>b.getBoundingClientRect().width)));
+    assert.ok(groups.every(ws=>!ws.length||Math.max(...ws)-Math.min(...ws)<.1),'Badge widths match within each question');
+  };
+  await equalBadges('#print-preview');
   const baseline=await page.locator('#print-preview .print-part-a').innerHTML();
   const questionBaseline=await page.locator('#print-preview .print-part-q').innerHTML();
   await page.locator('#pr-optimize-answers').check();
@@ -75,6 +80,7 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   assert.equal(await page.locator('#print-area .print-answer-group').count(),3);
   assert.equal(await page.locator('#print-area .print-answer-group').first().getAttribute('data-columns'),'2');
   await page.emulateMedia({media:'print'});
+  await equalBadges('#print-area');
   const rows=await page.locator('#print-area .print-answer-group').first().locator('.print-answer-item').evaluateAll(items=>items.map(x=>({x:x.getBoundingClientRect().left,y:x.getBoundingClientRect().top})));
   assert.ok(Math.abs(rows[0].x-rows[2].x)<1);assert.ok(Math.abs(rows[1].x-rows[3].x)<1);assert.ok(rows[2].y>rows[0].y);
   if(width===1280)await page.screenshot({path:'/tmp/print-answers-layout.png',fullPage:true});
