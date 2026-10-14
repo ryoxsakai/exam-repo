@@ -13,7 +13,7 @@ const {handlePrintDuration,handleUniversityPrintDuration} = require(out);
 let sql = new DatabaseSync(path.join(tmp, 'test.sqlite'));
 sql.exec('PRAGMA foreign_keys=ON; CREATE TABLE universities(id INTEGER PRIMARY KEY); CREATE TABLE exams(id INTEGER PRIMARY KEY, university_id INTEGER REFERENCES universities(id), year INTEGER, schedule TEXT); INSERT INTO universities VALUES (1),(2); INSERT INTO exams VALUES (11,1,2026,\'前期\'),(12,1,2025,\'前期\'),(13,1,2026,\'後期\'),(21,2,2026,\'前期\');');
 function dbAdapter() {
-  return {prepare(text) { let values=[]; return {bind(...v) {values=v; return this;}, async first() {return sql.prepare(text).get(...values) || null;}, async run() {return sql.prepare(text).run(...values);}}; },
+  return {prepare(text) { let values=[]; return {bind(...v) {values=v; return this;}, async first() {return sql.prepare(text).get(...values) || null;}, async all() {return {results:sql.prepare(text).all(...values)};}, async run() {return sql.prepare(text).run(...values);}}; },
     async batch(stmts) {sql.exec('BEGIN'); try {const r=[]; for (const s of stmts) r.push(await s.run()); sql.exec('COMMIT'); return r;} catch(e) {sql.exec('ROLLBACK'); throw e;}}};
 }
 const call = (id, body, method = body === undefined ? 'GET' : 'PUT') => handlePrintDuration(new Request('https://test/api/exams/'+id+'/print-duration', {method, ...(body === undefined ? {} : {body: JSON.stringify(body)})}), dbAdapter(), id);
@@ -28,6 +28,23 @@ const get = async id => {const r=await call(id); assert.equal(r.status,200); ret
     await uniCall(1,{university_minutes:70});
     assert.equal((await get(12)).effective_minutes,80,'University settings preserve exam overrides');
     assert.equal((await get(13)).effective_minutes,70);
+    await uniCall(1,{university_minutes:null,combined:true,schedules:{前期:95,後期:null}});
+    assert.equal((await get(11)).effective_minutes,95,'Child alone applies');
+    assert.equal((await get(13)).effective_minutes,null,'No parent or child remains unset');
+    await uniCall(1,{university_minutes:70});
+    assert.equal((await get(11)).effective_minutes,95,'Child overrides parent');
+    assert.equal((await get(13)).effective_minutes,70,'Blank child inherits parent');
+    assert.equal((await get(11)).combined,true,'Legacy minute save preserves combined flag');
+    assert.equal((await get(12)).effective_minutes,80,'Year-specific override remains highest priority');
+    assert.equal((await get(21)).combined,false,'Other university remains unchanged');
+    for (const body of [{combined:1},{schedules:[]},{schedules:{前期:0}},{university_minutes:71,schedules:{前期:'90'}}]) assert.equal((await uniCall(1,body)).status,400);
+    assert.equal((await get(13)).effective_minutes,70,'Invalid details never partially save');
+    sql.close(); sql=new DatabaseSync(path.join(tmp,'test.sqlite')); sql.exec('PRAGMA foreign_keys=ON');
+    assert.equal((await get(11)).combined,true);
+    assert.equal((await get(11)).effective_minutes,95,'Child persists after reopening');
+    await uniCall(1,{combined:false,schedules:{前期:null}});
+    assert.equal((await get(11)).effective_minutes,70,'Cleared child inherits parent');
+    assert.equal((await get(11)).combined,false);
     assert.equal((await uniCall(999,{university_minutes:60})).status,404);
     for(const body of [{university_minutes:0},{university_minutes:'60'},[],null,{university_minutes:60,extra:1},{}]) assert.equal((await uniCall(1,body)).status,400);
     assert.equal((await get(13)).effective_minutes,70,'Invalid settings never write');
@@ -71,6 +88,9 @@ const get = async id => {const r=await call(id); assert.equal(r.status,200); ret
       ex.duration={effective_minutes:60};
       const on=t.buildPrintHtml(ex,{cover:true,duration:true},draft);
       assert.match(on, /pc-sched[^>]*>前期<\/div>[\s\S]*<div class="pc-duration">時間：60分<\/div>/);
+      ex.duration.combined=true;
+      assert.match(t.buildPrintHtml(ex,{cover:true,duration:true},draft), /英数合計　60分/);
+      ex.duration.combined=false;
       assert.equal(on.replace('<div class="pc-duration">時間：60分</div>',''),plain);
       assert.doesNotMatch(t.buildPrintHtml(ex,{cover:false,duration:true},draft),/pc-duration/);
       assert.equal(t.buildPrintHtml(ex,{cover:true,duration:false},draft),plain);

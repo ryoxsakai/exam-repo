@@ -1384,3 +1384,5 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 .mode-toggle input:checked ~ .mode-toggle-state::after { content: "ON"; color: var(--emerald-dark); }
 .mode-toggle:has(input:focus-visible) { outline: 2px solid var(--emerald-dark); outline-offset: 2px; }
 .mode-toggle:has(input:disabled) { opacity: .5; cursor: default; }
+
+.uniyomi-detail { flex: 0 0 auto; white-space: nowrap; }

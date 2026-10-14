@@ -1,4 +1,4 @@
-import { handlePrintDuration, handleUniversityPrintDuration, ensurePrintDurationSchema, planUniversityPrintDurationMerge, planExamPrintDurationMerge, planExamPrintDurationMove } from "./print-duration";
+import { planUniversitySchedulePrintDurationMerge, planUniversityPrintLabelMerge, handlePrintDuration, handleUniversityPrintDuration, ensurePrintDurationSchema, planUniversityPrintDurationMerge, planExamPrintDurationMerge, planExamPrintDurationMove } from "./print-duration";
 import { printSetPlacementSchema, printSetSchema, handlePrintSets } from "./print-sets";
 import { handleMcpRoute, safeEqual, type McpEnv } from "./mcp";
 import { extractZenyakuTitle, readUniversityIndex, safeRefreshUniversityIndex, invalidateAllUniversityIndexes } from "./university-index";
@@ -291,7 +291,7 @@ async function mergeUniversityAliases(env: Env) {
 
     const durationTransfer = await planUniversityPrintDurationMerge(env.DB, src.id, dst.id);
     if (!durationTransfer) continue; // Keep conflicting defaults and both universities intact.
-    const mergeWrites = [durationTransfer];
+    const mergeWrites = [durationTransfer, planUniversityPrintLabelMerge(env.DB, src.id, dst.id), planUniversitySchedulePrintDurationMerge(env.DB, src.id, dst.id)];
     const { results: dstExams } = await env.DB.prepare(
       "SELECT year, schedule FROM exams WHERE university_id = ?"
     ).bind(dst.id).all<{ year: number; schedule: string }>();
@@ -620,6 +620,8 @@ async function mergeDuplicateUniversities(env: Env) {
       if (!durationTransfer) continue;
       await env.DB.batch([
         durationTransfer,
+        planUniversityPrintLabelMerge(env.DB, dup.id, canonical.id),
+        planUniversitySchedulePrintDurationMerge(env.DB, dup.id, canonical.id),
         env.DB.prepare("UPDATE exams SET university_id = ? WHERE university_id = ?").bind(canonical.id, dup.id),
         env.DB.prepare("DELETE FROM universities WHERE id = ?").bind(dup.id),
       ]);
@@ -1065,7 +1067,7 @@ export default {
       if (path === "/api/universities" && request.method === "GET") {
         await ensurePrintDurationSchema(env.DB);
         const { results } = await env.DB.prepare(
-          "SELECT u.*, d.minutes AS print_minutes FROM universities u LEFT JOIN university_print_durations d ON d.university_id = u.id WHERE u.hidden = 0 ORDER BY u.name ASC"
+          "SELECT u.*, d.minutes AS print_minutes, COALESCE(l.combined, 0) AS print_combined FROM universities u LEFT JOIN university_print_durations d ON d.university_id = u.id LEFT JOIN university_print_time_labels l ON l.university_id = u.id WHERE u.hidden = 0 ORDER BY u.name ASC"
         ).all();
         return json({ universities: results }, 200, origin);
       }
