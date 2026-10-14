@@ -26,3 +26,14 @@ if(process.argv.includes('--browser'))(async()=>{
  await page.screenshot({path:'/tmp/exam-double-'+width+'.png',fullPage:true});await page.locator('.exam-doc').evaluate(el=>{el.id='print-area';el.classList.add('print-out');});await page.pdf({path:'/tmp/exam-double-'+width+'.pdf',format:'A4',printBackground:true});const pdfText=require('node:child_process').execFileSync('pdftotext',['/tmp/exam-double-'+width+'.pdf','-'],{encoding:'utf8'});assert.match(pdfText,/This phrase wraps/);assert.match(pdfText,/legacy/);assert.doesNotMatch(pdfText,/::|==|##/);await page.close();
  }console.log('PASS: desktop/mobile wrapping, no overflow, screenshots and real A4 PDFs');}finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
+// An outer prose parenthesis must never become part of an underline marker.
+for (const style of ['__', '~~', '==']) {
+  for (const marker of ['(1)', '((1))', '~~(1)~~']) {
+    const html = M.render('(His research is based mainly on comparisons between Chinese, Japanese and Korean ' + marker + style + 'subjects' + style + ' on the one hand, and American subjects on the other.)').html;
+    assert.match(html, /\(His research is based mainly/);
+    assert.doesNotMatch(html, /<sub[^>]*>\(His/);
+    assert.equal((html.match(/<sub /g) || []).length, 1);
+  }
+}
+console.log('PASS: outer prose parentheses remain normal with nested adjacent markers');
