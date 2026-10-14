@@ -3223,6 +3223,7 @@
         if (row.classList.contains("tree-row-pick")) {
           $all(".tree-row-pick", box).forEach(function (x) { x.classList.remove("selected"); });
           row.classList.add("selected");
+          var previousSelection = state.printSel;
           var favId = row.getAttribute("data-favfolder");
           if (favId != null) {
             state.printSel = { kind: "favFolder", folderId: Number(favId), uni: "", year: "", sched: "" };
@@ -3232,7 +3233,7 @@
               uni: row.getAttribute("data-uni"), year: row.getAttribute("data-year"), sched: row.getAttribute("data-sched")
             };
           }
-          state.printQSel = {};
+          if (["kind", "folderId", "uni", "year", "sched"].some(function (key) { return previousSelection[key] !== state.printSel[key]; })) state.printQSel = {};
           loadPrintPreview();
           return;
         }
