@@ -7,7 +7,7 @@ try{for(const width of [1280,390]){
  const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await context.route('**/*',async route=>{const req=route.request(),u=new URL(req.url());if(u.origin!==origin)return route.fulfill({status:200,body:''});
  if(u.pathname==='/api/universities')return route.fulfill({json:{universities}});
- if(u.pathname==='/api/universities/1/print-duration'){writes++;if(fail)return route.fulfill({status:500,json:{error:'Synthetic failure'}});universities[0].print_minutes=req.postDataJSON().university_minutes;return route.fulfill({json:{university_minutes:universities[0].print_minutes}});}
+ if(u.pathname==='/api/universities/1/print-duration'){if(req.method()==='PUT'){writes++;if(fail)return route.fulfill({status:500,json:{error:'Synthetic failure'}});const b=req.postDataJSON();universities[0].print_minutes=b.university_minutes;universities[0].print_combined=b.combined?1:0;}return route.fulfill({json:{university_minutes:universities[0].print_minutes,combined:!!universities[0].print_combined,schedules:[]}});}
  const rel=u.pathname==='/setting/'?'setting/index.html':u.pathname.slice(1);let body=fs.readFileSync(path.join(root,rel));
  if(rel==='assets/js/settings.js')body=body.toString().replace(/document.addEventListener\("DOMContentLoaded", function \(\) \{[\s\S]*?\n  \}\);/, 'window.__settingsTest={loadUniYomi,saveUniYomi,rebuildSetTabs,SET_ORDER,wireUniYomi};');
  return route.fulfill({body,contentType:rel.endsWith('.html')?'text/html':rel.endsWith('.css')?'text/css':'application/javascript'});
