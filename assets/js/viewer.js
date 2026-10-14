@@ -331,6 +331,7 @@
     }
     [["pr-question-exam-break", "getPrintQuestionExamPageBreak", "setPrintQuestionExamPageBreak"],
      ["pr-answer-exam-break", "getPrintAnswerExamPageBreak", "setPrintAnswerExamPageBreak"],
+     ["pr-optimize-footnotes", "getPrintOptimizeFootnotes", "setPrintOptimizeFootnotes"],
      ["pr-optimize-answers", "getPrintOptimizeAnswers", "setPrintOptimizeAnswers"],
      ["pr-compact-commentary", "getPrintCompactCommentary", "setPrintCompactCommentary"]].forEach(function (setting) {
       var control = el(setting[0]);
@@ -2501,6 +2502,7 @@
       lineReferences: el("pr-line-refs") && el("pr-line-refs").checked,
       questionExamBreak: el("pr-question-exam-break") ? el("pr-question-exam-break").checked : false,
       answerExamBreak: el("pr-answer-exam-break") ? el("pr-answer-exam-break").checked : false,
+      optimizeFootnotes: el("pr-optimize-footnotes") ? el("pr-optimize-footnotes").checked : false,
       optimizeAnswers: el("pr-optimize-answers") ? el("pr-optimize-answers").checked : false,
       compactCommentary: el("pr-compact-commentary") ? el("pr-compact-commentary").checked : false,
       optimizeChoices: el("pr-optimize-choices") ? el("pr-optimize-choices").checked : false,
@@ -2853,6 +2855,7 @@
       (opts && opts.qBreakA ? " qbreak-a" : "") +
       (opts && opts.sBreakQ ? " sbreak-q" : "") +
       (opts && opts.sBreakA ? " sbreak-a" : "") +
+      (opts && opts.optimizeFootnotes ? " print-optimize-footnotes" : "") +
       (opts && opts.grayscale ? " print-grayscale" : "");
   }
 

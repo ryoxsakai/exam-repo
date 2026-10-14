@@ -25,3 +25,16 @@
 @media print {
   #print-area .print-answer-item { break-inside: avoid; page-break-inside: avoid; }
 }
+
+/* Keep each note together where possible; long notes wrap within the paper. */
+.print-optimize-footnotes .print-part-q .footnote-section ol {
+  display: flex; flex-wrap: wrap; column-gap: 1.5em; row-gap: .25em;
+}
+.print-optimize-footnotes .print-part-q .footnote-section li {
+  flex: 0 1 auto; max-width: 100%; min-width: 0; margin: 0;
+  box-sizing: border-box; overflow-wrap: anywhere;
+  break-inside: avoid; page-break-inside: avoid;
+}
+.print-optimize-footnotes .print-part-q .footnote-section .footnote-number {
+  flex-shrink: 0;
+}
