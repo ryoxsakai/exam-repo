@@ -139,7 +139,7 @@
         var afterBlank = rem.slice(m[0].length).replace(/^[ \t\u3000]+/, "");
         var sentenceBlank = !leadLine && sentenceEnd &&
           !(sentenceEnd[2] === "." && !sentenceEnd[3] && ABBREV.test(sentenceEnd[1])) &&
-          afterBlank && !/^[.,;:!?\]）)」』】。、！？]/.test(afterBlank);
+          afterBlank && !/^[\]）)」』】]/.test(afterBlank);
         if (sentenceBlank) out = out.replace(/(?:&nbsp;|[ \t\u3000])+$/, "") + "&nbsp;&nbsp;";
         else if (!leadLine && out && !/(?:[\s(\[{「『（【]|&nbsp;)$/.test(out)) out += " ";
         // 先頭が -- のもの（[[--]] [[----]] [[-- --]] [[--A--]] 等）は3倍幅の空欄。

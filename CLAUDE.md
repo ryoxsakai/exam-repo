@@ -310,4 +310,4 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 
 ### 文間空所の左右間隔（2026-10-15）
 
-英文の文末 `.?!`（閉じ引用符を含む）の後にある `[[A]]` 等の文挿入空所は、左右をそれぞれ `&nbsp;&nbsp;` へ正規化する。左側の文末空白と空所用空白の重複も除去。文中の通常空所・略語直後・直後が句読点・行末・括弧内は従来の間隔。保存データは変更せず表示に適用。公開パーサーは `markup-20261015blankspace.js`。検証は `test-blank-sentence-spacing.cjs --browser`（PC/mobileの左右実測とPDF）、既存markup/dash/dialogue回帰。
+英文の文末 `.?!`（閉じ引用符を含む）の後にある `[[A]]` 等の文挿入空所は、左右をそれぞれ `&nbsp;&nbsp;` へ正規化する。左側の文末空白と空所用空白の重複も除去。文頭の接続表現用空所の直後にカンマがある場合も対象。文中の通常空所・略語直後・行末・括弧内は従来の間隔。保存データは変更せず表示に適用。公開パーサーは `markup-20261015blankspace.js`。検証は `test-blank-sentence-spacing.cjs --browser`（PC/mobileの左右実測とPDF）、既存markup/dash/dialogue回帰。

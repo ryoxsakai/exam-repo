@@ -11,10 +11,11 @@ for(const text of ['End. [[A]] Next sentence.', 'End.  [[A]]  Next sentence.', '
   assert.doesNotMatch(html,/&nbsp;&nbsp; <span class="blank-badge/);
   assert.equal(M.strip(text).includes('[[A]]'),false);
 }
-for(const text of ['A [[1]] word.', 'Dr. [[A]] Smith', 'End. [[A]], next', 'End. [[A]]', '([[A]]) Next sentence.']) {
+for(const text of ['A [[1]] word.', 'Dr. [[A]] Smith', 'End. [[A]]', '([[A]]) Next sentence.']) {
   assert.doesNotMatch(M.render(text).html,/<\/span>&nbsp;&nbsp;/,text);
 }
-console.log('PASS: two equal sentence gaps, existing spaces normalized, punctuation/abbreviations/word blanks/parentheses retained');
+assert.match(M.render('End. [[A]], next sentence.').html, /&nbsp;&nbsp;<span class="blank-badge">A<\/span>&nbsp;&nbsp;, next/);
+console.log('PASS: two equal sentence gaps, existing spaces normalized, comma-followed blanks, abbreviations, word blanks and parentheses');
 if(process.argv.includes('--browser'))(async()=>{
   const {chromium}=require('../panel/node_modules/playwright');
   const browser=await chromium.launch({executablePath:process.env.PANEL_CHROMIUM||undefined});
