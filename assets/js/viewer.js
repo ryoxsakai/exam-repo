@@ -371,6 +371,8 @@
     }
     wirePrintModals();
     wireMultiPrint();
+    if (!window.Auth) { restorePrintDraft(); if (active === "print") loadPrintPreview(); }
+    window.addEventListener("pagehide", savePrintDraft);
     el("btn-print-run").addEventListener("click", runPrint);
     el("btn-print-run-2").addEventListener("click", runPrint);
 
@@ -741,8 +743,10 @@
     Auth.onChange(function (user) {
       updateAuthUI(user);
       var nextUid = user ? user.uid : null;
-      if (nextUid !== multiPrint.uid) {
-        var wasSignedIn = !!multiPrint.uid;
+      if (nextUid !== multiPrint.uid || !printDraftReady) {
+        savePrintDraft();
+        var hadPrintDraftOwner = printDraftReady;
+        printDraftReady = false;
         if (printModalSession) {
           dismissPrintModal();
           history.replaceState(Object.assign({}, history.state, {examPrintModal: null}), "");
@@ -752,10 +756,14 @@
         multiPrint.accountEpoch++; multiPrint.epoch++; multiPrint.list = [];
         multiPrint.baseline = null; setOrderBusy = false; renderSetFavorites(); renderPrintSetFavorites();
         multiPrint.id = null; multiPrint.revision = null; multiPrint.archived = false; multiPrint.busy = false;
-        if (wasSignedIn) {
+        if (hadPrintDraftOwner) {
+          state.printSel = {kind: "exam", uni: "", year: "", sched: "", folderId: null};
+          state.printExam = null;
+          state.printTitleDrafts = {}; state.printTitleSizeDrafts = {}; state.printTitleColorDrafts = {};
           multiPrint.ids = []; multiPrint.name = ""; multiPrint.cover = {lines: ["", "印刷セット", ""], time: ""};
           state.printQSel = {}; multiPrint.questionSelection = {};
         }
+        restorePrintDraft();
         if (el("pr-set-list")) el("pr-set-list").innerHTML = "";
         if (multiPrint.enabled) { loadMultiPrint(); refreshPrintSets(); }
       }
@@ -770,7 +778,7 @@
       // 印刷タブを開いていれば、ツリー冒頭の「お気に入り」ノードを作り直す
       var printTabBtn = $('.tab[data-tab="print"].active', el("main-tabs"));
       if (printTabBtn) {
-        ensureFavoritesLoaded().catch(function () {}).then(function () { loadPrintTree(true); });
+        ensureFavoritesLoaded().catch(function () {}).then(function () { loadPrintTree(true); loadPrintPreview(); });
       }
     });
   }
@@ -3215,6 +3223,7 @@
         if (row.classList.contains("tree-row-pick")) {
           $all(".tree-row-pick", box).forEach(function (x) { x.classList.remove("selected"); });
           row.classList.add("selected");
+          var previousSelection = state.printSel;
           var favId = row.getAttribute("data-favfolder");
           if (favId != null) {
             state.printSel = { kind: "favFolder", folderId: Number(favId), uni: "", year: "", sched: "" };
@@ -3224,6 +3233,7 @@
               uni: row.getAttribute("data-uni"), year: row.getAttribute("data-year"), sched: row.getAttribute("data-sched")
             };
           }
+          if (["kind", "folderId", "uni", "year", "sched"].some(function (key) { return previousSelection[key] !== state.printSel[key]; })) state.printQSel = {};
           loadPrintPreview();
           return;
         }
@@ -3239,6 +3249,63 @@
   // A print set is a draft of stable exam IDs, independent of favorite questions.
   var multiPrint = {enabled: false, ids: [], cover: {lines: ["", "印刷セット", ""], time: ""}, name: "", id: null, revision: null, archived: false, questionSelection: {}, catalog: {}, list: [], epoch: 0, accountEpoch: 0, listEpoch: 0, loading: false, busy: false, error: ""};
   var printRenderRevision = 0, printPreparing = false;
+
+  // Save only choices and drafts; question bodies and durations are fetched anew.
+  var printDraftReady = false;
+  function printDraftKey() {
+    return "exam_print_draft_v1:" + encodeURIComponent(Store.getWorkerUrl() || "") + ":" + (multiPrint.uid || "anonymous");
+  }
+  function savePrintDraft() {
+    if (!printDraftReady) return;
+    try {
+      localStorage.setItem(printDraftKey(), JSON.stringify({version: 1,
+        selection: state.printSel, questions: state.printQSel, coverEnabled: el("pr-cover").checked,
+        titles: state.printTitleDrafts || {}, sizes: state.printTitleSizeDrafts || {}, colors: state.printTitleColorDrafts || {},
+        multi: {enabled: multiPrint.enabled, ids: multiPrint.ids, cover: multiPrint.cover, name: multiPrint.name,
+          id: multiPrint.id, revision: multiPrint.revision, archived: multiPrint.archived,
+          questionSelection: multiPrint.questionSelection, baseline: multiPrint.baseline || null}
+      }));
+    } catch (e) { /* Storage may be disabled or full; printing remains available. */ }
+  }
+  function restorePrintDraft() {
+    printDraftReady = true;
+    try {
+      var draft = JSON.parse(localStorage.getItem(printDraftKey()));
+      if (!draft || draft.version !== 1 || !draft.selection || !draft.multi) return;
+      var sel = draft.selection, m = draft.multi;
+      if (["exam", "favFolder"].indexOf(sel.kind) < 0 || !Array.isArray(m.ids) || !m.cover || !Array.isArray(m.cover.lines)) return;
+      state.printSel = {kind: sel.kind, uni: String(sel.uni || ""), year: String(sel.year || ""), sched: String(sel.sched || ""), folderId: Number(sel.folderId) || null};
+      function choices(value) {
+        var out = {};
+        if (value && typeof value === "object" && !Array.isArray(value)) Object.keys(value).forEach(function (key) {
+          if (/^\d+(?::\d+)?$/.test(key) && typeof value[key] === "boolean") out[key] = value[key];
+        });
+        return out;
+      }
+      state.printQSel = choices(draft.questions);
+      if (typeof draft.coverEnabled === "boolean") el("pr-cover").checked = draft.coverEnabled;
+      if (el("pr-name-field")) el("pr-name-field").disabled = !el("pr-cover").checked;
+      ["titles", "sizes", "colors"].forEach(function (key, i) {
+        var value = draft[key], out = {};
+        if (value && typeof value === "object") Object.keys(value).forEach(function (id) {
+          if (/^(?:exam-)?\d+$/.test(id) && Array.isArray(value[id])) out[id] = value[id].slice(0, 20);
+        });
+        state[["printTitleDrafts", "printTitleSizeDrafts", "printTitleColorDrafts"][i]] = out;
+      });
+      multiPrint.enabled = m.enabled === true;
+      multiPrint.ids = m.ids.filter(function (id, i, ids) { return Number.isSafeInteger(id) && id > 0 && ids.indexOf(id) === i; }).slice(0, 100);
+      multiPrint.cover = {lines: m.cover.lines.slice(0, 20).map(function (line) { return String(line).slice(0, 120); }), time: String(m.cover.time || "").slice(0, 120)};
+      ["sizes", "colors"].forEach(function (key) { if (Array.isArray(m.cover[key])) multiPrint.cover[key] = m.cover[key].slice(0, 20); });
+      multiPrint.name = String(m.name || "");
+      multiPrint.id = typeof m.id === "string" ? m.id : null;
+      multiPrint.revision = Number.isSafeInteger(m.revision) && m.revision > 0 ? m.revision : null;
+      multiPrint.archived = m.archived === true;
+      multiPrint.questionSelection = choices(m.questionSelection);
+      multiPrint.baseline = typeof m.baseline === "string" ? m.baseline : null;
+      if (multiPrint.enabled) state.printQSel = Object.assign({}, multiPrint.questionSelection);
+      el("pr-multi").checked = multiPrint.enabled;
+    } catch (e) { /* Ignore damaged or incompatible drafts. */ }
+  }
 
   function multiPayload() {
     var questions = {};
@@ -3422,6 +3489,7 @@
     node.textContent = questions.length ? questions.filter(isPrintQ).length + " / " + questions.length + "問" : "未選択";
   }
   function renderMultiControls() {
+    savePrintDraft();
     var panel = el("pr-set-modal");
     if (!panel) return;
     renderPrintSetFavorites();
@@ -3491,6 +3559,7 @@
     renderMultiControls();
   }
   function loadMultiPrint() {
+    savePrintDraft();
     var token = ++multiPrint.epoch, ids = multiPrint.ids.slice();
     state.printExam = null;
     multiPrint.error = "";
@@ -3680,13 +3749,14 @@
   }
 
   function loadPrintPreview() {
+    savePrintDraft();
     if (multiPrint.enabled) { loadMultiPrint(); return; }
     if (!Store.getWorkerUrl()) { el("print-preview").innerHTML = noWorkerHtml(); return; }
     var sel = state.printSel || {};
     state.printExam = null;
     renderPrintDurationSettings();
     if (sel.kind === "favFolder" && sel.folderId != null) {
-      loadPrintFavFolder(Number(sel.folderId));
+      loadPrintFavFolder(Number(sel.folderId), true);
       return;
     }
     var year = sel.year, uni = sel.uni, sched = sel.sched;
@@ -3720,9 +3790,10 @@
         });
         state.printExam = { kind: "exam", id: exams[0].id, duration: results[1], year: year, university_name: uni, schedule: sched, questions: questions };
         renderPrintDurationSettings();
-        // 大問選択を初期化（既定で全大問を印刷対象に）
+        // Restore existing choices for this target; new questions default to selected.
+        var previous = state.printQSel;
         state.printQSel = {};
-        questions.forEach(function (q) { state.printQSel[printQKey(q)] = true; });
+        questions.forEach(function (q) { var key = printQKey(q); state.printQSel[key] = previous[key] !== false; });
         renderPrintSectionControls();
         renderPrintPreview();
       });
@@ -3733,6 +3804,7 @@
   }
 
   function renderPrintPreview() {
+    savePrintDraft();
     printRenderRevision++;
     updatePrintDurationAvailability();
     renderPrintQuestionSummary();
@@ -3782,6 +3854,7 @@
           if (index === "time") multiPrint.cover.time = text;
           else multiPrint.cover.lines[Number(index)] = text;
           state.printExam.cover = multiPayload().cover;
+          savePrintDraft();
           multiPrint.error = ""; printRenderRevision++; renderMultiControls();
           return;
         }
@@ -3790,6 +3863,7 @@
           lines[Number(item.getAttribute("data-line"))] = (item.textContent || "").trim();
         });
         state.printTitleDrafts[String(folderId)] = lines;
+        savePrintDraft();
         var save = el("print-preview").querySelector('[data-print-title-save="' + folderId + '"]');
         if (save) save.hidden = false;
       }
