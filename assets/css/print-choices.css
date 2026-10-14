@@ -38,3 +38,6 @@
 .print-optimize-footnotes .print-part-q .footnote-section .footnote-number {
   flex-shrink: 0;
 }
+
+/* Answer sequences such as [E]-[B] are not paragraph prefixes. */
+.print-answer-text .para-badge { margin-right: 0; }
