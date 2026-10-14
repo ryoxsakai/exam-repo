@@ -2126,7 +2126,18 @@
         var match = part.match(marker), body = match && match[2].trim();
         return body && body.length <= 80 && !/[.!?。！？](?:\s|$)/.test(body) && !/\{\{/.test(body);
       });
-      return result.concat(compactList ? parts : line);
+            // Full-width spaces are the stored separator for answer entries. Keep
+      // ordinary sentence references (separated by an ASCII space) inline.
+      var mixedList = parts.length > 1 && /　+\{\{/.test(line) && parts.every(function (part, i) {
+        var match = part.match(marker);
+        if (!match || !match[2].trim()) return false;
+        if (!i) return true;
+        var previous = parts[i - 1].match(marker);
+        var number = Number(match[1].replace(/^問/, ""));
+        var prevNumber = Number(previous[1].replace(/^問/, ""));
+        return number === prevNumber + 1;
+      });
+      return result.concat(compactList || mixedList ? parts : line);
     }, []);
     lines.forEach(function (line) {
       var match = line.match(marker);
@@ -2141,15 +2152,18 @@
     })) return Markup.render(text, options).html;
     var prefix = preamble.join("\n").trim();
     var html = prefix ? Markup.render(prefix, options).html : "";
-    html += '<div class="print-answer-group">';
+    var groupOpen = false;
     entries.forEach(function (entry) {
       var body = entry.lines.join("\n").trim();
-      var long = body.split("\n").filter(function (line) { return line.trim(); }).length > 1;
+      var long = body.length > 80 || body.split("\n").filter(function (line) { return line.trim(); }).length > 1 || /\|.*\||!\[/.test(body);
+      if (long && groupOpen) { html += "</div>"; groupOpen = false; }
+      if (!groupOpen) { html += '<div class="print-answer-group">'; groupOpen = true; }
       html += '<div class="print-answer-item' + (long ? ' print-answer-long' : '') + '">' +
         '<span class="question-badge">' + esc(entry.label) + '</span>' +
         '<div class="print-answer-text">' + Markup.render(body, options).html + '</div></div>';
+      if (long) { html += '</div>'; groupOpen = false; }
     });
-    return html + '</div>';
+    return html + (groupOpen ? "</div>" : "");
   }
 
   function printField(label, text, opts, dialogueSource) {

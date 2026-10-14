@@ -55,7 +55,7 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   const baseline=await page.locator('#print-preview .print-part-a').innerHTML();
   const questionBaseline=await page.locator('#print-preview .print-part-q').innerHTML();
   await page.locator('#pr-optimize-answers').check();
-  assert.equal(await page.locator('#print-preview .print-answer-group').count(),2);
+  assert.equal(await page.locator('#print-preview .print-answer-group').count(),3);
   assert.equal(await page.locator('#print-preview .print-part-q').innerHTML(),questionBaseline);
   assert.equal(await page.locator('#print-preview .print-answer-item').count(),6);
   assert.equal(await page.locator('#print-preview .print-answer-group').nth(1).getAttribute('data-columns'),'1');
@@ -74,7 +74,7 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   assert.equal(await page.locator('#pr-optimize-answers').isChecked(),true);assert.equal(await page.locator('#pr-compact-commentary').isChecked(),true);
   await page.evaluate(()=>__answersTest.runPrint());await page.waitForFunction(()=>window.__prints===1);
   assert.equal(await page.locator('#print-area .footnote-section ol').first().evaluate(e=>getComputedStyle(e).display),'flex');
-  assert.equal(await page.locator('#print-area .print-answer-group').count(),2);
+  assert.equal(await page.locator('#print-area .print-answer-group').count(),3);
   assert.equal(await page.locator('#print-area .print-answer-group').first().getAttribute('data-columns'),'2');
   await page.emulateMedia({media:'print'});
   const rows=await page.locator('#print-area .print-answer-group').first().locator('.print-answer-item').evaluateAll(items=>items.map(x=>({x:x.getBoundingClientRect().left,y:x.getBoundingClientRect().top})));

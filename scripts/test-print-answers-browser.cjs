@@ -33,6 +33,12 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   const page=await context.newPage();page.setDefaultTimeout(15000);
   const load=async()=>{await page.goto(origin,{waitUntil:'networkidle'});await page.waitForFunction(()=>window.__answersTest?.state.config!==null);await page.evaluate(exam=>{const t=__answersTest;t.state.printSel={kind:'exam',uni:exam.university_name,year:String(exam.year),sched:exam.schedule};t.loadPrintPreview();},exam);await page.waitForFunction(()=>__answersTest.state.printExam?.id===11);await page.locator('#pr-settings-open').click();};
   await load();
+  const mixed=await page.evaluate(()=>{
+    const text='{{1}}((a))　{{2}} ア-((c)) イ-((b))　{{3}} I-((c)) II-((a))　{{4}} '+ '長い日本語の記述解答です。'.repeat(12)+'　{{5}} 全訳下線部参照。　{{6}} (1)-((a)) (2)-((b))';
+    const d=document.createElement('div');d.innerHTML=__answersTest.printField('解答',text,{optimizeAnswers:true});
+    return {labels:[...d.querySelectorAll('.print-answer-item > .question-badge')].map(e=>e.textContent),groups:[...d.querySelectorAll('.print-answer-group')].map(e=>e.children.length),long:d.querySelectorAll('.print-answer-long').length};
+  });
+  assert.deepEqual(mixed,{labels:['1','2','3','4','5','6'],groups:[3,1,2],long:1});
   const edgeCases=await page.evaluate(()=>{
    const t=__answersTest;
    const fallback=['{{1}}\n\n{{2}} B','{{見出し}}\nA paragraph.','{{1}} A\n{{補足}} More text'];
@@ -49,7 +55,7 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   const baseline=await page.locator('#print-preview .print-part-a').innerHTML();
   const questionBaseline=await page.locator('#print-preview .print-part-q').innerHTML();
   await page.locator('#pr-optimize-answers').check();
-  assert.equal(await page.locator('#print-preview .print-answer-group').count(),2);
+  assert.equal(await page.locator('#print-preview .print-answer-group').count(),3);
   assert.equal(await page.locator('#print-preview .print-part-q').innerHTML(),questionBaseline);
   assert.equal(await page.locator('#print-preview .print-answer-item').count(),6);
   assert.equal(await page.locator('#print-preview .print-answer-group').nth(1).getAttribute('data-columns'),'1');
@@ -66,7 +72,7 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   await page.locator('#pr-optimize-answers').check();await page.locator('#pr-compact-commentary').check();await load();
   assert.equal(await page.locator('#pr-optimize-answers').isChecked(),true);assert.equal(await page.locator('#pr-compact-commentary').isChecked(),true);
   await page.evaluate(()=>__answersTest.runPrint());await page.waitForFunction(()=>window.__prints===1);
-  assert.equal(await page.locator('#print-area .print-answer-group').count(),2);
+  assert.equal(await page.locator('#print-area .print-answer-group').count(),3);
   assert.equal(await page.locator('#print-area .print-answer-group').first().getAttribute('data-columns'),'2');
   await page.emulateMedia({media:'print'});
   const rows=await page.locator('#print-area .print-answer-group').first().locator('.print-answer-item').evaluateAll(items=>items.map(x=>({x:x.getBoundingClientRect().left,y:x.getBoundingClientRect().top})));
