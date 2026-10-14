@@ -49,6 +49,7 @@ jobs:
           node scripts/test-university-duration-details-browser.cjs
           node scripts/test-print-choices.cjs
           node scripts/test-print-answers-browser.cjs
+          node scripts/test-print-local-resume-browser.cjs
           node scripts/test-print-sets-browser.cjs
           node scripts/test-print-name-field.cjs --browser
           node scripts/test-print-duration-browser.cjs
