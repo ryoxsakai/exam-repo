@@ -329,6 +329,15 @@
         renderPrintPreview();
       });
     }
+    var pageNumberStyle = el("pr-page-number-style");
+    pageNumberStyle.value = Store.getPrintPageNumberStyle();
+    pageNumberStyle.disabled = !el("pr-page-numbers").checked;
+    pageNumberStyle.addEventListener("change", function () {
+      Store.setPrintPageNumberStyle(pageNumberStyle.value); renderPrintPreview();
+    });
+    el("pr-page-numbers").addEventListener("change", function () {
+      pageNumberStyle.disabled = !el("pr-page-numbers").checked;
+    });
     [["pr-answer-left", "getPrintAnswerLeft", "setPrintAnswerLeft"],
      ["pr-page-numbers", "getPrintPageNumbers", "setPrintPageNumbers"],
      ["pr-question-exam-break", "getPrintQuestionExamPageBreak", "setPrintQuestionExamPageBreak"],
@@ -339,6 +348,7 @@
       var control = el(setting[0]);
       if (!control) return;
       control.checked = Store[setting[1]]();
+      if (setting[0] === "pr-page-numbers") pageNumberStyle.disabled = !control.checked;
       control.addEventListener("change", function () {
         Store[setting[2]](control.checked); renderPrintPreview();
       });
@@ -2512,6 +2522,7 @@
     return {
       answerLeft: el("pr-answer-left").checked,
       pageNumbers: el("pr-page-numbers").checked,
+      pageNumberStyle: Store.getPrintPageNumberStyle(),
       cover: el("pr-cover").checked,
       duration: el("pr-duration") ? el("pr-duration").checked : false,
       nameField: el("pr-name-field") ? el("pr-name-field").checked : false,

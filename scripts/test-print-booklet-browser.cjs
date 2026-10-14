@@ -34,10 +34,15 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   const load=async()=>{await page.goto(origin,{waitUntil:'networkidle'});await page.waitForFunction(()=>window.__answersTest?.state.config!==null);await page.evaluate(exam=>{const t=__answersTest;t.state.printSel={kind:'exam',uni:exam.university_name,year:String(exam.year),sched:exam.schedule};t.loadPrintPreview();},exam);await page.waitForFunction(()=>__answersTest.state.printExam?.id===11);await page.locator('#pr-settings-open').click();};
   await load();
   await page.locator('#pr-answer-left').check();
+  assert.equal(await page.locator('#pr-page-number-style').isDisabled(),true);
   await page.locator('#pr-page-numbers').check();
+  assert.equal(await page.locator('#pr-page-number-style').isEnabled(),true);
+  await page.locator('#pr-page-number-style').selectOption('total');
   await load();
   assert.equal(await page.locator('#pr-answer-left').isChecked(),true);
   assert.equal(await page.locator('#pr-page-numbers').isChecked(),true);
+  assert.equal(await page.locator('#pr-page-number-style').inputValue(),'total');
+  assert.equal(await page.locator('#pr-page-number-style').isEnabled(),true);
   await page.evaluate(()=>{
     const original=PrintBooklet.prepare;
     PrintBooklet.prepare=async(...args)=>{const frame=await original(...args);frame.contentWindow.print=()=>window.__prints=(window.__prints||0)+1;return frame;};
@@ -47,6 +52,19 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   assert.equal(await page.locator('#print-area.answer-left.print-page-numbers').count(),1);
   // Exercise native pagination using the production stylesheet and output selectors.
   const pdfPage=await context.newPage();
+  // Every requested style uses the same physical pages, including inserted blanks.
+  for(const style of ['plain','hyphen','wide-hyphen','total']) {
+    const result=await page.evaluate(async style=>{
+      const frame=await PrintBooklet.prepare(document.querySelector('#print-area'),{answerLeft:true,pageNumbers:true,pageNumberStyle:style});
+      const pages=[...frame.contentDocument.querySelectorAll('.pagedjs_page')];
+      return {total:pages.length-1,folios:pages.map((p,i)=>({number:i,text:p.querySelector('.booklet-folio')?.textContent,blank:p.classList.contains('pagedjs_blank_page')}))};
+    },style);
+    assert.equal(result.folios[0].text,undefined);
+    for(const f of result.folios.slice(1)) {
+      if(f.blank){assert.equal(f.text,undefined);continue;}
+      assert.equal(f.text,style==='hyphen'?'- '+f.number+' -':style==='wide-hyphen'?'－ '+f.number+' －':style==='total'?f.number+' / '+result.total:String(f.number));
+    }
+  }
   // Real rendered questions/answers, plus naturally flowing multi-page text.
   const original=await page.evaluate(async()=>{
     const area=document.querySelector('#print-area');

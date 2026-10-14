@@ -26,6 +26,7 @@
     printSections: "exam_print_sections",    // 印刷対象セクション {種別: bool}（全問題で共有）
     printDuration: "exam_print_duration",
     printAnswerLeft: "exam_print_answer_left",
+    printPageNumberStyle: "exam_print_page_number_style",
     printPageNumbers: "exam_print_page_numbers",
     printNameField: "exam_print_name_field", // 印刷の表紙右下に氏名記入欄を追加する
     printHideLabels: "exam_print_hide_labels", // 印刷時に「問題」「本文」「設問」のセクション名を出さない
@@ -377,6 +378,13 @@
     setPrintQuestionExamPageBreak: function (on) { write(KEYS.printQuestionExamPageBreak, !!on); },
     getPrintAnswerLeft: function () { return read(KEYS.printAnswerLeft, false) === true; },
     setPrintAnswerLeft: function (on) { write(KEYS.printAnswerLeft, !!on); },
+    getPrintPageNumberStyle: function () {
+      var value = read(KEYS.printPageNumberStyle, "plain");
+      return ["plain", "hyphen", "wide-hyphen", "total"].indexOf(value) >= 0 ? value : "plain";
+    },
+    setPrintPageNumberStyle: function (value) {
+      write(KEYS.printPageNumberStyle, ["plain", "hyphen", "wide-hyphen", "total"].indexOf(value) >= 0 ? value : "plain");
+    },
     getPrintPageNumbers: function () { return read(KEYS.printPageNumbers, false) === true; },
     setPrintPageNumbers: function (on) { write(KEYS.printPageNumbers, !!on); },
     getPrintAnswerExamPageBreak: function () { return read(KEYS.printAnswerExamPageBreak, false) === true; },

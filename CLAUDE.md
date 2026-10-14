@@ -297,3 +297,5 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 どちらかONの場合だけ `print-booklet.js` がローカル同梱 Paged.js 0.4.3（MIT）を独立iframeへ読み込み、フォント・画像確定後にA4ページ割りを生成して印刷する。両方OFFは従来のネイティブ印刷。番号は物理ページ配置とは独立。ブラウザの `break-before:left` 単独では白紙を挿入できないため、CSSだけの実装に戻さない。画面プレビューは従来の連続表示。
 
 検証: `PANEL_CHROMIUM=/path/to/chromium PLAYWRIGHT_MODULE=playwright node scripts/test-print-booklet-browser.cjs`。PC/mobile、設定再読込、実印刷経路、表紙有無・問題0〜3ページ・単一/セット・番号ON/OFFの128通りの実PDFと350文の自然改ページで欠落・番号・物理偶数開始を確認。PDFは `/tmp/exam-booklet-*.pdf`。
+
+ページ番号の表記は「1」「- 1 -」「－ 1 －」「1 / n」から選択可能。`exam_print_page_number_style` に保存し未設定・不正値はplain。番号OFF時は選択欄を無効化し値は保持。分母は表紙だけを除外した物理ページ数（白紙も含む）で、白紙には番号を印字しない。

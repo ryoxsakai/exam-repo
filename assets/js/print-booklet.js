@@ -87,7 +87,11 @@
         if (!opts.pageNumbers || (hasCover && index === 0) || page.classList.contains("pagedjs_blank_page")) return;
         var folio = doc.createElement("div");
         folio.className = "booklet-folio";
-        folio.textContent = String(index + 1 - (hasCover ? 1 : 0));
+        var number = String(index + 1 - (hasCover ? 1 : 0));
+        if (opts.pageNumberStyle === "hyphen") number = "- " + number + " -";
+        else if (opts.pageNumberStyle === "wide-hyphen") number = "－ " + number + " －";
+        else if (opts.pageNumberStyle === "total") number += " / " + (pages.length - (hasCover ? 1 : 0));
+        folio.textContent = number;
         page.appendChild(folio);
       });
       var outputStyle = doc.createElement("style");

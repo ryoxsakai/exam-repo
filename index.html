@@ -218,6 +218,15 @@
             <input type="checkbox" id="pr-name-field"> <span>氏名欄を追加</span></label>
           <label class="check-inline" title="表紙には番号を付けず、表紙の次を1としてページ下部に表示します。表紙なしの場合は最初から1です。">
             <input type="checkbox" id="pr-page-numbers"> <span>表紙の次からページ番号を付ける</span></label>
+          <label class="field" for="pr-page-number-style"><span>ページ番号の表記</span>
+            <select id="pr-page-number-style" aria-describedby="pr-page-number-style-hint">
+              <option value="plain">1</option>
+              <option value="hyphen">- 1 -</option>
+              <option value="wide-hyphen">－ 1 －</option>
+              <option value="total">1 / n</option>
+            </select>
+          </label>
+          <p class="hint" id="pr-page-number-style-hint">nは表紙を除く総ページ数です。挿入した白紙も数えます。</p>
           <h4>見出しと改ページ</h4>
           <label class="check-inline" title="左綴じ冊子の左ページ（表紙を含めた偶数ページ）から解答を開始します。必要な白紙は自動挿入します。表示するページ番号とは独立して判定します。">
             <input type="checkbox" id="pr-answer-left"> <span>解答を左ページから開始（冊子印刷）</span></label>
@@ -505,7 +514,7 @@
   <!-- Firebase Authentication（Googleログイン用。Firestore等は未使用） -->
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="assets/js/store.js?v=20261015booklet"></script>
+  <script src="assets/js/store.js?v=20261015folio"></script>
   <script src="assets/js/auth.js?v=20260706a"></script>
   <script src="assets/js/api.js?v=20261014combined"></script>
   <script src="assets/js/ui.js?v=20260726a"></script>
@@ -513,8 +522,8 @@
   <script src="assets/js/corpus.js?v=20260613j"></script>
   <script src="assets/js/difficulty.js?v=20260923a"></script>
   <script src="assets/js/onboarding.js?v=20260722a"></script>
-  <script src="assets/js/print-booklet.js?v=20261015booklet"></script>
-  <script src="assets/js/viewer.js?v=20261015booklet"></script>
+  <script src="assets/js/print-booklet.js?v=20261015folio"></script>
+  <script src="assets/js/viewer.js?v=20261015folio"></script>
   <script src="assets/js/webmcp.js?v=20260826a"></script>
 </body>
 </html>
