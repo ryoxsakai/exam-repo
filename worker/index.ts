@@ -407,26 +407,34 @@ async function ensureUserSettingsPrintTitlesColumn(env: Env) {
 // 後方互換マイグレーションは isolate ごとに一度だけ実行する。
 // 全件走査を伴う修復は通常アクセスから分離し、認証済みの管理APIからのみ実行する。
 // ───────────────────────────────────────────────────────────────────
-let migrationsDone = false;
-
-async function ensureMigrations(env: Env) {
-  if (migrationsDone) return;
-  await ensureCategoryColumn(env);
-  await ensureLabelColumn(env);
-  await ensureUniversityReadingColumn(env);
-  await ensureUniversityAbbreviationColumn(env);
-  await ensureUniversityHiddenColumn(env);
-  await ensureFavoritesTable(env);
-  await ensureFavoriteCopiesTable(env);
-  await ensureFavoriteFoldersTable(env);
-  await ensureFavoriteFolderKindColumn(env);
-  await ensureFavoriteFolderColumns(env);
-  await env.DB.prepare(printSetSchema).run();
-  await env.DB.prepare(printSetPlacementSchema).run();
-  await ensureUserSettingsTable(env);
-  await ensureUserSettingsPrintTitlesColumn(env);
-  await dropUnusedIndexes(env);
-  migrationsDone = true;
+// Share initialization across simultaneous requests in the same Worker isolate.
+const migrationTasks = new WeakMap<object, Promise<void>>();
+function ensureMigrations(env: Env): Promise<void> {
+  let task = migrationTasks.get(env.DB);
+  if (!task) {
+    task = (async () => {
+      await ensureCategoryColumn(env);
+      await ensureLabelColumn(env);
+      await ensureUniversityReadingColumn(env);
+      await ensureUniversityAbbreviationColumn(env);
+      await ensureUniversityHiddenColumn(env);
+      await ensureFavoritesTable(env);
+      await ensureFavoriteCopiesTable(env);
+      await ensureFavoriteFoldersTable(env);
+      await ensureFavoriteFolderKindColumn(env);
+      await ensureFavoriteFolderColumns(env);
+      await env.DB.prepare(printSetSchema).run();
+      await env.DB.prepare(printSetPlacementSchema).run();
+      await ensureUserSettingsTable(env);
+      await ensureUserSettingsPrintTitlesColumn(env);
+      await dropUnusedIndexes(env);
+    })().catch(err => {
+      migrationTasks.delete(env.DB);
+      throw err;
+    });
+    migrationTasks.set(env.DB, task);
+  }
+  return task;
 }
 
 async function runRepairs(env: Env) {
@@ -1048,8 +1056,27 @@ export default {
         return json(result.body, result.status, origin);
       }
 
-      // 後方互換マイグレーションのみ通常アクセスで確認する。
-      await ensureMigrations(env);
+      // ── GET /api/exams/:id ─────────────────────────────────────────
+      const readExamMatch = path.match(/^\/api\/exams\/(\d+)$/);
+      if (readExamMatch && request.method === "GET") {
+        const examId = Number(readExamMatch[1]);
+
+        const examRow = await env.DB.prepare(`
+          SELECT e.id, e.year, e.schedule, e.created_at,
+                 u.name AS university_name
+          FROM exams e
+          JOIN universities u ON e.university_id = u.id
+          WHERE e.id = ?
+        `).bind(examId).first();
+
+        if (!examRow) return json({ error: "Exam not found" }, 404, origin);
+
+        const { results: questions } = await env.DB.prepare(
+          "SELECT * FROM questions WHERE exam_id = ? ORDER BY question_number ASC"
+        ).bind(examId).all();
+
+        return json({ exam: { ...examRow, questions } }, 200, origin);
+      }
 
       const durationMatch = path.match(/^\/api\/exams\/(\d+)\/print-duration$/);
       if (durationMatch) {
@@ -1062,6 +1089,9 @@ export default {
         const result = await handleUniversityPrintDuration(request, env.DB, Number(universityDurationMatch[1]));
         return json(result.body, result.status, origin);
       }
+
+      // Printing reads above do not depend on favorites or other legacy schemas.
+      await ensureMigrations(env);
 
       // ── GET /api/universities ──────────────────────────────────────
       if (path === "/api/universities" && request.method === "GET") {
@@ -1420,27 +1450,6 @@ export default {
         await safeRefreshUniversityIndex(env, targetUniId);
         if (existing.university_id !== targetUniId) await safeRefreshUniversityIndex(env, existing.university_id);
         return json({ exam: updated, merged }, 200, origin);
-      }
-
-      // ── GET /api/exams/:id ─────────────────────────────────────────
-      if (examIdMatch && request.method === "GET") {
-        const examId = Number(examIdMatch[1]);
-
-        const examRow = await env.DB.prepare(`
-          SELECT e.id, e.year, e.schedule, e.created_at,
-                 u.name AS university_name
-          FROM exams e
-          JOIN universities u ON e.university_id = u.id
-          WHERE e.id = ?
-        `).bind(examId).first();
-
-        if (!examRow) return json({ error: "Exam not found" }, 404, origin);
-
-        const { results: questions } = await env.DB.prepare(
-          "SELECT * FROM questions WHERE exam_id = ? ORDER BY question_number ASC"
-        ).bind(examId).all();
-
-        return json({ exam: { ...examRow, questions } }, 200, origin);
       }
 
       // ── GET /api/corpus ────────────────────────────────────────────
@@ -1970,6 +1979,11 @@ export default {
       return json({ error: "Not found" }, 404, origin);
     } catch (err) {
       console.error("Worker error:", err);
+      if (/D1 DB is overloaded|Requests queued for too long|SQLITE_BUSY|database is locked/i.test(String(err))) {
+        const response = json({ error: "データベースが混み合っています。少し待って再読込してください。" }, 503, origin);
+        response.headers.set("Retry-After", "1");
+        return response;
+      }
       return json({ error: "Internal server error", message: String(err) }, 500, origin);
     }
   },

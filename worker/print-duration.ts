@@ -16,8 +16,17 @@ const schema = [
     minutes INTEGER NOT NULL CHECK (minutes BETWEEN 1 AND 1440))`,
 ];
 
-export async function ensurePrintDurationSchema(db: any) {
-  await db.batch(schema.map(sql => db.prepare(sql)));
+const schemaTasks = new WeakMap<object, Promise<void>>();
+export function ensurePrintDurationSchema(db: any): Promise<void> {
+  let task = schemaTasks.get(db);
+  if (!task) {
+    task = Promise.resolve().then(() => db.batch(schema.map(sql => db.prepare(sql)))).then(() => {}).catch(err => {
+      schemaTasks.delete(db);
+      throw err;
+    });
+    schemaTasks.set(db, task);
+  }
+  return task;
 }
 
 export function planUniversitySchedulePrintDurationMerge(db: any, sourceId: number, targetId: number) {

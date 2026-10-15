@@ -3594,6 +3594,19 @@
     }); });
     renderMultiControls();
   }
+  // Keep print fetches bounded; superseded selections stop scheduling more reads.
+  async function loadPrintExams(ids, load, isCurrent) {
+    var next = 0, results = new Array(ids.length), failed = false;
+    async function run() {
+      while (!failed && isCurrent() && next < ids.length) {
+        var index = next++;
+        try { results[index] = await load(ids[index]); }
+        catch (e) { failed = true; throw e; }
+      }
+    }
+    await Promise.all([run(), run()]);
+    return results;
+  }
   function loadMultiPrint() {
     savePrintDraft();
     var token = ++multiPrint.epoch, ids = multiPrint.ids.slice();
@@ -3604,7 +3617,7 @@
     renderMultiControls(); renderPrintDurationSettings(); renderPrintSectionControls();
     el("print-preview").innerHTML = '<div class="card">' + (ids.length ? "選択試験を読み込み中…" : "ツリーから試験を選択してください。") + '</div>';
     if (!ids.length) return Promise.resolve();
-    return Promise.all(ids.map(function (id) {
+    return loadPrintExams(ids, function (id) {
       return Promise.all([Api.getExam(id), Api.getPrintDuration(id)]).then(function (results) {
         var r = results[0], duration = results[1];
         if (Number(duration.exam_id) !== id) throw new Error("試験時間の対象が一致しません");
@@ -3616,7 +3629,7 @@
         });
         return Object.assign({}, r.exam, {duration: duration});
       }).catch(function (e) { throw new Error("試験ID " + id + "：" + e.message + "。印刷を停止しました。選択を見直すか再読込してください。"); });
-    })).then(function (exams) {
+    }, function () { return token === multiPrint.epoch && multiPrint.enabled; }).then(function (exams) {
       if (token !== multiPrint.epoch || !multiPrint.enabled) return;
       var questions = [];
       exams.forEach(function (ex) {

@@ -12,20 +12,22 @@
   }
 
   async function call(path, options) {
-    var res;
-    try {
-      res = await fetch(base() + path, Object.assign({
-        headers: { "Content-Type": "application/json" }
-      }, options || {}));
-    } catch (e) {
-      throw new Error("通信に失敗しました（Worker URL や CORS 設定を確認してください）。");
-    }
-    if (!res.ok) {
+    var url = base() + path;
+    var settings = Object.assign({ headers: { "Content-Type": "application/json" } }, options || {});
+    var canRetry = (settings.method || "GET").toUpperCase() === "GET";
+    for (var attempt = 0; ; attempt++) {
+      var res;
+      try { res = await fetch(url, settings); }
+      catch (e) { throw new Error("通信に失敗しました（Worker URL や CORS 設定を確認してください）。"); }
+      if (res.ok) return res.json();
       var data = {};
       try { data = await res.json(); } catch (e) {}
-      throw new Error(data.message || data.error || ("APIエラー " + res.status));
+      var message = data.message || data.error || ("APIエラー " + res.status);
+      var busy = res.status === 503 || res.status === 429 ||
+        (res.status === 500 && /D1 DB is overloaded|Requests queued for too long|SQLITE_BUSY|database is locked/i.test(message));
+      if (!canRetry || !busy || attempt >= 2) throw new Error(message);
+      await new Promise(function (resolve) { setTimeout(resolve, 1000 * Math.pow(2, attempt) + Math.random() * 250); });
     }
-    return res.json();
   }
 
   function qs(params) {
