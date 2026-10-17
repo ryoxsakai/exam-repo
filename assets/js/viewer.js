@@ -3010,7 +3010,10 @@
     var favoriteSelection = !wasMulti && state.printSel.kind === "favFolder";
     if (favoriteSelection) {
       // Invalidate both the old preview and any pending body load before the GET.
+      var previousSelection = state.printSel;
       state.printSel = Object.assign({}, state.printSel);
+      if (favoritePrintProfile && favoritePrintProfile.selection === previousSelection && !favoritePrintProfile.loading) favoritePrintProfile.selection = state.printSel;
+      else favoritePrintProfile = null;
       state.printExam = null;
       printRenderRevision++;
       renderPrintDurationSettings();
@@ -3026,7 +3029,8 @@
       if (account !== multiPrint.accountEpoch || state.printSel !== selection || multiPrint.enabled !== wasMulti) return;
       loadPrintTree(true); renderPrintSetFavorites();
       if (favoriteSelection) {
-        loadPrintFavFolder(Number(selection.folderId), true);
+        if (!favoritePrintProfile || favoritePrintProfile.selection !== selection) openFavoritePrintProfile(selection);
+        else loadPrintFavFolder(Number(selection.folderId), true);
       } else if (!state.printExam && !multiPrint.loading && !multiPrint.busy) {
         loadPrintPreview();
       }

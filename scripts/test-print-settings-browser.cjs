@@ -11,7 +11,7 @@ const root=path.resolve(__dirname,'..'),origin='https://exam-print-sets.test',ev
 const exams=[{id:11,university_id:1,university_name:'合成大学',year:2026,schedule:'前期'},{id:12,university_id:1,university_name:'合成大学',year:2025,schedule:'前期'},{id:13,university_id:1,university_name:'合成大学',year:2026,schedule:'後期'},{id:21,university_id:2,university_name:'別大学',year:2026,schedule:'前期'}];
 const questions=id=>[{exam_id:id,question_number:1,category:'長文',problem_text:`{{本文}}\nQ${id} Synthetic passage with enough words to check printing.\n{{設問}}\n[[35]] Choose a word.`,answer_text:`A${id} [[35]] ((1))`,commentary_text:`C${id} Test commentary.`}];
 const auth=`window.__fixtureUser={displayName:'Fixture',email:'fixture@example.test',uid:'user-a'};window.__authCallbacks=[];window.Auth={init(){},onChange(cb){__authCallbacks.push(cb);cb(__fixtureUser);},getCurrentUser(){return __fixtureUser;},getIdToken(){return Promise.resolve(__fixtureUser?'fixture-'+__fixtureUser.uid:null);},switchUser(uid){__fixtureUser=uid?{displayName:'Fixture',email:'fixture@example.test',uid}:null;__authCallbacks.forEach(cb=>cb(__fixtureUser));},signIn(){return Promise.resolve();},signOut(){this.switchUser(null);}};`;
-const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrintPreview,refreshPrintSets,buildPrintHtml,openPrintSet,savePrintSet,openFavoritePrintProfile,saveFavoritePrintProfile};';
+const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrintPreview,refreshPrintSets,buildPrintHtml,openPrintSet,savePrintSet,openFavoritePrintProfile,saveFavoritePrintProfile,openPrintTab};';
 (async()=>{
  const deadline=setTimeout(()=>{console.error('Browser test exceeded 360 seconds');process.exit(1);},360000);
  const waitFlag=async(fn,name)=>{for(let i=0;i<1000;i++){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw new Error('Timed out waiting for '+name);};
@@ -132,6 +132,9 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   });
   assert.equal(await page.locator('#pr-lineheight').inputValue(),'5');
   assert.match(await page.locator('#pr-favorite-settings-status').textContent(),/復元/);
+  await page.evaluate(()=>__setsTest.openPrintTab());
+  await page.waitForFunction(()=>__setsTest.state.printExam?.kind==='favFolder');
+  assert.equal(await page.locator('#pr-favorite-settings-save').isEnabled(),true,'Refresh retains folder profile and revision');
   // A delayed folder response must not replace settings after navigation.
   await page.evaluate(async()=>{
     const original=Api.favoritePrintProfile;
