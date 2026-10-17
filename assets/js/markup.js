@@ -26,6 +26,14 @@
       .replace(/"/g, "&quot;");
   }
 
+  // Fixed label cell keeps parentheses aligned for narrow digits and letters.
+  function markerLabelHtml(marker) {
+    var m = String(marker || "").match(/^([（(])([A-Za-z0-9ぁ-ゖァ-ヺ]{1,2})([）)])$/);
+    if (!m) return esc(marker || "");
+    return '<span class="marker-parentheses">' + esc(m[1]) +
+      '<span class="marker-label">' + esc(m[2]) + '</span>' + esc(m[3]) + '</span>';
+  }
+
   var VALID_COLORS = ["yellow", "blue", "red", "purple", "pink", "green", "aqua"];
 
   // 選択肢ラベルの表示用丸囲み文字。データは常に ((1)) / ((a)) / ((ア)) の
@@ -245,10 +253,10 @@
         rem = rem.slice(m[0].length); continue;
       }
       // 下線・波線に隣接する番号・単独記号は下付き。旧 ~~(1)~~ 記法も解釈する。
-      if ((m = rem.match(/^(?:~~(\([^~()]*\))~~|(\([^()]*\))|\(\(([^)]+)\)\)|([A-Za-z0-9ぁ-ゖァ-ヺ])(?=__|~~|==))[ \t]*(?===[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/))) {
+      if ((m = rem.match(/^(?:~~([（(][^~()（）]*[）)])~~|([（(][^()（）]*[）)])|\(\(([^)]+)\)\)|([A-Za-z0-9ぁ-ゖァ-ヺ])(?=__|~~|==))[ \t]*(?===[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/))) {
         var marker = m[1] || m[2];
         out += '<sub class="underline-marker">' +
-          (m[3] ? choiceLabelHtml(m[3], "choice-inline") : esc(marker || m[4])) + "</sub>";
+          (m[3] ? choiceLabelHtml(m[3], "choice-inline") : markerLabelHtml(marker || m[4])) + "</sub>";
         rem = rem.slice(m[0].length); continue;
       }
       // ~~~ の旧波線も既存データの表示用に保持する。
@@ -292,7 +300,7 @@
         if (/[A-Za-z0-9ぁ-ゖァ-ヺ]/.test(ch) && /\s/.test(rem[end - 1]) &&
             (rem.slice(end + 1, end + 3) === "==" || rem.slice(end + 1, end + 3) === "__" || rem.slice(end + 1, end + 3) === "~~")) break;
         if (ch === "[" || ch === "#" || ch === "=" || ch === "_" ||
-            ch === ":" || ch === "~" || ch === "^" || ch === "{" || ch === "(" || ch === "*" ||
+            ch === ":" || ch === "~" || ch === "^" || ch === "{" || ch === "(" || ch === "（" || ch === "*" ||
             ch === "!" || ch === "|") break;
         end++;
       }
