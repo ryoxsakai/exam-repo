@@ -1415,6 +1415,6 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 .exam-doc .blk.bullet-line { padding-left: 1.3em; text-indent: -1.3em; }
 .exam-doc .bullet-marker { display: inline-block; width: 1.3em; text-indent: 0; text-align: left; }
 
-/* Keep short parenthesized underline labels aligned; prose is untouched. */
+/* Keep label glyphs unchanged; use 75% of the former 1.35em minimum inner width. */
 .exam-doc .marker-parentheses { display: inline-flex; white-space: nowrap; text-indent: 0; }
-.exam-doc .marker-label { display: inline-block; min-width: 1.35em; text-align: center; letter-spacing: 0; }
+.exam-doc .marker-label { display: inline-block; min-width: 1.0125em; text-align: center; letter-spacing: 0; }
