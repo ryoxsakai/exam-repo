@@ -6,6 +6,15 @@
    - デザイン: フラット・ミニマル（UI8風）
    ===================================================================== */
 
+/* Only round-parenthesis glyphs use the installed MS PMincho font.
+   No font file is distributed; unavailable local fonts fall back normally. */
+@font-face {
+  font-family: "Exam Parentheses";
+  src: local("MS PMincho"), local("MS-PMincho"), local("ＭＳ Ｐ明朝");
+  font-weight: 100 900;
+  unicode-range: U+0028-0029, U+FF08-FF09;
+}
+
 :root {
   /* Brand palette (coolors: 03045e-0077b6-00b4d8-90e0ef-caf0f8) */
   --navy:       #03045E;
@@ -51,8 +60,8 @@
      には影響しない（sans側の Hiragino Kaku Gothic ProN は英字グリフも持つため、
      インストールされている環境では英字UIの見た目にも反映される＝意図した挙動）。
      ローカルフォント名はWebKit/Safari向けに英語名・日本語名の両方を列挙している。 */
-  --serif: "Century Schoolbook", "Century Schoolbook L", "Lora", "Hiragino Mincho ProN", "ヒラギノ明朝 ProN", "Noto Serif JP", Georgia, "Times New Roman", serif;
-  --sans:  "Hiragino Kaku Gothic ProN", "ヒラギノ角ゴシック ProN", "Noto Sans JP", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: "Exam Parentheses", "Century Schoolbook", "Century Schoolbook L", "Lora", "Hiragino Mincho ProN", "ヒラギノ明朝 ProN", "Noto Serif JP", Georgia, "Times New Roman", serif;
+  --sans:  "Exam Parentheses", "Hiragino Kaku Gothic ProN", "ヒラギノ角ゴシック ProN", "Noto Sans JP", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -989,7 +998,7 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 }
 /* 印刷（プレビュー・実際の印刷とも）では空所バッジ（[[1]] [[A]] 等）の文字を Arial にする。
    閲覧モーダルの空所（.blank-badge、既定 --sans）には影響しない。 */
-.print-doc .blank-badge { font-family: Arial, Helvetica, sans-serif; }
+.print-doc .blank-badge { font-family: "Exam Parentheses", Arial, Helvetica, sans-serif; }
 .print-cover {
   text-align: center; padding: 64px 16px; margin-bottom: 24px;
   border-bottom: 2px dashed var(--line);
@@ -1129,7 +1138,7 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   position: absolute; top: 0; width: 1em; height: 1em; overflow: visible;
 }
 .print-linenum text {
-  font-family: Arial, Helvetica, sans-serif; font-size: .72em; font-weight: 400;
+  font-family: "Exam Parentheses", Arial, Helvetica, sans-serif; font-size: .72em; font-weight: 400;
   font-style: normal; letter-spacing: normal; fill: #555;
 }
 
@@ -1197,7 +1206,7 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area .blank-badge {
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
     background: #fff !important; color: #000 !important; border-color: #000 !important;
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: "Exam Parentheses", Arial, Helvetica, sans-serif;
   }
   #print-area mark.hl {
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
