@@ -26,8 +26,9 @@ async function waitFlag(fn) {for(let i=0;i<500;i++){if(fn())return;await pause(1
   await context.route('**/*',async route=>{
    const req=route.request(), url=new URL(req.url());
    if(url.origin!==origin)return route.fulfill({status:200,contentType:req.resourceType()==='stylesheet'?'text/css':'application/javascript',body:''});
-   if(url.pathname==='/fixture-font.ttf') {if(holdFont){fontHeld=true;await new Promise(r=>releaseFont=r);}return route.fulfill({contentType:'font/ttf',body:fs.readFileSync('/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf')});}
+   if(url.pathname==='/fixture-font.ttf') {if(holdFont){fontHeld=true;await new Promise(r=>releaseFont=r);}return route.fulfill({contentType:'font/ttf',body:fs.readFileSync(process.env.PRINT_FIXTURE_FONT || '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf')});}
    if(url.pathname==='/fixture-image.svg') {if(holdImage){imageHeld=true;await new Promise(r=>releaseImage=r);}return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="32" height="24"><rect width="32" height="24" fill="#999"/></svg>'});}
+   if(url.pathname.startsWith('/api/favorite-print-profiles/')) {assert.equal(req.method(),'GET');return route.fulfill({json:{settings:null,revision:0}});}
    if(url.pathname.startsWith('/api/')) {
     assert.equal(req.method(),'GET','No API writes in line-number QA');let data;
     const m=url.pathname.match(/^\/api\/exams\/(\d+)(\/print-duration)?$/);
