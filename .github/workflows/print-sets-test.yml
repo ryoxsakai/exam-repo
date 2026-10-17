@@ -24,6 +24,7 @@ jobs:
       - name: Print and OAuth regressions (isolated SQLite)
         run: |
           node scripts/test-print-sets.cjs
+          node scripts/test-print-settings.cjs
           node scripts/test-print-set-folders.cjs
           node scripts/test-print-duration.cjs
           node scripts/test-print-duration-merges.cjs
@@ -50,6 +51,7 @@ jobs:
           node scripts/test-print-choices.cjs
           node scripts/test-print-answers-browser.cjs
           node scripts/test-print-local-resume-browser.cjs
+          node scripts/test-print-settings-browser.cjs
           node scripts/test-print-sets-browser.cjs
           node scripts/test-print-name-field.cjs --browser
           node scripts/test-print-duration-browser.cjs

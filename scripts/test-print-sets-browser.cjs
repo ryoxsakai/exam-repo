@@ -23,6 +23,9 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
     let data;
     if(['/api/favorites','/api/config','/api/universities','/api/exams'].includes(url.pathname))assert.equal(req.method(),'GET','No source/favorite/settings test writes');
     if(url.pathname==='/api/user-settings'&&req.method()==='PUT') { if(failUserSettings){failUserSettings=false;return route.fulfill({status:503,json:{error:'Synthetic cover save failure'}});} userSettings={...userSettings,...req.postDataJSON()};return route.fulfill({status:200,contentType:'application/json',body:'{}'}); }
+    if(url.pathname.startsWith('/api/favorite-print-profiles/')) {
+      assert.equal(req.method(),'GET');return route.fulfill({json:{settings:null,revision:0}});
+    }
     const sets=url.pathname.match(/^\/api\/print-sets(?:\/([^/]+))?$/);
     if(sets){
      let staleList=false;

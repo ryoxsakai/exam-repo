@@ -243,6 +243,14 @@
     if (treeRefresh) treeRefresh.addEventListener("click", function () { loadTree(true); });
 
     // 問題印刷タブ
+    el("pr-favorite-settings-save").addEventListener("click", saveFavoritePrintProfile);
+    document.addEventListener("change", function (event) {
+      var profile = favoritePrintProfile;
+      if (!profile || profile.selection !== state.printSel || multiPrint.enabled || profile.loading || profile.busy || profile.error) return;
+      if (event.target.closest("#pr-settings-modal") || event.target.hasAttribute("data-prsec")) {
+        profile.message = "印刷設定に未保存の変更があります"; renderFavoritePrintProfile();
+      }
+    });
     if (el("pr-duration")) {
       el("pr-duration").checked = Store.getPrintDuration();
       el("pr-duration").addEventListener("change", function () {
@@ -3123,6 +3131,53 @@
       '<div class="tree-children" hidden>' + inner + "</div></div>";
   }
 
+  var favoritePrintProfile = null;
+  function renderFavoritePrintProfile() {
+    var button = el("pr-favorite-settings-save");
+    if (!button) return;
+    var active = !multiPrint.enabled && state.printSel.kind === "favFolder";
+    button.hidden = !active;
+    button.style.display = active ? "" : "none";
+    button.disabled = !favoritePrintProfile || favoritePrintProfile.selection !== state.printSel || favoritePrintProfile.loading || favoritePrintProfile.busy || !!favoritePrintProfile.error;
+    el("pr-favorite-settings-status").textContent = active && favoritePrintProfile && favoritePrintProfile.selection === state.printSel ? favoritePrintProfile.message || "" : "";
+  }
+  async function openFavoritePrintProfile(selection) {
+    var profile = {selection:selection, account:multiPrint.accountEpoch, revision:0, loading:true, message:"印刷設定を読み込み中…"};
+    favoritePrintProfile = profile;
+    var initialSettings = JSON.stringify(PrintSettings.capture(document, Store));
+    state.printExam = null;
+    renderFavoritePrintProfile();
+    try {
+      var result = await Api.favoritePrintProfile(selection.folderId);
+      if (favoritePrintProfile !== profile || profile.account !== multiPrint.accountEpoch || state.printSel !== selection || multiPrint.enabled) return;
+      if (result.settings && !PrintSettings.valid(result.settings)) throw new Error("保存済み印刷設定を読み込めません。");
+      if (initialSettings !== JSON.stringify(PrintSettings.capture(document, Store))) throw new Error("読込中に印刷設定が変更されました。変更を保持しています。");
+      PrintSettings.apply(result.settings, document, Store);
+      profile.revision = result.revision;
+      profile.message = result.settings ? "保存した印刷設定を復元しました" : "未保存：現在の印刷設定を使用";
+    } catch (e) {
+      profile.error = true; profile.message = e.message + " フォルダを選び直して再試行してください。";
+    } finally {
+      profile.loading = false;
+      if (favoritePrintProfile === profile && profile.account === multiPrint.accountEpoch && state.printSel === selection && !multiPrint.enabled) {
+        renderFavoritePrintProfile(); loadPrintPreview();
+      }
+    }
+  }
+  async function saveFavoritePrintProfile() {
+    var profile = favoritePrintProfile;
+    if (!profile || profile.loading || profile.busy || profile.error || profile.selection !== state.printSel || multiPrint.enabled || profile.account !== multiPrint.accountEpoch) return;
+    var settings = PrintSettings.capture(document, Store);
+    profile.busy = true; profile.message = "保存中…"; renderFavoritePrintProfile();
+    try {
+      var result = await Api.favoritePrintProfile(profile.selection.folderId, {settings:settings,revision:profile.revision});
+      var checked = await Api.favoritePrintProfile(profile.selection.folderId);
+      if (checked.revision !== result.revision || JSON.stringify(checked.settings) !== JSON.stringify(settings)) throw new Error("保存後に設定が変更されました。フォルダを開き直してください。");
+      profile.revision = checked.revision; profile.message = "印刷設定を保存しました";
+    } catch(e) { profile.error = true; profile.message = e.message; }
+    finally { profile.busy = false; renderFavoritePrintProfile(); }
+  }
+
   // 選択したお気に入りフォルダの大問を集めてプレビュー用データを作る
   function loadPrintFavFolder(folderId, preserveSelection) {
     var selection = state.printSel;
@@ -3261,7 +3316,8 @@
             };
           }
           if (["kind", "folderId", "uni", "year", "sched"].some(function (key) { return previousSelection[key] !== state.printSel[key]; })) state.printQSel = {};
-          loadPrintPreview();
+          if (favId != null) openFavoritePrintProfile(state.printSel);
+          else { favoritePrintProfile = null; renderFavoritePrintProfile(); loadPrintPreview(); }
           return;
         }
         var children = (row.closest(".print-year-row") || row).nextElementSibling;
@@ -3337,7 +3393,7 @@
   function multiPayload() {
     var questions = {};
     Object.keys(multiPrint.questionSelection || {}).forEach(function (key) { if (multiPrint.ids.indexOf(Number(key.split(":")[0])) >= 0) questions[key] = multiPrint.questionSelection[key]; });
-    return {name: multiPrint.name, exam_ids: multiPrint.ids.slice(), question_selection: questions, cover: Object.assign({}, multiPrint.cover, {lines: multiPrint.cover.lines.slice(), time: multiPrint.cover.time}), archived: multiPrint.archived};
+    return {print_settings: PrintSettings.capture(document, Store), name: multiPrint.name, exam_ids: multiPrint.ids.slice(), question_selection: questions, cover: Object.assign({}, multiPrint.cover, {lines: multiPrint.cover.lines.slice(), time: multiPrint.cover.time}), archived: multiPrint.archived};
   }
   function multiChanged() {
     printRenderRevision++;
@@ -3667,7 +3723,7 @@
   async function openPrintSet(id, fromFavorites) {
     if (!id || multiPrint.busy || setOrderBusy) return;
     if ((multiPrint.baseline ? JSON.stringify(multiPayload()) !== multiPrint.baseline : multiPrint.ids.length || multiPrint.name.trim() || JSON.stringify(multiPrint.cover) !== JSON.stringify({lines: ["", "印刷セット", ""], time: ""})) &&
-        !window.confirm("未保存の変更があります。選択と表紙を保存済みセットに置き換えますか？（キャンセルで変更を保持）")) return;
+        !window.confirm("未保存の変更があります。選択・表紙・印刷設定を保存済みセットに置き換えますか？（キャンセルで変更を保持）")) return;
     var account = multiPrint.accountEpoch;
     multiPrint.busy = true; renderMultiControls();
     try {
@@ -3682,8 +3738,9 @@
       multiPrint.ids = s.exam_ids.slice(); multiPrint.cover = s.cover; multiPrint.archived = s.archived;
       multiPrint.questionSelection = Object.assign({}, s.question_selection || {});
       state.printQSel = Object.assign({}, multiPrint.questionSelection);
-      multiPrint.baseline = JSON.stringify(multiPayload());
+      PrintSettings.apply(s.print_settings, document, Store);
       await loadMultiPrint();
+      if (account === multiPrint.accountEpoch) multiPrint.baseline = JSON.stringify(multiPayload());
     } catch (e) { if (account === multiPrint.accountEpoch) multiPrint.error = e.message; }
     finally { if (account === multiPrint.accountEpoch) { multiPrint.busy = false; renderMultiControls(); } }
   }
@@ -3692,7 +3749,7 @@
     if (archived === undefined && (multiPrint.loading || !state.printExam || state.printExam.kind !== "printSet" || multiPrint.archived)) return;
     if (!multiPrint.name.trim()) { UI.toast("印刷セット名を入力してください", "err"); return; }
     var account = multiPrint.accountEpoch, body = multiPayload();
-    if (archived !== undefined) body.archived = archived;
+    if (archived !== undefined) { body.archived = archived; delete body.print_settings; }
     multiPrint.id = multiPrint.id || crypto.randomUUID();
     body.id = multiPrint.id;
     if (multiPrint.revision) body.revision = multiPrint.revision;
@@ -3805,6 +3862,8 @@
     state.printExam = null;
     renderPrintDurationSettings();
     if (sel.kind === "favFolder" && sel.folderId != null) {
+      if (!favoritePrintProfile || favoritePrintProfile.selection !== sel || favoritePrintProfile.account !== multiPrint.accountEpoch) { openFavoritePrintProfile(sel); return; }
+      if (favoritePrintProfile.loading) return;
       loadPrintFavFolder(Number(sel.folderId), true);
       return;
     }
@@ -3853,6 +3912,7 @@
   }
 
   function renderPrintPreview() {
+    renderFavoritePrintProfile();
     savePrintDraft();
     printRenderRevision++;
     updatePrintDurationAvailability();

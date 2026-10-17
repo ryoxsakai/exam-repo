@@ -16,7 +16,7 @@ const exportHook = 'window.__printTest = {state, buildPrintHtml, printOptions, r
 const markupFile = index.match(/src="(assets\/js\/markup[^"?]*\.js)(?:\?[^" ]*)?"/)[1];
 const stylesheet = index.match(/href="(assets\/css\/main[^"?]*\.css)(?:\?[^" ]*)?"/)[1];
 const saved = {};
-const nodes = {'pr-cover': {checked: true}, 'pr-name-field': {checked: false}};
+const nodes = {'pr-answer-left': {checked:false}, 'pr-page-numbers': {checked:false}, 'pr-cover': {checked: true}, 'pr-name-field': {checked: false}};
 const ctx = {
   console, document: {addEventListener() {}},
   localStorage: {getItem: k => saved[k] ?? null, setItem: (k, v) => { saved[k] = String(v); }},
