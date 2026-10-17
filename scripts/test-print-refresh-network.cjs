@@ -27,12 +27,14 @@ fs.mkdirSync(evidence, {recursive: true});
       let sets = [{id: 'old', name: 'Old set', archived: false}], favoritesMode = 'normal', setsMode = 'normal', holdExams = false;
       let favoriteReplies = [], examReplies = [], setReads = 0, favoriteReads = 0;
       const success = data => ({status: 200, json: data});
-      const failure = {status: 503, json: {error: 'Synthetic favorites unavailable'}};
+      // UI failure cases use a terminal error; 503 retry/backoff is a separate API concern.
+      const failure = {status: 500, json: {error: 'Synthetic favorites unavailable'}};
       await context.route('**/*', async route => {
         const url = new URL(route.request().url());
         if (url.origin !== origin) return route.fulfill({body: '', contentType: 'application/javascript'});
         if (url.pathname.startsWith('/api/')) {
           assert.equal(route.request().method(), 'GET', 'No real/synthetic data writes');
+          if (url.pathname.startsWith('/api/favorite-print-profiles/')) return route.fulfill(success({settings:null,revision:0}));
           if (url.pathname === '/api/favorites') {
             favoriteReads++;
             if (favoritesMode === 'abort') return route.abort('failed');
@@ -41,7 +43,7 @@ fs.mkdirSync(evidence, {recursive: true});
           }
           if (url.pathname === '/api/print-sets') {
             setReads++;
-            return route.fulfill(setsMode === 'fail' ? {status: 503, json: {error: 'Synthetic sets unavailable'}} : success({print_sets: sets, order_revision: setReads}));
+            return route.fulfill(setsMode === 'fail' ? {status: 500, json: {error: 'Synthetic sets unavailable'}} : success({print_sets: sets, order_revision: setReads}));
           }
           if (url.pathname === '/api/exams') return route.fulfill(success({exams: exams.filter(e => !url.searchParams.get('schedule') || e.schedule === url.searchParams.get('schedule'))}));
           const match = url.pathname.match(/^\/api\/exams\/(\d+)(\/print-duration)?$/);

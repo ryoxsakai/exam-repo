@@ -3138,7 +3138,7 @@
     var active = !multiPrint.enabled && state.printSel.kind === "favFolder";
     button.hidden = !active;
     button.style.display = active ? "" : "none";
-    button.disabled = !favoritePrintProfile || favoritePrintProfile.selection !== state.printSel || favoritePrintProfile.loading || favoritePrintProfile.busy || !!favoritePrintProfile.error;
+    button.disabled = !favoritePrintProfile || favoritePrintProfile.selection !== state.printSel || favoritePrintProfile.loading || favoritePrintProfile.busy || !!favoritePrintProfile.error || !state.printExam;
     el("pr-favorite-settings-status").textContent = active && favoritePrintProfile && favoritePrintProfile.selection === state.printSel ? favoritePrintProfile.message || "" : "";
   }
   async function openFavoritePrintProfile(selection) {
@@ -3152,15 +3152,16 @@
       if (favoritePrintProfile !== profile || profile.account !== multiPrint.accountEpoch || state.printSel !== selection || multiPrint.enabled) return;
       if (result.settings && !PrintSettings.valid(result.settings)) throw new Error("保存済み印刷設定を読み込めません。");
       if (initialSettings !== JSON.stringify(PrintSettings.capture(document, Store))) throw new Error("読込中に印刷設定が変更されました。変更を保持しています。");
-      PrintSettings.apply(result.settings, document, Store);
+      profile.pendingSettings = result.settings;
+      profile.settingsSnapshot = initialSettings;
       profile.revision = result.revision;
-      profile.message = result.settings ? "保存した印刷設定を復元しました" : "未保存：現在の印刷設定を使用";
+      profile.message = result.settings ? "印刷対象の読込後に設定を復元します" : "未保存：現在の印刷設定を使用";
     } catch (e) {
       profile.error = true; profile.message = e.message + " フォルダを選び直して再試行してください。";
     } finally {
       profile.loading = false;
       if (favoritePrintProfile === profile && profile.account === multiPrint.accountEpoch && state.printSel === selection && !multiPrint.enabled) {
-        renderFavoritePrintProfile(); loadPrintPreview();
+        renderFavoritePrintProfile(); await loadPrintPreview();
       }
     }
   }
@@ -3185,7 +3186,7 @@
     renderPrintDurationSettings();
     var box = el("print-preview");
     box.innerHTML = '<div class="card"><div class="loading-row"><span class="spinner"></span> 読み込み中…</div></div>';
-    ensureFavoritesLoaded(false, true).then(function () {
+    return ensureFavoritesLoaded(false, true).then(function () {
       if (multiPrint.enabled || state.printSel !== selection) return;
       var entries = favEntriesInFolder(folderId);
       var favs = entries.filter(function (e) { return e.kind === "favorite"; }).map(function (e) { return e.favorite; });
@@ -3242,6 +3243,16 @@
           var key = printQKey(q);
           state.printQSel[key] = previous[key] !== false;
         });
+        var profile = favoritePrintProfile;
+        if (profile && profile.selection === selection && profile.account === multiPrint.accountEpoch && profile.pendingSettings) {
+          if (profile.settingsSnapshot === JSON.stringify(PrintSettings.capture(document, Store))) {
+            PrintSettings.apply(profile.pendingSettings, document, Store);
+            profile.message = "保存した印刷設定を復元しました";
+          } else {
+            profile.error = true; profile.message = "読込中に設定が変更されました。現在の変更を保持しています。フォルダを選び直してください。";
+          }
+          profile.pendingSettings = null;
+        }
         renderPrintSectionControls();
         renderPrintPreview();
       });
@@ -3663,7 +3674,7 @@
     await Promise.all([run(), run()]);
     return results;
   }
-  function loadMultiPrint() {
+  function loadMultiPrint(savedSettings) {
     savePrintDraft();
     var token = ++multiPrint.epoch, ids = multiPrint.ids.slice();
     state.printExam = null;
@@ -3697,13 +3708,16 @@
       });
       multiPrint.loading = false;
       state.printExam = {kind: "printSet", exams: exams, questions: questions, cover: multiPayload().cover};
+      // Only a complete, current set may change the active print layout.
+      PrintSettings.apply(savedSettings, document, Store);
       renderMultiControls(); renderPrintSectionControls(); renderPrintPreview();
+      if (PrintSettings.valid(savedSettings)) multiPrint.baseline = JSON.stringify(multiPayload());
     }).catch(function (e) {
       if (token !== multiPrint.epoch || !multiPrint.enabled) return;
       multiPrint.loading = false; multiPrint.error = e.message; state.printExam = null;
       renderMultiControls(); renderPrintSectionControls();
       el("print-preview").innerHTML = '<div class="card">' + esc(e.message) + '<button type="button" class="btn ghost" id="pr-multi-retry">再読込</button></div>';
-      el("pr-multi-retry").addEventListener("click", loadMultiPrint);
+      el("pr-multi-retry").addEventListener("click", function () { loadMultiPrint(savedSettings); });
     });
   }
   async function refreshPrintSets() {
@@ -3738,9 +3752,8 @@
       multiPrint.ids = s.exam_ids.slice(); multiPrint.cover = s.cover; multiPrint.archived = s.archived;
       multiPrint.questionSelection = Object.assign({}, s.question_selection || {});
       state.printQSel = Object.assign({}, multiPrint.questionSelection);
-      PrintSettings.apply(s.print_settings, document, Store);
-      await loadMultiPrint();
-      if (account === multiPrint.accountEpoch) multiPrint.baseline = JSON.stringify(multiPayload());
+      await loadMultiPrint(s.print_settings);
+      if (account === multiPrint.accountEpoch && state.printExam && state.printExam.kind === "printSet" && !multiPrint.error) multiPrint.baseline = JSON.stringify(multiPayload());
     } catch (e) { if (account === multiPrint.accountEpoch) multiPrint.error = e.message; }
     finally { if (account === multiPrint.accountEpoch) { multiPrint.busy = false; renderMultiControls(); } }
   }
@@ -3864,8 +3877,7 @@
     if (sel.kind === "favFolder" && sel.folderId != null) {
       if (!favoritePrintProfile || favoritePrintProfile.selection !== sel || favoritePrintProfile.account !== multiPrint.accountEpoch) { openFavoritePrintProfile(sel); return; }
       if (favoritePrintProfile.loading) return;
-      loadPrintFavFolder(Number(sel.folderId), true);
-      return;
+      return loadPrintFavFolder(Number(sel.folderId), true);
     }
     var year = sel.year, uni = sel.uni, sched = sel.sched;
     if (!year || !uni || !sched) {

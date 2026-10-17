@@ -98,6 +98,20 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
     await __setsTest.openPrintSet(id);
   },saved.id);
   assert.equal(await page.locator('#pr-fontsize').inputValue(),'lg');
+  // Failed opens retain the current layout; a successful retry restores it.
+  const beforeFailure=await page.evaluate(()=>PrintSettings.capture(document,Store));
+  const broken={...saved,id:'00000000-0000-4000-8000-000000000077',name:'Missing exam',exam_ids:[13],question_selection:{},print_settings:{version:1,controls:{fontsize:'xs'},sections:{'解説':true}}};
+  delete broken.revision;delete broken.updated_at;delete broken.folder_id;delete broken.sort_order;
+  assert.equal((await f.call('user-a',undefined,broken)).status,200);
+  f.sql.exec('DELETE FROM exams WHERE id=13');
+  await page.evaluate(id=>__setsTest.openPrintSet(id),broken.id);
+  assert.deepEqual(await page.evaluate(()=>PrintSettings.capture(document,Store).controls),beforeFailure.controls);
+  assert.equal(await page.evaluate(()=>Store.isPrintSection('解説')),false);
+  f.sql.exec('INSERT INTO exams VALUES (13)');
+  await page.locator('#pr-multi-retry').click();
+  await page.waitForFunction(()=>__setsTest.state.printExam?.kind==='printSet');
+  assert.equal(await page.locator('#pr-fontsize').inputValue(),'xs');
+  assert.equal(await page.evaluate(()=>Store.isPrintSection('解説')),true);
   // Favorite settings save uses the rendered button, with no favorite/source writes.
   await page.evaluate(async()=>{
     const t=__setsTest;t.multiPrint.enabled=false;document.getElementById('pr-multi').checked=false;
