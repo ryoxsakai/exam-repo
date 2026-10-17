@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
-const active = fs.readFileSync(path.join(root, 'index.html'), 'utf8').match(/src="(assets\/js\/markup-[^"]+)"/)[1];
+const active = fs.readFileSync(path.join(root, 'index.html'), 'utf8').match(/src="(assets\/js\/markup-[^"]+)"/)[1].split(/[?#]/)[0];
 for (const file of ['assets/js/markup.js', active]) {
   const ctx = {window: {}};
   vm.runInNewContext(fs.readFileSync(path.join(root, file), 'utf8'), ctx);

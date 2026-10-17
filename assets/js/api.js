@@ -40,6 +40,15 @@
   }
 
   var Api = {
+    favoritePrintProfile: async function (folderId, data) {
+      var token = await Auth.getIdToken();
+      if (!token) throw new Error("印刷設定の保存・読込にはGoogleログインが必要です。");
+      return call("/api/favorite-print-profiles/" + encodeURIComponent(folderId || 0), {
+        method: data ? "PUT" : "GET",
+        headers: {"Content-Type":"application/json", "Authorization":"Bearer " + token},
+        ...(data ? {body:JSON.stringify(data)} : {})
+      });
+    },
     printSets: async function (id, data) {
       var token = await Auth.getIdToken();
       if (!token) throw new Error("印刷セットの保存・読込にはGoogleログインが必要です。");

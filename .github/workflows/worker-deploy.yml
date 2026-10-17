@@ -8,6 +8,7 @@ on:
       - "panel/**"
       - "assets/js/markup.js"
       - "assets/js/viewer.js"
+      - "assets/js/print-settings.js"
       - "index.html"
       - "assets/css/main.css"
       - "wrangler.toml"

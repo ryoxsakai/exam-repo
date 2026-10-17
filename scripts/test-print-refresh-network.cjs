@@ -16,6 +16,7 @@ const waitFor = async (condition, description) => {
 const evidence = '/tmp/exam-print-sets-qa/refresh';
 fs.mkdirSync(evidence, {recursive: true});
 (async () => {
+  const deadline=setTimeout(()=>{console.error('Refresh QA exceeded 180 seconds');process.exit(1);},180000);
   const browser = await chromium.launch({headless: true, ...(process.env.PANEL_CHROMIUM ? {executablePath: process.env.PANEL_CHROMIUM} : {})});
   try {
     for (const width of [1280, 390]) {
@@ -27,12 +28,14 @@ fs.mkdirSync(evidence, {recursive: true});
       let sets = [{id: 'old', name: 'Old set', archived: false}], favoritesMode = 'normal', setsMode = 'normal', holdExams = false;
       let favoriteReplies = [], examReplies = [], setReads = 0, favoriteReads = 0;
       const success = data => ({status: 200, json: data});
-      const failure = {status: 503, json: {error: 'Synthetic favorites unavailable'}};
+      // UI failure cases use a terminal error; 503 retry/backoff is a separate API concern.
+      const failure = {status: 500, json: {error: 'Synthetic favorites unavailable'}};
       await context.route('**/*', async route => {
         const url = new URL(route.request().url());
         if (url.origin !== origin) return route.fulfill({body: '', contentType: 'application/javascript'});
         if (url.pathname.startsWith('/api/')) {
           assert.equal(route.request().method(), 'GET', 'No real/synthetic data writes');
+          if (url.pathname.startsWith('/api/favorite-print-profiles/')) return route.fulfill(success({settings:null,revision:0}));
           if (url.pathname === '/api/favorites') {
             favoriteReads++;
             if (favoritesMode === 'abort') return route.abort('failed');
@@ -41,7 +44,7 @@ fs.mkdirSync(evidence, {recursive: true});
           }
           if (url.pathname === '/api/print-sets') {
             setReads++;
-            return route.fulfill(setsMode === 'fail' ? {status: 503, json: {error: 'Synthetic sets unavailable'}} : success({print_sets: sets, order_revision: setReads}));
+            return route.fulfill(setsMode === 'fail' ? {status: 500, json: {error: 'Synthetic sets unavailable'}} : success({print_sets: sets, order_revision: setReads}));
           }
           if (url.pathname === '/api/exams') return route.fulfill(success({exams: exams.filter(e => !url.searchParams.get('schedule') || e.schedule === url.searchParams.get('schedule'))}));
           const match = url.pathname.match(/^\/api\/exams\/(\d+)(\/print-duration)?$/);
@@ -64,7 +67,7 @@ fs.mkdirSync(evidence, {recursive: true});
         return route.fulfill({body, contentType: {'.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css'}[path.extname(relative)] || 'text/plain'});
       });
       await context.addInitScript(o => {localStorage.setItem('cf_worker_url', o); window.printCalls = 0; window.print = () => {window.printCalls++;};}, origin);
-      await page.goto(origin);
+      await page.goto(origin);console.log("Refresh QA loaded",width);
       await page.locator('[data-tab="print"]').click();
       await page.waitForFunction(() => __refresh.multiPrint.list.length === 1);
       await page.locator('#pr-tree .print-single-only .tree-row-fav').click();
@@ -122,7 +125,7 @@ fs.mkdirSync(evidence, {recursive: true});
         assert.equal(await page.locator('#btn-print-run').isDisabled(), false);
         // An older folder-body request must not restore a preview during refresh.
         favoritesMode = 'normal'; holdExams = true;
-        await page.evaluate(() => __refresh.loadPrintPreview());
+        await page.evaluate(() => { __refresh.loadPrintPreview(); });
         await waitFor(() => examReplies.length === 2, 'held old folder body');
         favoritesMode = 'hold';
         await page.evaluate(() => __refresh.openPrintTab());
@@ -146,6 +149,7 @@ fs.mkdirSync(evidence, {recursive: true});
         await page.locator('#pr-multi').uncheck();
         await page.waitForFunction(() => __refresh.state.printExam?.kind === 'favFolder');
       }
+      console.log('Refresh preview phase complete',width);
       if (!only || only === 'epoch') {
         // Newer B wins even if older A completes after B has rendered.
         const older = structuredClone(source);
@@ -195,6 +199,7 @@ fs.mkdirSync(evidence, {recursive: true});
         await page.locator('#pr-favorites-retry').click();
         await page.waitForFunction(ids => __refresh.state.printExam?.questions[0].exam_id === ids[0], latestIds);
       }
+      console.log('Refresh epoch phase complete',width);
       if (!only || only === 'sets') {
         // Healthy print-set endpoint must update while favorites is pending/failing.
         await page.evaluate(() => {
@@ -240,5 +245,9 @@ fs.mkdirSync(evidence, {recursive: true});
       console.log(`PASS ${width}px: ${only || 'preview and sets'} HTTP delay/failure/retry, stale-load suppression, independent lists and draft preservation`);
       await context.close();
     }
-  } finally {await browser.close();}
+  } catch(error) {console.error('Refresh QA failure before browser shutdown:',error);throw error;}
+  finally {
+    const shutdownDeadline=setTimeout(()=>{console.error('Refresh QA browser shutdown exceeded 30 seconds');process.exit(1);},30000);
+    await browser.close();clearTimeout(shutdownDeadline);clearTimeout(deadline);
+  }
 })().catch(e => {console.error(e); process.exitCode = 1;});

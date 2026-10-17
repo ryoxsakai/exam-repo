@@ -34,6 +34,7 @@ const hook='window.__renumberTest={state,runPrint,renderPrintPreview,isPreparing
   await context.route('**/*',async route=>{
    const req=route.request(),url=new URL(req.url());
    if(url.origin!==origin)return route.fulfill({status:200,contentType:req.resourceType()==='stylesheet'?'text/css':'application/javascript',body:''});
+   if(url.pathname.startsWith('/api/favorite-print-profiles/')) {assert.equal(req.method(),'GET');return route.fulfill({json:{settings:null,revision:0}});}
    if(url.pathname.startsWith('/api/')) {
     assert.equal(req.method(),'GET','No API writes in numbering QA');let data;
     const m=url.pathname.match(/^\/api\/exams\/(\d+)(\/print-duration)?$/);

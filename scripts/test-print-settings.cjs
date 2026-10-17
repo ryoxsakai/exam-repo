@@ -1,0 +1,40 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {buildSync}=require('../panel/node_modules/esbuild');
+const {fixture,tmp}=require('./print-sets-fixture.cjs');
+const schema=require('../assets/js/print-settings.js');
+const out=path.join(tmp,'profiles.cjs');
+buildSync({entryPoints:[path.resolve(__dirname,'../worker/print-profiles.ts')],bundle:true,platform:'node',format:'cjs',outfile:out});
+const {handlePrintProfile}=require(out);
+(async()=>{
+ const f=fixture();
+ const settings={version:1,controls:{cover:false,fontsize:'lg',lineheight:'4','line-refs':true,'page-numbers':true,'page-number-style':'total',grayscale:true},sections:{'本文':true,'解説':false}};
+ const call=(uid,folder,body)=>handlePrintProfile(new Request('https://fixture.test/',{method:body?'PUT':'GET',...(body?{body:JSON.stringify(body)}:{})}),f.db,uid,folder);
+ try {
+  f.sql.exec("INSERT INTO favorite_folders(id,uid,name,kind) VALUES (1,'user-a','Folder','folder'),(2,'user-b','Other','folder'),(3,'user-a','Heading','section')");
+  assert.equal(schema.valid(settings),true);
+  for(const bad of [{...settings,version:2},{...settings,controls:{workerUrl:'https://bad.test'}},{...settings,controls:{fontsize:'xxl'}},{...settings,controls:{cover:'false'}},{...settings,sections:{'本文':'false'}},{...settings,duration_minutes:60},{...settings,controls:JSON.parse('{"constructor":true}')},{...settings,controls:JSON.parse('{"__proto__":true}')}]) assert.ok(!schema.valid(bad));
+  assert.equal((await call(null,'0')).status,401);
+  assert.equal((await call('user-a','2')).status,404);
+  assert.equal((await call('user-a','3')).status,404);
+  assert.deepEqual((await call('user-a','1')).body,{settings:null,revision:0});
+  assert.equal((await call('user-a','1',{settings,revision:0})).status,200);
+  f.reopen();assert.deepEqual((await call('user-a','1')).body,{settings,revision:1});
+  assert.equal((await call('user-a','1',{settings,revision:0})).status,409);
+  const concurrent=await Promise.all([call('user-a','1',{settings,revision:1}),call('user-a','1',{settings,revision:1})]);
+  assert.deepEqual(concurrent.map(x=>x.status).sort(),[200,409]);
+  assert.equal((await call('user-b','1',{settings,revision:2})).status,404);
+  assert.deepEqual((await call('user-b','0')).body,{settings:null,revision:0});
+  assert.equal((await call('user-a','0',{settings,revision:0})).status,200);
+  const set={id:'00000000-0000-4000-8000-000000000099',name:'Layout',exam_ids:[11],cover:{lines:['','',''],time:''},print_settings:settings};
+  assert.equal((await f.call('user-a',undefined,set)).status,200);
+  assert.equal((await f.call('user-a',undefined,set)).status,200);
+  f.reopen();assert.deepEqual((await f.call('user-a',set.id)).body.print_set.print_settings,settings);
+  const old={...set,revision:1};delete old.print_settings;
+  assert.equal((await f.call('user-a',set.id,old)).status,200);
+  assert.deepEqual((await f.call('user-a',set.id)).body.print_set.print_settings,settings,'Old clients retain saved layout');
+  assert.equal((await f.call('user-a',set.id,{...old,revision:2,print_settings:{}})).status,400);
+  assert.equal(f.sql.prepare('SELECT problem_text FROM questions').get().problem_text,'source');
+  assert.equal(f.sql.prepare('SELECT count(*) n FROM favorites').get().n,1);
+  console.log('PASS: saved layouts survive SQLite reopen; legacy clients preserve layouts; validated allowlist, folder/account isolation, CAS conflicts, source/favorites unchanged');
+ }finally{f.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

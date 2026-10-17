@@ -1,3 +1,4 @@
+import { handlePrintProfile } from "./print-profiles";
 import { planUniversitySchedulePrintDurationMerge, planUniversityPrintLabelMerge, handlePrintDuration, handleUniversityPrintDuration, ensurePrintDurationSchema, planUniversityPrintDurationMerge, planExamPrintDurationMerge, planExamPrintDurationMove } from "./print-duration";
 import { printSetPlacementSchema, printSetSchema, handlePrintSets } from "./print-sets";
 import { handleMcpRoute, safeEqual, type McpEnv } from "./mcp";
@@ -1047,6 +1048,12 @@ export default {
         const index = await readUniversityIndex(env, Number(universityIndexMatch[1]));
         if (!index) return json({ error: "University not found" }, 404, origin);
         return json(index, 200, origin);
+      }
+
+      const profileMatch = path.match(/^\/api\/favorite-print-profiles\/(\d+)$/);
+      if (profileMatch) {
+        const result = await handlePrintProfile(request, env.DB, await getAuthUid(request), profileMatch[1]);
+        return json(result.body, result.status, origin);
       }
 
       // Print sets use only their additive table, with the existing Firebase identity.

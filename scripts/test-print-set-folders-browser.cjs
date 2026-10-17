@@ -58,4 +58,8 @@ const root=path.resolve(__dirname,'..'),origin='https://set-folders.test';
  f.sql.prepare('UPDATE print_set_placements SET folder_id=99999 WHERE set_id=?').run(id);await page.evaluate(()=>__folders.refreshPrintSets());await row('set:'+id).waitFor();
  const dir='/tmp/exam-print-sets-qa/folders';fs.mkdirSync(dir,{recursive:true});await page.screenshot({path:dir+'/'+width+'.png',fullPage:true});assert.deepEqual(errors,[]);
  await ctx.close();f.close();console.log('PASS '+width+'px: native/touch folder move, reload, content preservation, double action/failure rollback, pending mode switch, picker hierarchy, folder deletion, orphan visibility');
-}}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
+}}finally{
+ console.log('Closing folder QA browser');
+ const shutdownDeadline=setTimeout(()=>{console.error('Folder QA browser shutdown exceeded 30 seconds');process.exit(1);},30000);
+ await browser.close();clearTimeout(shutdownDeadline);console.log('Folder QA browser closed');
+}})().catch(e=>{console.error(e);process.exitCode=1;});

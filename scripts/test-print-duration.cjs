@@ -75,6 +75,7 @@ const get = async id => {const r=await call(id); assert.equal(r.status,200); ret
     const index=fs.readFileSync(path.join(root,'index.html'),'utf8');
     const source=fs.readFileSync(path.join(root,'assets/js/viewer.js'),'utf8');
     const nodes={'pr-cover':{checked:true},'pr-duration':{checked:true}};
+    nodes['pr-answer-left']={checked:false}; nodes['pr-page-numbers']={checked:false};
     const saved={}; const ctx={console,document:{addEventListener(){}},localStorage:{getItem:k=>saved[k]??null,setItem:(k,v)=>saved[k]=v}, UI:{el:id=>nodes[id]||null,escapeHtml:s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}}; ctx.window=ctx; vm.createContext(ctx);
     const markup=index.match(/src="(assets\/js\/markup[^"?]*\.js)/)[1];
     for(const file of ['assets/js/store.js',markup,'assets/js/difficulty.js']) vm.runInContext(fs.readFileSync(path.join(root,file),'utf8'),ctx);

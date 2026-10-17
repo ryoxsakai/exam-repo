@@ -33,7 +33,7 @@ const exams=[{id:11,university_id:1,university_name:'合成大学',year:2026,sch
                 if(Object.hasOwn(b,'exam_minutes')) overrides[id]=b.exam_minutes;
               }
               if(req.method()==='GET' && holdRead) {readHeld=true; await new Promise(resolve=>releaseRead=resolve);}
-              if(req.method()==='GET' && failRead) {failRead=false;return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Synthetic duration re-read failure'})});}
+              if(req.method()==='GET' && failRead) {failRead=false;return route.fulfill({status:500,contentType:'application/json',body:JSON.stringify({error:'Synthetic duration re-read failure'})});}
               data=duration(id);
             } else data={exam:{...e,questions:[{exam_id:id,question_number:1,problem_text:'{{本文}}\nSynthetic test passage.\n{{設問}}\nChoose a word.',answer_text:'Answer'}]}};
           } else if(url.pathname==='/api/exams') data={exams:exams.filter(e=>(!url.searchParams.get('year')||String(e.year)===url.searchParams.get('year'))&&(!url.searchParams.get('universityName')||e.university_name===url.searchParams.get('universityName'))&&(!url.searchParams.get('schedule')||e.schedule===url.searchParams.get('schedule')))};
