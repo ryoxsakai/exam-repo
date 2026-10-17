@@ -16,6 +16,7 @@ const waitFor = async (condition, description) => {
 const evidence = '/tmp/exam-print-sets-qa/refresh';
 fs.mkdirSync(evidence, {recursive: true});
 (async () => {
+  const deadline=setTimeout(()=>{console.error('Refresh QA exceeded 180 seconds');process.exit(1);},180000);
   const browser = await chromium.launch({headless: true, ...(process.env.PANEL_CHROMIUM ? {executablePath: process.env.PANEL_CHROMIUM} : {})});
   try {
     for (const width of [1280, 390]) {
@@ -66,7 +67,7 @@ fs.mkdirSync(evidence, {recursive: true});
         return route.fulfill({body, contentType: {'.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css'}[path.extname(relative)] || 'text/plain'});
       });
       await context.addInitScript(o => {localStorage.setItem('cf_worker_url', o); window.printCalls = 0; window.print = () => {window.printCalls++;};}, origin);
-      await page.goto(origin);
+      await page.goto(origin);console.log("Refresh QA loaded",width);
       await page.locator('[data-tab="print"]').click();
       await page.waitForFunction(() => __refresh.multiPrint.list.length === 1);
       await page.locator('#pr-tree .print-single-only .tree-row-fav').click();
@@ -148,6 +149,7 @@ fs.mkdirSync(evidence, {recursive: true});
         await page.locator('#pr-multi').uncheck();
         await page.waitForFunction(() => __refresh.state.printExam?.kind === 'favFolder');
       }
+      console.log('Refresh preview phase complete',width);
       if (!only || only === 'epoch') {
         // Newer B wins even if older A completes after B has rendered.
         const older = structuredClone(source);
@@ -197,6 +199,7 @@ fs.mkdirSync(evidence, {recursive: true});
         await page.locator('#pr-favorites-retry').click();
         await page.waitForFunction(ids => __refresh.state.printExam?.questions[0].exam_id === ids[0], latestIds);
       }
+      console.log('Refresh epoch phase complete',width);
       if (!only || only === 'sets') {
         // Healthy print-set endpoint must update while favorites is pending/failing.
         await page.evaluate(() => {
@@ -242,5 +245,9 @@ fs.mkdirSync(evidence, {recursive: true});
       console.log(`PASS ${width}px: ${only || 'preview and sets'} HTTP delay/failure/retry, stale-load suppression, independent lists and draft preservation`);
       await context.close();
     }
-  } finally {await browser.close();}
+  } catch(error) {console.error('Refresh QA failure before browser shutdown:',error);throw error;}
+  finally {
+    const shutdownDeadline=setTimeout(()=>{console.error('Refresh QA browser shutdown exceeded 30 seconds');process.exit(1);},30000);
+    await browser.close();clearTimeout(shutdownDeadline);clearTimeout(deadline);
+  }
 })().catch(e => {console.error(e); process.exitCode = 1;});
