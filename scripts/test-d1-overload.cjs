@@ -53,7 +53,7 @@ const request = route => new Request('https://test/api/'+route);
     await assert.rejects(context.window.Api.createExam({}),/busy/); assert.equal(calls,1,'writes never retried');
 
     const source=fs.readFileSync('assets/js/viewer.js','utf8');
-    const fn=source.slice(source.indexOf('  async function loadPrintExams('),source.indexOf('  function loadMultiPrint()'));
+    const fn=source.slice(source.indexOf('  async function loadPrintExams('),source.indexOf('  function loadMultiPrint('));
     const load=vm.runInNewContext('('+fn.trim()+')');
     let active=0,max=0;
     const result=await load([1,2,3,4,5],async id=>{active++;max=Math.max(active,max);await new Promise(resolve=>setImmediate(resolve));active--;return id;},()=>true);
