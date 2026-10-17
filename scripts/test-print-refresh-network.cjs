@@ -125,7 +125,7 @@ fs.mkdirSync(evidence, {recursive: true});
         assert.equal(await page.locator('#btn-print-run').isDisabled(), false);
         // An older folder-body request must not restore a preview during refresh.
         favoritesMode = 'normal'; holdExams = true;
-        await page.evaluate(() => __refresh.loadPrintPreview());
+        await page.evaluate(() => { __refresh.loadPrintPreview(); });
         await waitFor(() => examReplies.length === 2, 'held old folder body');
         favoritesMode = 'hold';
         await page.evaluate(() => __refresh.openPrintTab());
