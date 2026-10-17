@@ -1414,3 +1414,7 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 /* Hanging bullet: wrapped lines start at the first line's body text. */
 .exam-doc .blk.bullet-line { padding-left: 1.3em; text-indent: -1.3em; }
 .exam-doc .bullet-marker { display: inline-block; width: 1.3em; text-indent: 0; text-align: left; }
+
+/* Keep short parenthesized underline labels aligned; prose is untouched. */
+.exam-doc .marker-parentheses { display: inline-flex; white-space: nowrap; text-indent: 0; }
+.exam-doc .marker-label { display: inline-block; min-width: 1.35em; text-align: center; letter-spacing: 0; }
