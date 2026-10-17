@@ -552,6 +552,39 @@
       var qm = trimmed.match(/^\{\{([^}]+)\}\}/);
       if (qm) {
         var rest = trimmed.slice(qm[0].length).trim();
+        // Paired sentences share the badge's text column, like quoted exchanges.
+        // Require an (a)/(b) sequence so ordinary parenthesized prose stays intact.
+        var pairPattern = /^(@@)?(\([a-zA-Z]\)|[a-zA-Z]\))[ \t]*(.+)$/;
+        var pairStart = i, pairRest = rest;
+        if (!pairRest) {
+          pairStart++;
+          while (pairStart < lines.length && !lines[pairStart].trim()) pairStart++;
+          pairRest = (lines[pairStart] || "").trim();
+        }
+        var firstPair = pairRest.match(pairPattern);
+        if (firstPair && firstPair[2].replace(/[()]/g, "").toLowerCase() === "a") {
+          var pairRows = [{match: firstPair, index: pairStart}], pairNext = pairStart + 1;
+          while (pairNext < lines.length) {
+            while (pairNext < lines.length && !lines[pairNext].trim()) pairNext++;
+            var pairMatch = (lines[pairNext] || "").trim().match(pairPattern);
+            if (!pairMatch || pairMatch[2].replace(/[()]/g, "").toLowerCase() !== String.fromCharCode(97 + pairRows.length)) break;
+            pairRows.push({match: pairMatch, index: pairNext});
+            pairNext++;
+          }
+          if (pairRows.length >= 2) {
+            var pairedHtml = "";
+            pairRows.forEach(function (row, rowIndex) {
+              if (rowIndex) pairedHtml += '<div style="height:.6em"></div>';
+              pairedHtml += '<span class="blk sentence-pair-line"><span class="sentence-pair-label">' +
+                inline(row.match[2], footnotes) + '</span>' + inline(row.match[3], footnotes) + '</span>';
+            });
+            html += '<div class="question-block-header sentence-pair"><span class="question-badge">' +
+              esc(qm[1]) + '</span><div class="qtext">' + pairedHtml + '</div></div>';
+            i = pairRows[pairRows.length - 1].index;
+            paraStart = true;
+            continue;
+          }
+        }
         // Keep a quoted exchange in one badge/body layout, including soft wraps.
         if (/^[“‘"']/.test(rest)) {
           var quotedLines = '<span class="blk">' + inline(rest, footnotes) + '</span>';

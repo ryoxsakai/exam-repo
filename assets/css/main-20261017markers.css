@@ -1418,3 +1418,11 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 /* Keep label glyphs unchanged; use 75% of the former 1.35em minimum inner width. */
 .exam-doc .marker-parentheses { display: inline-flex; white-space: nowrap; text-indent: 0; }
 .exam-doc .marker-label { display: inline-block; min-width: 1.0125em; text-align: center; letter-spacing: 0; }
+
+/* Paired (a)/(b) sentences align beside the badge and hang at the body text. */
+.exam-doc .question-block-header.sentence-pair {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline;
+}
+.exam-doc .sentence-pair > .qtext { display: block; min-width: 0; }
+.exam-doc .sentence-pair .sentence-pair-line { padding-left: 1.8em; text-indent: -1.8em; }
+.exam-doc .sentence-pair-label { display: inline-block; width: 1.8em; text-indent: 0; text-align: left; }
