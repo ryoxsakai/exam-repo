@@ -641,7 +641,8 @@
         line = line.replace(/^\s*@@\s?/, "");
         trimmed = line.trim();
       }
-      var speaker = trimmed.match(SPEAKER);
+      // Numbered paragraph labels (P1:, P2:, ...) share the flush-left label layout.
+      var speaker = trimmed.match(/^(P[1-9]\d*)([ \t]*[:：])/) || trimmed.match(SPEAKER);
       if (!speaker) {
         var alias = trimmed.match(/^([A-Z]{2,4}|Question|Answer)([ \t]*[:：])(?=\s)/);
         if (alias && interviewAliases[alias[1]]) speaker = alias;
