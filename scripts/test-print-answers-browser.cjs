@@ -4,10 +4,12 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'../panel/node_modules/p
 const root=path.resolve(__dirname,'..'),origin='https://exam-answer-layout.test';
 const exam={id:11,university_id:1,university_name:'合成大学',year:2026,schedule:'前期'};
 const answer='{{7}} [[35]]((4))　[[36]]((5))\n\n{{8}} [[37]]((5))　[[38]]((3))\n\n{{9}} [[39]]((3))　[[40]]((1))\n\n{{10}} [[41]]((1))　[[42]]((2))';
+const blankAnswer='[[1]]((5))　[[2]]((7))　[[3]]((8))　[[4]]((2))　[[5]]((1))　[[6]]((3))　[[7]]((1))　[[8]]((3))　[[9]]((2))　[[10]]((1))・((5))　[[11]]((4))　[[12]]((3))';
 const questions=[
  {exam_id:11,question_number:1,category:'文法',problem_text:'{{本文}}\nSynthetic passage for the original question.\n{{設問}}\n{{問7}} Choose [[35]] [[36]].\n\n((1)) after\n\n((2)) her\n\n((3)) him\n\n((4)) I\n\n((5)) not\n\n((6)) to\n\n((7)) told\n\n{{問8}} Choose [[37]] [[38]].\n\n{{問9}} Choose [[39]] [[40]].\n\n{{問10}} Choose [[41]] [[42]].',answer_text:answer,commentary_text:'{{7}} The first explanation.\n\n\nThe second paragraph.\n{{8}} Another explanation.\n\n| Word | Meaning |\n| --- | --- |\n| after | 後 |'},
  {exam_id:11,question_number:2,category:'和訳',problem_text:'{{問題}}\n{{問1}} Translate.\n{{問2}} Translate.',answer_text:'{{1}} This is a long model answer with details that should be kept as one complete response and wrap neatly under its own question number.\n\n{{2}} The second long model answer also includes enough words to demonstrate the vertical layout and preserve the full meaning.'},
- {exam_id:11,question_number:3,category:'英作文',problem_text:'{{問題}}\nWrite an essay.',answer_text:'A plain model essay.\n\nIts paragraphs remain unchanged.'}
+ {exam_id:11,question_number:3,category:'英作文',problem_text:'{{問題}}\nWrite an essay.',answer_text:'A plain model essay.\n\nIts paragraphs remain unchanged.'},
+ {exam_id:11,question_number:4,category:'文法',problem_text:'{{問題}}\nChoose '+Array.from({length:12},(_,i)=>'[['+(i+1)+']]').join(' '),answer_text:blankAnswer}
 ];
 const source=JSON.stringify(questions);
 const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runPrint,printField,alignPrintQuestionBadges};';
@@ -58,6 +60,29 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
    return {safe,multi:multi.includes('print-answer-long')&&multi.includes('Second paragraph.'),short:div.querySelectorAll('.print-answer-item').length,inline:inline.querySelectorAll('.print-answer-item').length,reference:reference.querySelectorAll('.print-answer-item').length};
   });
   assert.deepEqual(edgeCases,{safe:true,multi:true,short:4,inline:3,reference:1});
+  const blankCases=await page.evaluate(()=>{
+    const t=__answersTest, parse=text=>{const d=document.createElement('div');d.innerHTML=t.printField('解答',text,{optimizeAnswers:true});return d;};
+    const samples=['[[1]]((5))　[[2]]((7))','[[1]]((5)) [[2]]((7))','[[1]]((5))[[2]]((7))','[[1]]((5))\n\n[[2]]((7))','[[A]]((1))　[[B]]((2))','[[１]]((1))　[[２]]((2))'];
+    const counts=samples.map(text=>parse(text).querySelectorAll('.print-answer-item > .blank-badge').length);
+    const fallback=['[[1]]\n[[2]]((7))','[[1]]','[[]]((1))','[[--A--]] A'];
+    const safe=fallback.every(text=>t.printField('解答',text,{optimizeAnswers:true})===t.printField('解答',text,{}));
+    const nested=parse('{{1}} [[35]]((4))　[[36]]((5))');
+    const prose=parse('[[1]] The response refers to [[2]] for justification.');
+    return {counts,safe,nested:nested.querySelectorAll('.print-answer-item').length,nestedBlanks:nested.querySelectorAll('.print-answer-text .blank-badge').length,prose:prose.querySelectorAll('.print-answer-item').length};
+  });
+  assert.deepEqual(blankCases,{counts:[2,2,2,2,2,2],safe:true,nested:1,nestedBlanks:2,prose:1});
+  const checkBlanks=async(root,forPrint=false)=>{
+    const group=page.locator(root+' .print-answer-group').last();
+    assert.equal(await group.locator('.print-answer-item > .blank-badge').count(),12);
+    assert.deepEqual(await group.locator('.print-answer-item > .blank-badge').allTextContents(),Array.from({length:12},(_,i)=>String(i+1)));
+    assert.equal((await group.locator('.print-answer-text').nth(9).textContent()).trim(),'①・⑤');
+    const geometry=await group.locator('.print-answer-item').evaluateAll(items=>items.map(item=>{
+      const b=item.firstElementChild.getBoundingClientRect(),a=item.lastElementChild.getBoundingClientRect(),r=item.getBoundingClientRect();
+      return {badgeWidth:b.width,badgeY:b.top,answerY:a.top,answerBottom:a.bottom,itemBottom:r.bottom,overflow:item.scrollWidth>item.clientWidth+1};
+    }));
+    assert.ok(geometry.every(g=>g.badgeWidth>0&&!g.overflow&&Math.abs(g.badgeY-g.answerY)<10&&g.answerBottom<=g.itemBottom+1),'Each number and answer stays together without overflow');
+    assert.ok(Number(await group.getAttribute('data-columns'))>=(forPrint?2:1));
+  };
   assert.equal(await page.locator('#pr-optimize-answers').isChecked(),false);assert.equal(await page.locator('#pr-compact-commentary').isChecked(),false);
   const equalBadges=async root=>{
     const groups=await page.locator(root+' .print-q').evaluateAll(qs=>qs.map(q=>[...q.querySelectorAll('.question-badge')].map(b=>b.getBoundingClientRect().width)));
@@ -82,10 +107,11 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   const baseline=await page.locator('#print-preview .print-part-a').innerHTML();
   const questionBaseline=await page.locator('#print-preview .print-part-q').innerHTML();
   await page.locator('#pr-optimize-answers').check();
-  assert.equal(await page.locator('#print-preview .print-answer-group').count(),3);
+  assert.equal(await page.locator('#print-preview .print-answer-group').count(),4);
   assert.equal(await page.locator('#print-preview .print-part-q').innerHTML(),questionBaseline);
-  assert.equal(await page.locator('#print-preview .print-answer-item').count(),6);
+  assert.equal(await page.locator('#print-preview .print-answer-item').count(),18);
   assert.equal(await page.locator('#print-preview .print-answer-group').nth(1).getAttribute('data-columns'),'1');
+  await checkBlanks('#print-preview');
   const commentary=p=>p.locator('#print-preview .print-field').filter({has:p.locator('.print-field-label',{hasText:'解説'})}).locator('.exam-doc');
   const beforeCommentary=await commentary(page).innerHTML();assert.ok(beforeCommentary.includes('height:.6em'));
   await page.locator('#pr-compact-commentary').check();const compact=await commentary(page).innerHTML();
@@ -99,10 +125,11 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   await page.locator('#pr-optimize-answers').check();await page.locator('#pr-compact-commentary').check();await load();
   assert.equal(await page.locator('#pr-optimize-answers').isChecked(),true);assert.equal(await page.locator('#pr-compact-commentary').isChecked(),true);
   await page.evaluate(()=>__answersTest.runPrint());await page.waitForFunction(()=>window.__prints===1);
-  assert.equal(await page.locator('#print-area .print-answer-group').count(),3);
+  assert.equal(await page.locator('#print-area .print-answer-group').count(),4);
   assert.equal(await page.locator('#print-area .print-answer-group').first().getAttribute('data-columns'),'2');
   await page.emulateMedia({media:'print'});
   await equalBadges('#print-area');
+  await checkBlanks('#print-area',true);
   const rows=await page.locator('#print-area .print-answer-group').first().locator('.print-answer-item').evaluateAll(items=>items.map(x=>({x:x.getBoundingClientRect().left,y:x.getBoundingClientRect().top})));
   assert.ok(Math.abs(rows[0].x-rows[2].x)<1);assert.ok(Math.abs(rows[1].x-rows[3].x)<1);assert.ok(rows[2].y>rows[0].y);
   if(width===1280)await page.screenshot({path:'/tmp/print-answers-layout.png',fullPage:true});

@@ -2146,9 +2146,17 @@
     var labelPattern = "((?:問)?[0-9０-９]+(?:[-－.．][0-9０-９]+|[A-Za-z])?|[A-Za-z]|[IVXivx]+)";
     var marker = new RegExp("^\\s*\\{\\{" + labelPattern + "\\}\\}[ \\t　]*(.*)$");
     var inlineBoundary = new RegExp("[ \\t　]+(?=\\{\\{" + labelPattern + "\\}\\})", "g");
+    // Standalone blank-number answers use the same layout. Keep blanks inside
+    // {{question}} answers in their existing body rather than splitting them.
+    var blankAnswers = !lines.some(function (line) { return marker.test(line); }) &&
+      lines.some(function (line) { return /^\s*\[\[/.test(line); });
+    if (blankAnswers) {
+      marker = new RegExp("^\\s*\\[\\[" + labelPattern + "\\]\\][ \\t　]*(.*)$");
+      inlineBoundary = new RegExp("(\\S)[ \\t　]*(?=\\[\\[" + labelPattern + "\\]\\])", "g");
+    }
     lines = lines.reduce(function (result, line) {
       if (!marker.test(line)) return result.concat(line);
-      var parts = line.replace(inlineBoundary, "\n").split("\n");
+      var parts = line.replace(inlineBoundary, blankAnswers ? "$1\n" : "\n").split("\n");
       // Compact answer lists may share a line. Sentence references to other questions stay inline.
       var compactList = parts.length > 1 && parts.every(function (part) {
         var match = part.match(marker), body = match && match[2].trim();
@@ -2156,7 +2164,7 @@
       });
             // Full-width spaces are the stored separator for answer entries. Keep
       // ordinary sentence references (separated by an ASCII space) inline.
-      var mixedList = parts.length > 1 && /　+\{\{/.test(line) && parts.every(function (part, i) {
+      var mixedList = parts.length > 1 && (blankAnswers ? /　+\[\[/.test(line) : /　+\{\{/.test(line)) && parts.every(function (part, i) {
         var match = part.match(marker);
         if (!match || !match[2].trim()) return false;
         if (!i) return true;
@@ -2187,7 +2195,7 @@
       if (long && groupOpen) { html += "</div>"; groupOpen = false; }
       if (!groupOpen) { html += '<div class="print-answer-group">'; groupOpen = true; }
       html += '<div class="print-answer-item' + (long ? ' print-answer-long' : '') + '">' +
-        '<span class="question-badge">' + esc(entry.label) + '</span>' +
+        '<span class="' + (blankAnswers ? 'blank-badge' : 'question-badge') + '">' + esc(entry.label) + '</span>' +
         '<div class="print-answer-text">' + Markup.render(body, options).html + '</div></div>';
       if (long) { html += '</div>'; groupOpen = false; }
     });
