@@ -5,7 +5,11 @@ const root=path.resolve(__dirname,'..'),index=fs.readFileSync(path.join(root,'in
 const cssFile=index.match(/href="(assets\/css\/main[^"?]*\.css)/)[1];
 const css=fs.readFileSync(path.join(root,cssFile),'utf8'),before=css.replace('min-width: 1.0125em; text-align: center; letter-spacing: 0;','min-width: 1.35em; text-align: center; letter-spacing: 0;');
 assert.notEqual(before,css);assert.equal(css,fs.readFileSync(path.join(root,'assets/css/main.css'),'utf8'));
-for(const html of [index,fs.readFileSync(path.join(root,'setting/index.html'),'utf8')])assert.match(html,/main-20261017markers\.css\?v=2/);
+for(const file of ['index.html','setting/index.html']){
+ const html=fs.readFileSync(path.join(root,file),'utf8'),sheet=html.match(/href="((?:\.\.\/)?assets\/css\/main[^"?]*\.css)/);
+ assert.ok(sheet,file+' loads the main stylesheet');
+ assert.equal(css,fs.readFileSync(path.resolve(root,path.dirname(file),sheet[1]),'utf8'));
+}
 const ctx={window:{}};vm.runInNewContext(fs.readFileSync(path.join(root,'assets/js/markup.js'),'utf8'),ctx);const M=ctx.window.Markup;
 const labels=['1','i','a','12','99','WW','あ','アイ'];
 let source='';
