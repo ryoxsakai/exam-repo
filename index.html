@@ -131,7 +131,7 @@
         <div id="pr-tree" class="pr-tree-box"></div>
         <div class="print-dialog-actions">
           <button type="button" class="btn ghost sm" id="pr-settings-open" aria-haspopup="dialog" aria-controls="pr-settings-modal"><i class="fa-solid fa-sliders"></i> 印刷設定</button>
-          <button type="button" class="btn ghost sm" id="pr-questions-open" aria-haspopup="dialog" aria-controls="pr-questions-modal"><i class="fa-solid fa-list-check"></i> 印刷する大問 <span id="pr-question-summary" class="pill gray">未選択</span></button>
+          <button type="button" class="btn ghost sm" id="pr-questions-open" aria-haspopup="dialog" aria-controls="pr-questions-modal"><i class="fa-solid fa-list-check"></i> <span id="pr-question-label">印刷する大問</span> <span id="pr-question-summary" class="pill gray">未選択</span></button>
         </div>
         <button type="button" class="btn ghost sm" id="pr-favorite-settings-save" hidden>このフォルダの印刷設定を保存</button><span id="pr-favorite-settings-status" role="status"></span>
         <p class="hint" style="margin-top:10px"><i class="fa-solid fa-circle-info"></i> ツリーで試験やお気に入りフォルダを選ぶと、表紙 → 問題 → 解答の順でプレビューします。複数選択では大学・年度をまたいで選べます。</p>
@@ -319,7 +319,7 @@
   <div class="modal-overlay print-modal" id="pr-questions-modal">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pr-questions-heading" tabindex="-1">
       <div class="modal-head"><i class="fa-solid fa-list-check ic"></i><h3 id="pr-questions-heading">印刷する大問</h3><span class="spacer"></span><button type="button" class="icon-btn" data-print-close aria-label="閉じる"><i class="fa-solid fa-xmark"></i></button></div>
-      <div class="modal-body"><p class="hint">大問と印刷するセクションを選べます。変更はすぐにプレビューへ反映されます。</p><div id="pr-sections"></div></div>
+      <div class="modal-body"><p class="hint" id="pr-questions-help">大問と印刷するセクションを選べます。変更はすぐにプレビューへ反映されます。</p><div id="pr-sections"></div></div>
       <div class="modal-foot"><button type="button" class="btn primary" data-print-close>完了</button></div>
     </div>
   </div>
@@ -525,7 +525,7 @@
   <script src="assets/js/onboarding.js?v=20260722a"></script>
   <script src="assets/js/print-booklet.js?v=20261015folio"></script>
   <script src="assets/js/print-settings.js?v=20261017a"></script>
-  <script src="assets/js/viewer.js?v=20261020blankanswers"></script>
+  <script src="assets/js/viewer.js?v=20261020universities"></script>
   <script src="assets/js/webmcp.js?v=20260826a"></script>
 </body>
 </html>

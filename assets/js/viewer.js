@@ -2970,9 +2970,17 @@
       });
       return h + "</div></div>";
     }
-    // 印刷する大問の選択（セクション選択の上に置く）
+    // 大学複数モードは年度・方式を含む試験単位、それ以外は大問単位で選択。
     function qgroup() {
       var ex = state.printExam;
+      if (multiPrint.enabled && ex.kind === "printSet") {
+        return '<div class="pr-secgroup"><div class="pr-secgroup-head">印刷する大学</div><div class="pr-secgroup-opts">' +
+          ex.exams.map(function (exam) {
+            var selected = exam.questions.every(isPrintQ);
+            return '<label class="check-inline"><input type="checkbox" data-prexam="' + esc(exam.id) + '"' + (selected ? ' checked' : '') +
+              '> <span>' + esc(printExamLabel(exam)) + '</span></label>';
+          }).join("") + '</div></div>';
+      }
       var qs = (ex.questions || []).slice();
       if (ex.kind !== "favFolder" && ex.kind !== "printSet") {
         qs.sort(function (a, b) {
@@ -2996,6 +3004,17 @@
     }
     var html = qgroup() + group("問題面に印刷するセクション", problem) + group("解答面に印刷するセクション", answer);
     box.innerHTML = html ? '<div class="card pr-seccard">' + html + "</div>" : "";
+    $all("[data-prexam]", box).forEach(function (cb) {
+      var exam = state.printExam.exams.find(function (ex) { return String(ex.id) === cb.dataset.prexam; });
+      // 旧セットの大問単位の選択も保持し、一部のみ選択なら混在状態を示す。
+      cb.indeterminate = exam.questions.some(isPrintQ) && !exam.questions.every(isPrintQ);
+      cb.addEventListener("change", function () {
+        exam.questions.forEach(function (q) { state.printQSel[printQKey(q)] = cb.checked; });
+        cb.indeterminate = false;
+        multiPrint.questionSelection = Object.assign({}, state.printQSel);
+        renderPrintPreview();
+      });
+    });
     $all("[data-prq]", box).forEach(function (cb) {
       cb.addEventListener("change", function () {
         state.printQSel[cb.getAttribute("data-prq")] = cb.checked;
@@ -3600,6 +3619,15 @@
   function renderPrintQuestionSummary() {
     var node = el("pr-question-summary");
     if (!node) return;
+    var label = multiPrint.enabled ? "印刷する大学" : "印刷する大問";
+    el("pr-question-label").textContent = label;
+    el("pr-questions-heading").textContent = label;
+    el("pr-questions-help").textContent = (multiPrint.enabled ? "大学" : "大問") + "と印刷するセクションを選べます。変更はすぐにプレビューへ反映されます。";
+    if (multiPrint.enabled) {
+      var exams = state.printExam && state.printExam.kind === "printSet" ? state.printExam.exams : [];
+      node.textContent = exams.length ? exams.filter(function (exam) { return exam.questions.some(isPrintQ); }).length + " / " + exams.length + "校" : "未選択";
+      return;
+    }
     var questions = state.printExam ? state.printExam.questions || [] : [];
     node.textContent = questions.length ? questions.filter(isPrintQ).length + " / " + questions.length + "問" : "未選択";
   }
