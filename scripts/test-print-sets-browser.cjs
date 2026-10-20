@@ -168,9 +168,9 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await openModal();await page.locator('#pr-set-modal .modal').screenshot({path:path.join(evidence,`set-modal-${width}.png`)});await closeModal();
   await openDialog('pr-settings-modal');await page.locator('#pr-settings-modal .modal').screenshot({path:path.join(evidence,`settings-modal-${width}.png`)});await closeAny();
   await openDialog('pr-questions-modal');await page.locator('#pr-questions-modal .modal').screenshot({path:path.join(evidence,`questions-modal-${width}.png`)});
-  assert.equal(await page.locator('[data-prq="11:1"]').count(),1);assert.equal(await page.locator('[data-prq="21:1"]').count(),1);
-  await page.locator('[data-prq="11:1"]').uncheck();assert.ok(!(await page.locator('#print-preview').innerText()).includes('Q11'));assert.ok((await page.locator('#print-preview').innerText()).includes('Q21'));
-  await move('[data-set-move="1"][data-step="-1"]');assert.equal(await page.locator('[data-prq="11:1"]').isChecked(),false,'Reorder retains excluded question');await move('[data-set-move="0"][data-step="1"]');await checkPrint('[data-prq="11:1"]');
+  assert.equal(await page.locator('[data-prexam="11"]').count(),1);assert.equal(await page.locator('[data-prexam="21"]').count(),1);
+  await page.locator('[data-prexam="11"]').uncheck();assert.ok(!(await page.locator('#print-preview').innerText()).includes('Q11'));assert.ok((await page.locator('#print-preview').innerText()).includes('Q21'));
+  await move('[data-set-move="1"][data-step="-1"]');assert.equal(await page.locator('[data-prexam="11"]').isChecked(),false,'Reorder retains excluded question');await move('[data-set-move="0"][data-step="1"]');await checkPrint('[data-prexam="11"]');
   await closeAny();
   const ordered=await page.locator('#print-preview .print-exam-block').allTextContents();assert.equal(ordered.length,6);for(const [i,marker] of ['Q11','Q21','Q13','A11','A21','A13'].entries())assert.ok(ordered[i].includes(marker));
   assert.equal(await page.locator('#print-preview .print-exam-time').count(),6);
@@ -195,7 +195,7 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
    assert.deepEqual(result.heads,['2026 表示名 <大学> & 名称','2026 表示名 <大学> & 名称']);assert.equal(result.unchanged,true);
   }
   // Busy write locks all draft edits and both print buttons; repeated save creates one row.
-  await checkPrint('[data-prq="11:1"]',false);
+  await checkPrint('[data-prexam="11"]',false);
   console.log('QA preview/order ready');holdSave=true;await openModal();await page.locator('#pr-set-save').click();await page.waitForFunction(()=>document.getElementById('pr-set-name').disabled);await waitFlag(()=>saveHeld,'saveHeld');
   assert.equal(await page.locator('#pr-multi').isDisabled(),true);assert.equal(await page.locator('#btn-print-run').isDisabled(),true);assert.equal(await page.locator('#btn-print-run-2').isDisabled(),true);
   assert.equal(await page.locator('#pr-set-modal').evaluate(n=>n.contains(document.activeElement)),true,'Disabling save keeps focus inside dialog');
@@ -217,8 +217,8 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   const second=await context.newPage();second.on('dialog',d=>d.accept());await second.goto(origin,{waitUntil:'networkidle'});await second.locator('#pr-multi').check();await second.locator(`#pr-set-list option[value="${id}"]`).waitFor({state:'attached'});await openModal(second);await second.locator('#pr-set-list').selectOption(id);await second.locator('#pr-set-open').click();await second.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='printSet'&&!window.__setsTest.multiPrint.busy);await closeModal(second);
   assert.deepEqual(await second.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21,13]);assert.equal(await second.locator('[data-set-cover="1"]').textContent(),'COMMON COVER');
   await openModal(second);assert.deepEqual(await second.locator('#pr-multi-selection li > span').allTextContents(),['2026 合成大学 前期','2026 別大学 前期','2026 合成大学 後期']);await closeModal(second);
-  assert.equal(await second.locator('[data-prq="11:1"]').isChecked(),false,'Saved exclusions restore on another device');
-  await openDialog('pr-questions-modal',second);await second.locator('[data-prq="11:1"]').check();await closeAny(second);
+  assert.equal(await second.locator('[data-prexam="11"]').isChecked(),false,'Saved exclusions restore on another device');
+  await openDialog('pr-questions-modal',second);await second.locator('[data-prexam="11"]').check();await closeAny(second);
   await setName('Updated on other device',second);await openModal(second);await second.locator('#pr-set-save').click();await second.waitForFunction(()=>window.__setsTest.multiPrint.revision===2&&!window.__setsTest.multiPrint.busy);
   await setName('Stale local edit');await openModal();await page.locator('#pr-set-save').click();await page.waitForFunction(()=>!window.__setsTest.multiPrint.busy&&window.__setsTest.multiPrint.error.includes('別端末'));
   assert.equal(await page.locator('#pr-set-name').inputValue(),'Stale local edit');assert.equal((await f.call('user-a',id)).body.print_set.name,'Updated on other device');assert.equal(await page.locator('#btn-print-run').isDisabled(),true);

@@ -5,7 +5,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'../panel/node_modules/p
 const {fixture}=require('./print-sets-fixture.cjs');
 const root=path.resolve(__dirname,'..'),origin='https://exam-print-sets.test',evidence='/tmp/exam-print-sets-qa';fs.mkdirSync(evidence,{recursive:true});
 const exams=[{id:11,university_id:1,university_name:'合成大学',year:2026,schedule:'前期'},{id:12,university_id:1,university_name:'合成大学',year:2025,schedule:'前期'},{id:13,university_id:1,university_name:'合成大学',year:2026,schedule:'後期'},{id:21,university_id:2,university_name:'別大学',year:2026,schedule:'前期'}];
-const questions=id=>[{exam_id:id,question_number:1,category:'長文',problem_text:`{{本文}}\nQ${id} Synthetic passage with enough words to check printing.\n{{設問}}\n[[35]] Choose a word.`,answer_text:`A${id} [[35]] ((1))`,commentary_text:`C${id} Test commentary.`}];
+const questions=id=>Array.from({length:id===11?4:id===21?5:1},(_,i)=>({exam_id:id,question_number:i+1,category:'長文',problem_text:`{{本文}}\nQ${id}-${i+1} Synthetic passage with enough words to check printing.\n{{設問}}\n[[35]] Choose a word.`,answer_text:`A${id}-${i+1} [[35]] ((1))`,commentary_text:`C${id}-${i+1} Test commentary.`}));
 const auth=`window.__fixtureUser={displayName:'Fixture',email:'fixture@example.test',uid:'user-a'};window.__authCallbacks=[];window.Auth={init(){},onChange(cb){__authCallbacks.push(cb);cb(__fixtureUser);},getCurrentUser(){return __fixtureUser;},getIdToken(){return Promise.resolve(__fixtureUser?'fixture-'+__fixtureUser.uid:null);},switchUser(uid){__fixtureUser=uid?{displayName:'Fixture',email:'fixture@example.test',uid}:null;__authCallbacks.forEach(cb=>cb(__fixtureUser));},signIn(){return Promise.resolve();},signOut(){this.switchUser(null);}};`;
 const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrintPreview,refreshPrintSets,buildPrintHtml};';
 (async()=>{
@@ -63,12 +63,36 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   await page.locator('[data-multi-exam="21"]').check(); await waitReady();
   await openModal(); await page.locator('#pr-set-name').fill('Local unsaved draft'); await closeModal();
   const coverNode=page.locator('[data-set-cover="1"]');await coverNode.dblclick();await coverNode.fill('Resume cover');await coverNode.press('Enter');
-  await openDialog('pr-questions-modal');await page.locator('[data-prq="11:1"]').uncheck();await closeAny();
+  await openDialog('pr-questions-modal');
+  assert.equal(await page.locator('#pr-question-label').innerText(),'印刷する大学');
+  assert.equal(await page.locator('#pr-questions-heading').innerText(),'印刷する大学');
+  assert.equal(await page.locator('[data-prexam]').count(),2,'Nine questions collapse into two university rows');
+  assert.equal(await page.locator('[data-prq]').count(),0,'Multi mode has no individual question checkboxes');
+  assert.deepEqual(await page.locator('[data-prexam]').evaluateAll(ns=>ns.map(n=>n.parentElement.textContent.trim())),['2026 合成大学 前期','2026 別大学 前期']);
+  // Older partial selections remain unchanged until the university is toggled.
+  await page.evaluate(()=>{__setsTest.state.printQSel={'11:2':false};__setsTest.multiPrint.questionSelection={'11:2':false};return __setsTest.loadMultiPrint();});
+  assert.equal(await page.locator('[data-prexam="11"]').evaluate(n=>n.indeterminate),true);
+  assert.equal(await page.locator('#print-preview').innerText().then(t=>t.includes('Q11-2')),false);
+  assert.equal(await page.locator('#print-preview').innerText().then(t=>t.includes('Q11-1')),true);
+  await page.locator('[data-prexam="11"]').check();
+  assert.equal(await page.locator('[data-prexam="11"]').evaluate(n=>n.indeterminate),false);
+  assert.equal(await page.locator('#print-preview').innerText().then(t=>t.includes('Q11-2')),true);
+  await page.locator('#pr-questions-modal .modal').screenshot({path:path.join(evidence,`university-selection-${width}.png`)});
+  await page.locator('[data-prexam="11"]').uncheck();
+  assert.deepEqual(await page.evaluate(()=>[1,2,3,4].map(n=>__setsTest.state.printQSel['11:'+n])),[false,false,false,false]);
+  assert.equal(await page.locator('#pr-question-summary').innerText(),'1 / 2校');
+  const preview=await page.locator('#print-preview').innerText();
+  for(const marker of ['Q11-','A11-','C11-'])assert.ok(!preview.includes(marker),'Excluded university leaves neither questions nor answers');
+  for(let n=1;n<=5;n++)assert.ok(preview.includes('Q21-'+n)&&preview.includes('A21-'+n),'Other university keeps every question and answer');
+  await closeAny();
+  await page.locator('#btn-print-run').click();await page.waitForFunction(()=>window.__prints===1);
+  const printed=await page.locator('#print-area').innerText();assert.ok(!printed.includes('Q11-')&&!printed.includes('A11-'));assert.ok(printed.includes('Q21-5')&&printed.includes('A21-5'));
+
   await page.reload({waitUntil:'networkidle'});await waitReady();
   assert.deepEqual(await page.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21]);
   assert.equal(await page.evaluate(()=>window.__setsTest.multiPrint.name),'Local unsaved draft');
   assert.equal(await page.evaluate(()=>window.__setsTest.multiPrint.cover.lines[1]),'Resume cover');
-  assert.equal(await page.evaluate(()=>window.__setsTest.state.printQSel['11:1']),false);
+  assert.deepEqual(await page.evaluate(()=>[1,2,3,4].map(n=>__setsTest.state.printQSel['11:'+n])),[false,false,false,false]);
   const second=await context.newPage();await page.close();await second.goto(origin,{waitUntil:'networkidle'});
   await second.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='printSet'&&!window.__setsTest.multiPrint.loading);
   assert.deepEqual(await second.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21]);
@@ -81,6 +105,8 @@ const hook='window.__setsTest={state,multiPrint,runPrint,loadMultiPrint,loadPrin
   assert.deepEqual(await second.evaluate(()=>window.__setsTest.multiPrint.ids),[11,21]);
   // Single-exam checkboxes must survive a fresh load too.
   await second.locator('#pr-multi').uncheck();
+  assert.equal(await second.locator('#pr-question-label').innerText(),'印刷する大問');
+  assert.equal(await second.locator('#pr-questions-heading').innerText(),'印刷する大問');
   await second.evaluate(()=>{window.__setsTest.state.printSel={kind:'exam',uni:'合成大学',year:'2026',sched:'前期',folderId:null};window.__setsTest.loadPrintPreview();});
   await second.waitForFunction(()=>window.__setsTest.state.printExam?.kind==='exam');
   await second.locator('#pr-questions-open').click();await second.locator('[data-prq="11:1"]').uncheck();
