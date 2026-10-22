@@ -205,11 +205,12 @@ const kitasatoBody='[A] Education [[-- --]] previously [[--35--]] [[-- --]] a ch
 const kitasatoQuestion={question_number:6,problem_text:'{{リード文}}\n'+kitasatoLead+'\n{{問題}}\n'+kitasatoBody,answer_text:Array.from({length:8},(_,i)=>'{{'+(35+i)+'}} '+(i+2)).join('\n')};
 const kitasatoExam={questions:[kitasatoQuestion]},kitasatoBefore=JSON.stringify(kitasatoExam);
 const kitasatoHtml=ctx.testPrint.buildPrintHtml(kitasatoExam,{renumber:true});
-assert(kitasatoHtml.includes('(1)〜(8)の空欄'));
-assert(!kitasatoHtml.includes('(35)〜(42)'));
+const renderedText = html => html.replace(/<[^>]*>/g, '');
+assert(renderedText(kitasatoHtml).includes('(1)〜(8)の空欄'));
+assert(!renderedText(kitasatoHtml).includes('(35)〜(42)'));
 assert(kitasatoHtml.includes('①〜⑩'));
 assert(kitasatoHtml.includes('blank-badge blank-badge-wide">8</span>'));
-assert(ctx.testPrint.buildPrintHtml(kitasatoExam,{renumber:false}).includes('(35)〜(42)'));
+assert(renderedText(ctx.testPrint.buildPrintHtml(kitasatoExam,{renumber:false})).includes('(35)〜(42)'));
 assert.equal(ctx.testPrint.buildPrintHtml(kitasatoExam,{renumber:true}),kitasatoHtml);
 assert.equal(JSON.stringify(kitasatoExam),kitasatoBefore);
 for(const join of ['〜','～','~','-','–','—','から',' to ']) {

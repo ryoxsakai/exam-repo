@@ -8,6 +8,7 @@ on:
       - 'setting/index.html'
       - 'scripts/test-markup-double.cjs'
       - 'scripts/test-marker-width.cjs'
+      - 'scripts/test-parentheses-labels.cjs'
       - 'scripts/test-markup-dash.cjs'
       - 'scripts/test-blank-sentence-spacing.cjs'
       - 'scripts/test-bullet-indent.cjs'
@@ -31,6 +32,7 @@ jobs:
       - run: node scripts/test-blank-sentence-spacing.cjs --browser
       - run: node scripts/test-bullet-indent.cjs
       - run: node scripts/test-marker-width.cjs
+      - run: node scripts/test-parentheses-labels.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

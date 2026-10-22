@@ -26,7 +26,7 @@
       .replace(/"/g, "&quot;");
   }
 
-  // Fixed label cell keeps parentheses aligned for narrow digits and letters.
+  // Shared by underline markers, question numbers and references in every section.
   function markerLabelHtml(marker) {
     var m = String(marker || "").match(/^([（(])([A-Za-z0-9ぁ-ゖァ-ヺ]{1,2})([）)])$/);
     if (!m) return esc(marker || "");
@@ -287,6 +287,13 @@
       // ((A)) 選択肢ラベル（行中・インライン。丸囲みラベルのみ表示）
       if ((m = rem.match(/^\(\(([^)]+)\)\)/))) {
         out += choiceLabelHtml(m[1], "choice-inline");
+        rem = rem.slice(m[0].length); continue;
+      }
+
+      // Short parenthesized labels use the same inner width outside underlines.
+      // Keep prose, empty answer spaces and special ((choice)) notation intact.
+      if ((m = rem.match(/^(?:\([A-Za-z0-9ぁ-ゖァ-ヺ]{1,2}\)|（[A-Za-z0-9ぁ-ゖァ-ヺ]{1,2}）)/))) {
+        out += markerLabelHtml(m[0]);
         rem = rem.slice(m[0].length); continue;
       }
 
