@@ -320,3 +320,7 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 ### 設問・解説を含む丸括弧内ラベルの幅（2026-10-23）
 
 `(1)`・`(a)`・`（ア）`等、英数字・かな1〜2文字の丸括弧内ラベルは、下線直前以外でも `markerLabelHtml` を通して内側の最小幅1.0125em・中央寄せで表示する。リード文・本文・設問・解答・全訳・解説、表・太字等も共通のinline処理を使う。括弧のＭＳ Ｐ明朝は既存指定を維持し、下付きは従来どおり下線直前だけ。長い括弧内の文章・空の解答欄・URL・コード・`((選択肢))`は従来どおり、DB原文とstripも変更しない。公開JSは `markup-20261023parentheses.js`。検証は `test-parentheses-labels.cjs` と `test-marker-width.cjs`。
+
+### 山括弧番号とMS明朝（2026-10-23）
+
+`<1>` / `<<1>>`、`〈1〉` / `《1》` は丸括弧番号と区別して描画する。数字1〜2桁のみ。下線直前だけ従来の下付き、設問等の参照と文補充空所は通常の高さ。括弧のグリフだけＭＳ 明朝のローカルフォントを優先し、数字は周囲の書体・既存のラベル幅を保つ。未導入端末は代替明朝体。全セクション・表・印刷で共通。新アセットは `markup-20261024angles.js` と `main-20261024angles.css`。検証: `node scripts/test-angle-markers.cjs`、`PLAYWRIGHT_MODULE=/path/to/playwright node scripts/test-angle-markers.cjs --browser`。

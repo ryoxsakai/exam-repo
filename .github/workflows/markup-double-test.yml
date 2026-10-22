@@ -9,6 +9,7 @@ on:
       - 'scripts/test-markup-double.cjs'
       - 'scripts/test-marker-width.cjs'
       - 'scripts/test-parentheses-labels.cjs'
+      - 'scripts/test-angle-markers.cjs'
       - 'scripts/test-markup-dash.cjs'
       - 'scripts/test-blank-sentence-spacing.cjs'
       - 'scripts/test-bullet-indent.cjs'
@@ -33,6 +34,7 @@ jobs:
       - run: node scripts/test-bullet-indent.cjs
       - run: node scripts/test-marker-width.cjs
       - run: node scripts/test-parentheses-labels.cjs
+      - run: node scripts/test-angle-markers.cjs --browser
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -41,3 +43,4 @@ jobs:
             /tmp/exam-marker-width/
             /tmp/exam-double-*
             /tmp/exam-dash-*
+            /tmp/exam-angles-*
