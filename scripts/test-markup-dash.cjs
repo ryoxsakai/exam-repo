@@ -18,6 +18,27 @@ for (const input of ['clarity - you should say what you mean - and the subject',
   assert.ok(M.render(input).html.includes(dash), input);
 }
 assert.equal((M.render('clarity - you should say what you mean - and the subject').html.match(/em-dash/g)||[]).length, 2);
+// Screenshot regression: both parenthetical dashes touch English prose words.
+const screenshot = 'It—and another just like it—belonged to John Dalton, the English schoolteacher.';
+assert.ok(M.render(screenshot).html.includes('It' + dash + 'and another just like it' + dash + 'belonged'));
+for (const glyph of ['—', '–', '―', '——', '––', '――']) {
+  for (const spacing of ['', ' ', '　', '\t']) {
+    const input = 'word' + spacing + glyph + spacing + 'word';
+    assert.ok(M.render(input).html.includes('word' + dash + 'word'), input);
+    assert.equal(M.strip(input), input, 'Source text for corpus remains unchanged');
+  }
+}
+const normalized = screenshot.replace(/—/g, ' —— ');
+assert.equal(M.render(screenshot).html, M.render(normalized).html);
+for (const input of ['2020–2022', '5—3', '3.5―1.2', 'x–y', 'value—5', '3kg—word', 'word—word2', 'word———word', 'word–––word', '−5', 'well-being', '`word—word`', '<code>word—word</code>', 'https://example.test/word—word', '[link](./word—word)', '![word—word](a.png)']) {
+  assert.doesNotMatch(M.render(input).html, /em-dash/, input);
+}
+for (const type of ['リード文', '本文', '設問', '解答', '全訳', '解説']) {
+  const section = M.parseSections('{{' + type + '}}\n' + screenshot)[0];
+  assert.equal((M.render(section.text).html.match(/class="em-dash"/g) || []).length, 2, type);
+}
+assert.match(M.render('| word—word | other |\n| --- | --- |\n| word–word | other |').html, /em-dash/);
+assert.match(M.render('__word—word__ **word–word**').html, /<u>word <span class="em-dash">——<\/span> word<\/u>/);
 for (const input of ['5 - 3', '５ - ３', '2020 - 2022', '3.5 - 1.2', 'x - y', 'x - value', 'value - x', 'value - 5', '5 - value', '- 5', 'subject-verb-object', 'word - 3kg', '3kg - word', 'word - word2', '`word - word`', '<code>word - word</code>', '[link](./word - word)', '[[--A--]]']) {
   assert.doesNotMatch(M.render(input).html, /em-dash/, input);
 }
@@ -60,9 +81,11 @@ if (process.argv.includes('--browser')) (async () => {
  try {
   for (const width of [1280,390]) {
    const page=await browser.newPage({viewport:{width,height:900}}); await page.route('**/*',r=>r.abort());
-   await page.setContent('<style>'+fs.readFileSync(root+'/assets/css/main.css','utf8')+'</style><div class="exam-doc" id="print-area">'+M.render('Body - phrase\n\n__under--lined__\n\n[[--A--]]\n\nhttps://example.test/a--b\n\n`code--literal`').html+'</div>');
+   await page.setContent('<style>'+fs.readFileSync(root+'/assets/css/main.css','utf8')+'</style><div class="exam-doc" id="print-area">'+M.render('Body - phrase\n\n__under--lined__\n\n' + screenshot + '\n\n[[--A--]]\n\nhttps://example.test/a--b\n\n`code--literal`').html+'</div>');
    assert.match(await page.locator('.exam-doc').textContent(), /Body —— phrase/);
-   assert.equal(await page.locator('.em-dash').count(),2);
+   assert.equal(await page.locator('.em-dash').count(),4);
+   assert.match(await page.locator('.exam-doc').textContent(), /It —— and another just like it —— belonged/);
+   assert.ok(await page.locator('.em-dash').evaluateAll(nodes=>nodes.every(n=>n.textContent==='——' && n.previousSibling.textContent.endsWith(' ') && n.nextSibling.textContent.startsWith(' '))));
    await page.emulateMedia({media:'print'});
    assert.match(await page.locator('.exam-doc').textContent(), /under —— lined/);
    await page.pdf({path:'/tmp/exam-dash-'+width+'.pdf',format:'A4'});

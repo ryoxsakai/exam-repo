@@ -283,7 +283,7 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 
 ### 二重ハイフンの表示（2026-10-13）
 
-本文の `word--word`、`word -- word` は保存内容を変えず `word —— word` と表示する。前後の横方向の空白は1つに揃える。単独ハイフン、3個以上のハイフン、既存のUnicodeダッシュ、空所 `[[--A--]]`、表の区切り、URL、画像URL、HTMLコメント・タグ、コード、エスケープした `\--` は保持する。閲覧・登録/取り込み編集プレビュー・印刷・Exam会話パネルは共通の `Markup.render` を使う。`Markup.strip` と保存処理は変更しない。回帰: `node scripts/test-markup-dash.cjs`、`PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-markup-dash.cjs --browser`。
+本文の `word--word`、`word -- word` は保存内容を変えず `word —— word` と表示する。前後の横方向の空白は1つに揃える。単独ハイフン、3個以上のハイフン、空所 `[[--A--]]`、表の区切り、URL、画像URL、HTMLコメント・タグ、コード、エスケープした `\--` は保持する。閲覧・登録/取り込み編集プレビュー・印刷・Exam会話パネルは共通の `Markup.render` を使う。`Markup.strip` と保存処理は変更しない。回帰: `node scripts/test-markup-dash.cjs`、`PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-markup-dash.cjs --browser`。
 
 ### 大学・方式の試験時間詳細（2026-10-14）
 
@@ -324,3 +324,7 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 ### 山括弧番号とMS明朝（2026-10-23）
 
 `<1>` / `<<1>>`、`〈1〉` / `《1》` は丸括弧番号と区別して描画する。数字1〜2桁のみ。下線直前だけ従来の下付き、設問等の参照と文補充空所は通常の高さ。括弧のグリフだけＭＳ 明朝のローカルフォントを優先し、数字は周囲の書体・既存のラベル幅を保つ。未導入端末は代替明朝体。全セクション・表・印刷で共通。新アセットは `markup-20261024angles.js` と `main-20261024angles.css`。検証: `node scripts/test-angle-markers.cjs`、`PLAYWRIGHT_MODULE=/path/to/playwright node scripts/test-angle-markers.cjs --browser`。
+
+### Unicodeダッシュの表示（2026-10-23）
+
+`It—and another just like it—belonged` のような語に密着したUnicodeダッシュ（U+2014／U+2013／U+2015の1〜2個）も、両側が英文の語句なら ` —— `（半角スペース各1個＋U+2014×2）に正規化する。既存の2個のダッシュも同じ表示となり、繰り返し描画で増えない。単独ハイフン・数値範囲・負数・数式・URL・コード・空所記法・3個以上のUnicodeダッシュは維持する。元データとstripは変更せず、全セクションと画面・印刷で共通。公開JSは `markup-20261024unicodedash.js`。回帰は `test-markup-dash.cjs --browser`。
