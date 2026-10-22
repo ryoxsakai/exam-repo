@@ -28,6 +28,12 @@
 
   // Shared by underline markers, question numbers and references in every section.
   function markerLabelHtml(marker) {
+    var angle = String(marker || "").match(/^(<<|<|〈|《)([0-9]{1,2})(>>|>|〉|》)$/);
+    if (angle && ({'<<': '>>', '<': '>', '〈': '〉', '《': '》'})[angle[1]] === angle[3]) {
+      return '<span class="marker-angle"><span class="marker-angle-glyph">' + esc(angle[1]) +
+        '</span><span class="marker-label">' + esc(angle[2]) +
+        '</span><span class="marker-angle-glyph">' + esc(angle[3]) + '</span></span>';
+    }
     var m = String(marker || "").match(/^([（(])([A-Za-z0-9ぁ-ゖァ-ヺ]{1,2})([）)])$/);
     if (!m) return esc(marker || "");
     return '<span class="marker-parentheses">' + esc(m[1]) +
@@ -252,6 +258,14 @@
         out += "<u>" + inline(m[1], footnotes, leadLine) + "</u>";
         rem = rem.slice(m[0].length); continue;
       }
+      // Angle-bracket labels stay distinct from (1); only underline-adjacent labels are subscript.
+      if ((m = rem.match(/^(?:<<[0-9]{1,2}>>|<[0-9]{1,2}>|〈[0-9]{1,2}〉|《[0-9]{1,2}》)/))) {
+        var angleRest = rem.slice(m[0].length);
+        var angleUnderline = /^[ \t]*(?===[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/.test(angleRest);
+        out += (angleUnderline ? '<sub class="underline-marker">' : '') + markerLabelHtml(m[0]) +
+          (angleUnderline ? '</sub>' : '');
+        rem = angleUnderline ? angleRest.replace(/^[ \t]+/, '') : angleRest; continue;
+      }
       // 下線・波線に隣接する番号・単独記号は下付き。旧 ~~(1)~~ 記法も解釈する。
       if ((m = rem.match(/^(?:~~([（(][^~()（）]*[）)])~~|([（(][^()（）]*[）)])|\(\(([^)]+)\)\)|([A-Za-z0-9ぁ-ゖァ-ヺ])(?=__|~~|==))[ \t]*(?===[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/))) {
         var marker = m[1] || m[2];
@@ -308,7 +322,7 @@
             (rem.slice(end + 1, end + 3) === "==" || rem.slice(end + 1, end + 3) === "__" || rem.slice(end + 1, end + 3) === "~~")) break;
         if (ch === "[" || ch === "#" || ch === "=" || ch === "_" ||
             ch === ":" || ch === "~" || ch === "^" || ch === "{" || ch === "(" || ch === "（" || ch === "*" ||
-            ch === "!" || ch === "|") break;
+            ch === "!" || ch === "|" || ch === "<" || ch === "〈" || ch === "《") break;
         end++;
       }
       var plain = esc(smartQuotes(rem.slice(0, end)));
@@ -718,6 +732,7 @@
     t = t.replace(/~~([^~]+)~~/g, "$1");            // 波線
     t = t.replace(/\^\^([^^]+)\^\^/g, "$1");        // 上付き
     t = t.replace(/\(\(([^)]+)\)\)/g, " ");         // 選択肢ラベル
+    t = t.replace(/<<[0-9]{1,2}>>|<[0-9]{1,2}>|〈[0-9]{1,2}〉|《[0-9]{1,2}》/g, " "); // 番号付き山括弧
     t = t.replace(/<[^>]*>/g, " ");                 // HTML タグ
     t = t.replace(/^@@\s?/gm, "");                  // @@ 字下げ抑制タグ
     t = t.replace(/----/g, " ");
