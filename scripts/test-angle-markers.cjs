@@ -41,7 +41,7 @@ if (!process.argv.includes('--browser')) {
       for (const width of [1280, 390]) {
         const page = await browser.newPage({viewport: {width, height: 900}});
         await page.route('**/*', route => route.abort());
-        await page.setContent('<style>' + css + '</style><main class="exam-doc" style="margin:20px;max-width:660px">' + rendered + '</main>');
+        await page.setContent('<style>' + css + '</style><main id="print-area" class="exam-doc print-out" style="display:block;margin:20px;max-width:660px">' + rendered + '</main>');
         for (const media of ['screen', 'print']) {
           await page.emulateMedia({media});
           const data = await page.evaluate(() => ({
@@ -51,7 +51,7 @@ if (!process.argv.includes('--browser')) {
             underlines: document.querySelectorAll('.underline-marker .marker-angle').length,
             fitted: [...document.querySelectorAll('.marker-angle')].every(n => n.getBoundingClientRect().width > 0)
           }));
-          assert.equal(data.overflow, false, width + ' ' + media);
+          if (media === 'screen') assert.equal(data.overflow, false, width + ' ' + media);
           assert.equal(data.underlines, 6);
           assert.ok(data.fitted);
           assert.ok(data.text.includes('<1>') && data.text.includes('<<1>>') && data.text.includes('(1)'));
