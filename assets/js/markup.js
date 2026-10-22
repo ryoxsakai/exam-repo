@@ -116,16 +116,44 @@
     return s;
   }
 
-  // Only prose on both sides identifies an ambiguous dash as punctuation.
-  function proseDashHtml(full, offset, text) {
-    var left = text.slice(0, offset).match(/([A-Za-z]+(?:[’'][A-Za-z]+)*)[”’"')\]]*$/);
-    var right = text.slice(offset + full.length).match(/^[“‘"'(\[]*([A-Za-z]+(?:[’'][A-Za-z]+)*)/);
-    function proseWord(match) { return match && (match[1].length > 1 || /^(?:a|A|I)$/.test(match[1])); }
-    if (!proseWord(left) || !proseWord(right)) return full;
-    var before = text.slice(0, offset - left[0].length);
-    var after = text.slice(offset + full.length + right[0].length);
-    if (/[A-Za-z0-9_\-]$/.test(before) || /^[A-Za-z0-9_\-]/.test(after)) return full;
-    return ' <span class="em-dash">——</span> ';
+  // Typography only: recognize common printed/OCR dash variants across style boundaries.
+  var DASH_GLYPHS = "\u002d\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u2e3a\u2e3b\ufe58\ufe63\uff0d";
+  var DASH_RUN = new RegExp("[ \t\u00a0\u2000-\u200a\u202f\u3000]*[" + DASH_GLYPHS + "]+(?:[ \t\u00a0\u2000-\u200a\u202f\u3000]+[" + DASH_GLYPHS + "]+)*[ \t\u00a0\u2000-\u200a\u202f\u3000]*", "g");
+  function dashContext(s) {
+    return s.replace(/(?:__|\*\*|~~|==|::|\^\^|!!!!)/g, "");
+  }
+  function dashPlainHtml(raw, before, after) {
+    var html = "", last = 0;
+    // Each recursive inline render has its own matcher; never share lastIndex.
+    var pattern = new RegExp(DASH_RUN.source, "g"), match;
+    while ((match = pattern.exec(raw))) {
+      var full = match[0], glyphs = full.replace(/[^\-‐‑‒–—―−⸺⸻﹘﹣－]/g, "");
+      var leftText = dashContext(before + raw.slice(0, match.index));
+      var rightText = dashContext(raw.slice(match.index + full.length) + after);
+      var left = leftText.match(/([\p{L}\p{N}_]+(?:[.’'][\p{L}\p{N}_]+)*)[.,;:!?。！？”’"')\]）】」』]*$/u);
+      var right = rightText.match(/^[“‘"'(\[（【「『]*([\p{L}\p{N}_]+(?:[.’'][\p{L}\p{N}_]+)*)/u);
+      var l = left ? left[1] : "", r = right ? right[1] : "";
+      var repeated = glyphs.length > 1;
+      var certain = /[—―⸺⸻﹘]/.test(glyphs);
+      var leftNumber = /\p{N}/u.test(l), rightNumber = /\p{N}/u.test(r);
+      var math = (leftNumber && rightNumber) || (!certain && (leftNumber || rightNumber)) || (!repeated && (
+        (/^[A-Za-zα-ωΑ-Ω]$/.test(l) && /^[A-Za-zα-ωΑ-Ω]$/.test(r)) ||
+        (/^[A-Za-zα-ωΑ-Ω]$/.test(l) && !/^[aAI]$/.test(l)) ||
+        (/^[A-Za-zα-ωΑ-Ω]$/.test(r) && !/^[aAI]$/.test(r)) ||
+        (/^[IVXLCDM]+$/.test(l) && /^[IVXLCDM]+$/.test(r))));
+      var strong = /[‒–—―−⸺⸻﹘﹣－]/.test(glyphs);
+      var spaced = /\s/.test(full);
+      // A lone hyphen is a compound joiner; spaces plus prose identify OCR punctuation.
+      var prose = !!l && !!r && !math;
+      var convert = !math && (strong || repeated || (spaced && prose));
+      // Keep standalone Markdown/decorative rules, negative signs and formulas.
+      if (!strong && !leftText.trim() && !rightText.trim() && glyphs.length >= 3) convert = false;
+      if (!strong && !repeated && (!l || !r)) convert = false;
+      html += esc(smartQuotes(raw.slice(last, match.index)));
+      html += convert ? ' <span class="em-dash">——</span> ' : esc(smartQuotes(full));
+      last = match.index + full.length;
+    }
+    return html + esc(smartQuotes(raw.slice(last)));
   }
 
   // インライン記法をHTMLへ。footnotes は配列で受け取り副作用で追加。
@@ -337,7 +365,7 @@
             ch === "!" || ch === "|" || ch === "<" || ch === "〈" || ch === "《") break;
         end++;
       }
-      var plain = esc(smartQuotes(rem.slice(0, end)));
+      var plain = dashPlainHtml(rem.slice(0, end), text.slice(0, text.length - rem.length), rem.slice(end));
       // 文末の . ? ! の後（閉じ引用符・閉じ括弧 ”’"')]）】」』 が続く場合も含む）に
       // 大文字、または開き引用符（“‘"' 等。次の文が引用符から始まる場合）が来る場合、
       // スペースを &nbsp;&nbsp; に広げる（例: ?” He / .) The / . “Quote”）
@@ -348,17 +376,6 @@
         if (p === "." && !q && ABBREV.test(w)) return full;
         return w + p + q + "&nbsp;&nbsp;";
       });
-      // A spaced single hyphen between prose words is usually an OCR dash.
-      // Keep numeric operands/ranges and single-letter algebraic variables unchanged.
-      plain = plain.replace(/[ \t\u3000]+-(?!-)[ \t\u3000]+/g, proseDashHtml);
-      // Unicode em/en dashes and horizontal bars may touch the surrounding words.
-      // Normalize one/two such glyphs in prose; keep numeric ranges and algebra.
-      plain = plain.replace(/[ \t\u3000]*(?<![—–―])[—–―]{1,2}(?![—–―])[ \t\u3000]*/g, proseDashHtml);
-      // An exact double hyphen is also a dash. Preserve unspaced single hyphens,
-      // and longer runs. Normalize adjacent horizontal space.
-      plain = plain.replace(/[ \t\u3000]*(?<!-)--(?!-)[ \t\u3000]*/g,
-        ' <span class="em-dash">——</span> ').replace(/<\/span>  <span class="em-dash">/g,
-        '</span> <span class="em-dash">');
       out += plain;
       rem = rem.slice(end);
     }
