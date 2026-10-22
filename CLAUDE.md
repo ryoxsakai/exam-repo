@@ -316,3 +316,7 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 ### 箇条書きのぶら下げ（2026-10-15）
 
 文章と判定した行頭 `- ` の表示に `bullet-line` を付け、記号は幅1.3emの `bullet-marker`、本文は `bullet-text` に分ける。左padding1.3emと初行の負のtext-indentで、2行目以降も本文開始位置に揃える。全訳の字下げ抑制時、閲覧、印刷で共通。負数や数式の判定は変更しない。公開JS/CSSは `20261015bullets`。`test-bullet-indent.cjs` はPC/mobile・画面/印刷で3行以上の文字座標を実測し、脚注重複なしと通常段落・負数保持も検証する。
+
+### 設問・解説を含む丸括弧内ラベルの幅（2026-10-23）
+
+`(1)`・`(a)`・`（ア）`等、英数字・かな1〜2文字の丸括弧内ラベルは、下線直前以外でも `markerLabelHtml` を通して内側の最小幅1.0125em・中央寄せで表示する。リード文・本文・設問・解答・全訳・解説、表・太字等も共通のinline処理を使う。括弧のＭＳ Ｐ明朝は既存指定を維持し、下付きは従来どおり下線直前だけ。長い括弧内の文章・空の解答欄・URL・コード・`((選択肢))`は従来どおり、DB原文とstripも変更しない。公開JSは `markup-20261023parentheses.js`。検証は `test-parentheses-labels.cjs` と `test-marker-width.cjs`。

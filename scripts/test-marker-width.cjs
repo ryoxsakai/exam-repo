@@ -14,10 +14,12 @@ const ctx={window:{}};vm.runInNewContext(fs.readFileSync(path.join(root,'assets/
 const labels=['1','i','a','12','99','WW','あ','アイ'];
 let source='';
 for(const label of labels)for(const pair of [['(',')'],['（','）']])for(const style of ['__','~~','=='])source+=`${pair[0]}${label}${pair[1]}${style}Underline 日本語 text${style}\n\n`;
+// The same labels must now have identical cells in questions and explanations.
+for(const label of labels)for(const pair of [['(',')'],['（','）']])source+=`${pair[0]}${label}${pair[1]} ordinary reference 日本語\n\n`;
 const unrelated='Ordinary (1), (12), (a), (word) and （本文） remain ordinary.\n\n( [[1]] ) blank.\n\n(123)__long label stays unchanged__\n\n((1)) choice';
 const rendered=M.render(source).html,other=M.render(unrelated).html;
-assert.equal((rendered.match(/class="marker-label"/g)||[]).length,labels.length*2*3);
-assert.doesNotMatch(other,/marker-label/);
+assert.equal((rendered.match(/class="marker-label"/g)||[]).length,labels.length*2*4);
+assert.equal((other.match(/class="marker-label"/g)||[]).length,3);
 const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSync(evidence,{recursive:true});
 (async()=>{
  const browser=await chromium.launch({headless:true,...(process.env.PANEL_CHROMIUM?{executablePath:process.env.PANEL_CHROMIUM}:{})});
