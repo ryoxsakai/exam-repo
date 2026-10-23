@@ -3,10 +3,18 @@ import { readFile, writeFile } from 'node:fs/promises';
 const root = new URL('../', import.meta.url);
 const bundle = await build({ entryPoints:[new URL('app.js', import.meta.url).pathname], bundle:true, write:false, format:'esm', target:'es2022', minify:true, legalComments:'none' });
 const mainCss = await readFile(new URL('assets/css/main.css', root), 'utf8');
-const start = mainCss.indexOf('.exam-doc .blk {');
-const end = mainCss.indexOf('.exam-section-title {', start);
-if (start < 0 || end < 0) throw new Error('Exam markup CSS boundaries not found');
-const css = await readFile(new URL('panel.css', import.meta.url), 'utf8') + '\n' + mainCss.slice(start, end);
+// Explicit shared regions include fonts and later marker rules; selector positions
+// and unrelated UI rules are not a contract for the conversation panel.
+const sharedCss = ['marker-fonts', 'markup', 'markers'].map(name => {
+  const startToken = `/* exam-shared:${name}:start */`;
+  const endToken = `/* exam-shared:${name}:end */`;
+  const start = mainCss.indexOf(startToken);
+  const end = mainCss.indexOf(endToken, start + startToken.length);
+  if (start < 0 || end < 0 || mainCss.indexOf(startToken, start + 1) >= 0 || mainCss.indexOf(endToken, end + 1) >= 0)
+    throw new Error(`Missing or duplicate shared Exam CSS region: ${name}`);
+  return mainCss.slice(start + startToken.length, end);
+}).join('\n');
+const css = await readFile(new URL('panel.css', import.meta.url), 'utf8') + '\n' + sharedCss;
 const script = bundle.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 const template = await readFile(new URL('index.html', import.meta.url), 'utf8');
 const html = template.replace('/* PANEL_CSS */', () => css).replace('/* PANEL_JS */', () => script);

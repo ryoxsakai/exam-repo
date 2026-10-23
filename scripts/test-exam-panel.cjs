@@ -6,7 +6,7 @@ const { pathToFileURL } = require('node:url');
 const { build } = require('../panel/node_modules/esbuild');
 const root = path.resolve(__dirname, '..');
 const row = { exam_id:42, question_number:5, university_name:'獨協医科大学', year:2015, schedule:'前期', category:'長文', label:'文挿入' };
-const question = { ...row, problem_text:'{{リード文}}\nRead the article.\n\n{{本文}}\n[1] A **doctor** studied __memory__ and ##sleep::睡眠##.  [[1]]\n\n[2] People need rest.\n\n{{設問}}\n{{問1}} Choose an answer.\n((1)) The first choice.\n((2)) The second choice.\n\n{{全訳}}\n人は休息を必要とする。', answer_text:'問1：②', commentary_text:'本文の第二段落を参照。', translation_text:'人は休息を必要とする。' };
+const question = { ...row, problem_text:'{{リード文}}\nRead the article.\n\n{{本文}}\n[1] A **doctor** studied __memory__ and ##sleep::睡眠##.  [[1]]\n\n[2] People need rest. __(1)__ ==(a)== ~~（ア）~~ and <1> reference.\n\n{{設問}}\n{{問1}} Choose an answer.\n((1)) The first choice.\n((2)) The second choice.\n\n{{全訳}}\n人は休息を必要とする。', answer_text:'問1：②', commentary_text:'本文の第二段落を参照。', translation_text:'人は休息を必要とする。' };
 async function main() {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'exam-panel-test-'));
   await build({ entryPoints:[path.join(root,'worker/mcp.ts')], bundle:true, platform:'node', format:'esm', outfile:path.join(tmp,'mcp.mjs') });
@@ -76,8 +76,13 @@ async function browserTest(html, initial) {
     await frame.locator('#detail').waitFor({state:'visible'});
     assert.match(await frame.locator('#document').innerText(),/doctor/);
     assert.doesNotMatch(await frame.locator('#document').innerText(),/人は休息/);
-    assert.equal(await frame.locator('#document u').innerText(),'memory');
+    assert.equal(await frame.locator('#document u').first().innerText(),'memory');
     assert.equal(await frame.locator('.blank-badge').count(),1);
+    const markerStyles = await frame.locator('#document .marker-label').evaluateAll(nodes=>nodes.map(n=>({line:getComputedStyle(n).textDecorationLine,style:getComputedStyle(n).textDecorationStyle,minimum:getComputedStyle(n).minWidth,nowrap:getComputedStyle(n.parentElement).whiteSpace,font:getComputedStyle(n).fontFamily})));
+    assert.deepEqual(markerStyles.slice(0,3).map(n=>[n.line,n.style]),[['underline','solid'],['underline','double'],['underline','wavy']]);
+    assert.ok(markerStyles.every(n=>n.minimum!=='0px' && n.nowrap==='nowrap' && n.font.startsWith('"Exam Parentheses"')));
+    assert.ok((await frame.locator('.marker-angle-glyph').first().evaluate(n=>getComputedStyle(n).fontFamily)).startsWith('"Exam Angle Brackets"'));
+
     assert.equal(await frame.locator('.footnote-section').count(),1,'Notes must not be duplicated');
     await frame.locator('#document').evaluate(el=>{const node=el.querySelector('u').firstChild;const range=document.createRange();range.selectNodeContents(node);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);});
     await frame.locator('#share:not([disabled])').waitFor();
