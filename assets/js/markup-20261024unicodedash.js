@@ -136,7 +136,7 @@
       var repeated = glyphs.length > 1;
       var certain = /[—―⸺⸻﹘]/.test(glyphs);
       var leftNumber = /\p{N}/u.test(l), rightNumber = /\p{N}/u.test(r);
-      var math = (leftNumber && rightNumber) || (!certain && (leftNumber || rightNumber)) || (!repeated && (
+      var math = (leftNumber && rightNumber) || (!certain && (leftNumber || rightNumber)) || (!certain && !repeated && (
         (/^[A-Za-zα-ωΑ-Ω]$/.test(l) && /^[A-Za-zα-ωΑ-Ω]$/.test(r)) ||
         (/^[A-Za-zα-ωΑ-Ω]$/.test(l) && !/^[aAI]$/.test(l)) ||
         (/^[A-Za-zα-ωΑ-Ω]$/.test(r) && !/^[aAI]$/.test(r)) ||

@@ -9,7 +9,7 @@ for (const input of ['word--word', 'word -- word', 'word  --\tword', 'word　--�
 }
 for (const input of ['--word', 'word--', '--']) assert.ok(M.render(input).html.includes(dash), input);
 assert.ok(M.render('a--b--c').html.includes('a' + dash + 'b' + dash + 'c'));
-for (const input of ['a-b', 'a - b', 'a—b', '---', '`a--b`', '``a--b``', '``a`--b``', '<CODE>a--b</CODE>',
+for (const input of ['a-b', 'a - b', '---', '`a--b`', '``a--b``', '``a`--b``', '<CODE>a--b</CODE>',
   'https://example.test/a--b?q=--', 'www.example.test/a--b', '<!-- a--b -->', '<!-- a\n--b -->',
   '<a href="a--b">', '\\--', '```js\na--b\n```', '~~~\na--b\n~~~', '```js\na--b', '<code>a--b</code>', '<pre>a--b</pre>', '[link](./a--b)', '[link](./a--b "title ) --")', '[link](<./a_(--b>)', '[link](https://example.test/a_(b)--c)', '[link](./a_(b_(c))--d)', '[link](./a_\\(b\\)--c)', '<a title="1 > 0" href="a--b">', "<a title='1 > 0' href='a--b'>"]) {
   const html = M.render(input).html; assert.ok(!html.includes('em-dash'), input);
@@ -42,7 +42,7 @@ for (const glyph of ['-', '‐', '‑', '‒', '–', '—', '―', '−', '⸺'
 for (const input of ['a---b', 'a-----b', 'a —— b', 'word - - word', 'word — – ― word', 'word\u00a0—\u00a0word', 'word\u2009–\u2009word', 'word -word', 'word- word', 'word. - Next', '説明―補足', '説明－補足', '説明 − 補足', '—Opening words', 'Closing words—', 'word—5 reasons', '3kg—word', 'word—word2', 'word⸺word', 'word⸻word']) {
   assert.equal((M.render(input).html.match(/class="em-dash"/g) || []).length, 1, input);
 }
-for (const input of ['**word**—__word__', '__word__ - **word**', 'word—((1))', '(1)—word']) {
+for (const input of ['**word**—__word__', '__word__ - **word**', 'word—((1))', '(1)—word', 'I—a teacher', 'a—b', 'x—y']) {
   assert.match(M.render(input).html, /em-dash/, input);
 }
 for (const input of ['**5**–**10**', '__5__ − __3__', 'A–Z', 'I–III', '1e−3', '−5', '5 − 3', 'x−y', '2020－2022', '2020--2022', 'well‐being', 'non‑profit', 'soft\u00adhyphen', 'スーパー', '説明〜補足', '---', '----']) {
