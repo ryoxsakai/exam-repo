@@ -4,6 +4,8 @@ on:
     paths:
       - 'assets/js/**'
       - 'assets/css/**'
+      - 'panel/**'
+      - 'scripts/test-marker-decoration-panel.cjs'
       - 'index.html'
       - 'setting/index.html'
       - 'scripts/test-markup-double.cjs'
@@ -22,12 +24,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
       - run: npm ci --prefix panel
       - run: ./panel/node_modules/.bin/playwright install --with-deps chromium
       - run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk poppler-utils
+      - run: npm run build --prefix panel
+      - run: node scripts/test-marker-decoration-panel.cjs
+      - run: NODE_PATH=./panel/node_modules node scripts/test-exam-panel.cjs --browser
+      - run: node scripts/test-parentheses-labels.cjs
+      - run: node scripts/test-angle-markers.cjs --browser
       - run: node scripts/test-markup-double.cjs --browser
       - run: node scripts/test-markup-dash.cjs --browser
       - run: node scripts/test-blank-sentence-spacing.cjs --browser
@@ -41,6 +50,7 @@ jobs:
           name: exam-double-underline-qa
           path: |
             /tmp/exam-marker-width/
+            /tmp/exam-marker-decoration-panel/
             /tmp/exam-double-*
             /tmp/exam-dash-*
             /tmp/exam-angles-*

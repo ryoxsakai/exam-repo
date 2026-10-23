@@ -328,3 +328,11 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 ### ダッシュの表示統一（2026-10-23）
 
 `It—and another just like it—belonged` のようなダッシュを、表示時に ` —— `（半角スペース各1個＋U+2014×2）へ正規化する。対象候補はASCIIハイフン、U+2010／2011／2012／2013／2014／2015／2212／2E3A／2E3B／FE58／FE63／FF0D。連続数を問わず、横方向の空白を挟んだ記号列も1つの区切りとして扱う。文頭・文末、日本語中、数字・選択肢参照の隣接、太字・下線等との境目にも対応する。半角・Unicodeの語中ハイフン（例：well-being、non‑profit）、数値範囲・負数・数式・URL・コード・空所記法・Markdown区切り・日本語の長音符と波ダッシュは維持する。判断が曖昧な数値・変数の隣接は保持するが、明確なem dash等は片側が数字でも区切りとして表示する。繰り返し描画でダッシュは増えない。元データとstripは変更せず、全セクションと画面・印刷で共通。公開JSは `markup-20261024unicodedash.js`。回帰は `test-markup-dash.cjs --browser`。
+
+### 括弧番号の下線と会話パネルの共有CSS（2026-10-23）
+
+`__(1)__`・`==(a)==`・`~~（ア）~~` 等は番号自体を装飾する。丸括弧・山括弧の外枠は改行禁止のinline-block、内側ラベルは従来の幅を保持し、最寄りの下線・二重下線・波線をCSS変数で各atomic boxへ渡す。`(1)__本文__` の番号は装飾しない。保存データ・パーサーは変更しない。公開CSSは `main-20261023markerdecorations.css`。
+
+会話パネルは `main.css` の明示的な `exam-shared` 領域（marker-fonts / markup / markers）を抽出し、領域の欠落・重複はビルドエラーにする。括弧フォントのfont-faceと字体・幅・改行禁止・装飾を同じソースから配信する。共有ルール追加時は該当領域に配置する。
+
+検証: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-marker-decoration-panel.cjs`（PC/mobile、閲覧/会話パネル、画面/印刷、実画素比較とA4 PDF）。`--baseline` は固定した修正前コミットのCSSと従来のパネル抽出を使用する。証跡は `/tmp/exam-marker-decoration-panel/`。`test-exam-panel.cjs --browser` はホスト内の実パネルでも3種の装飾と字体・幅を確認する。
