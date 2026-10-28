@@ -340,3 +340,5 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 ### 発音問題の語内下線と引用内記号（2026-10-28）
 
 `c__o__st`・`e__x__amine`・`((5)) __th__ough`のように装飾の直後にも英字が続く場合、単独英字や選択肢番号を下線番号へ変換しない。明示した丸括弧記号は従来どおり解釈する。引用符直後の `“ニ__people of note__”` も下線記号として認識する。保存・strip・下線範囲は変えない。公開JSは `markup-20261028phonetics.js`。回帰は `node scripts/test-phonetic-underlines.cjs --browser`（desktop/mobile、画面/印刷）、既存markup/marker/会話パネルテスト。
+
+語末まで下線が続く `t__oe__` 等は、`下線部の発音` を含む原本の指示文、または `Markup.render(text, {phoneticWords:true})` によって発音単語として描画する。英字部分だけからなる語内下線で裸小文字や選択肢を下付きにしない。通常文の裸小文字・かな・英大文字・明示括弧付き記号は保持する。公開JSは `markup-20261028phoneticwords.js`。同テストで語頭・語中・語末を検証する。

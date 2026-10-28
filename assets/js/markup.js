@@ -309,7 +309,8 @@
       // 下線・波線に隣接する番号・単独記号は下付き。旧 ~~(1)~~ 記法も解釈する。
       // 語内下線 c__o__st の c や ((5)) __th__ough の選択肢は番号にしない。
       if ((m = rem.match(/^(?:~~([（(][^~()（）]*[）)])~~|([（(][^()（）]*[）)])|\(\(([^)]+)\)\)|([A-Za-z0-9ぁ-ゖァ-ヺ])(?=__|~~|==))[ \t]*(?===[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/)) &&
-          (!(m[3] || m[4]) || !/^(?:==[^=]+==|__[^_]+__|~~(?!~)[^~]+~~)[A-Za-z]/.test(rem.slice(m[0].length)))) {
+          (!(m[3] || m[4]) || !/^(?:==[^=]+==|__[^_]+__|~~(?!~)[^~]+~~)[A-Za-z]/.test(rem.slice(m[0].length))) &&
+          !(footnotes.phoneticWords && (m[3] || (m[4] && /^[a-z]$/.test(m[4]))) && /^__[A-Za-z]+__/.test(rem.slice(m[0].length)))) {
         var marker = m[1] || m[2];
         out += '<sub class="underline-marker">' +
           (m[3] ? choiceLabelHtml(m[3], "choice-inline") : markerLabelHtml(marker || m[4])) + "</sub>";
@@ -522,6 +523,9 @@
     var paraNum = opts && opts.paraNum;
     var footnotes = [];
     var source = String(text == null ? "" : text);
+    // 発音問題の単語は t__oe__ のように語末まで下線が続く。
+    // 通常の裸小文字ラベルと区別するため、明示オプションか原本の指示文で判定する。
+    footnotes.phoneticWords = !!(opts && opts.phoneticWords) || /下線部の発音/.test(source);
     footnotes.literalPrefix = "\uE000";
     while (source.indexOf(footnotes.literalPrefix) >= 0) footnotes.literalPrefix += "\uE000";
     footnotes.literals = [];
