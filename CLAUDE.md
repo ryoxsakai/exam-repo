@@ -336,3 +336,7 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 会話パネルは `main.css` の明示的な `exam-shared` 領域（marker-fonts / markup / markers）を抽出し、領域の欠落・重複はビルドエラーにする。括弧フォントのfont-faceと字体・幅・改行禁止・装飾を同じソースから配信する。共有ルール追加時は該当領域に配置する。
 
 検証: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-marker-decoration-panel.cjs`（PC/mobile、閲覧/会話パネル、画面/印刷、実画素比較とA4 PDF）。`--baseline` は固定した修正前コミットのCSSと従来のパネル抽出を使用する。証跡は `/tmp/exam-marker-decoration-panel/`。`test-exam-panel.cjs --browser` はホスト内の実パネルでも3種の装飾と字体・幅を確認する。
+
+### 発音問題の語内下線と引用内記号（2026-10-28）
+
+`c__o__st`・`e__x__amine`・`((5)) __th__ough`のように装飾の直後にも英字が続く場合、単独英字や選択肢番号を下線番号へ変換しない。明示した丸括弧記号は従来どおり解釈する。引用符直後の `“ニ__people of note__”` も下線記号として認識する。保存・strip・下線範囲は変えない。公開JSは `markup-20261028phonetics.js`。回帰は `node scripts/test-phonetic-underlines.cjs --browser`（desktop/mobile、画面/印刷）、既存markup/marker/会話パネルテスト。

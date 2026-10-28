@@ -37,6 +37,7 @@ jobs:
       - run: node scripts/test-marker-decoration-panel.cjs
       - run: NODE_PATH=./panel/node_modules node scripts/test-exam-panel.cjs --browser
       - run: node scripts/test-markup-double.cjs --browser
+      - run: node scripts/test-phonetic-underlines.cjs --browser
       - run: node scripts/test-markup-dash.cjs --browser
       - run: node scripts/test-blank-sentence-spacing.cjs --browser
       - run: node scripts/test-bullet-indent.cjs
