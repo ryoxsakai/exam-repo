@@ -307,7 +307,9 @@
         rem = angleUnderline ? angleRest.replace(/^[ \t]+/, '') : angleRest; continue;
       }
       // 下線・波線に隣接する番号・単独記号は下付き。旧 ~~(1)~~ 記法も解釈する。
-      if ((m = rem.match(/^(?:~~([（(][^~()（）]*[）)])~~|([（(][^()（）]*[）)])|\(\(([^)]+)\)\)|([A-Za-z0-9ぁ-ゖァ-ヺ])(?=__|~~|==))[ \t]*(?===[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/))) {
+      // 語内下線 c__o__st の c や ((5)) __th__ough の選択肢は番号にしない。
+      if ((m = rem.match(/^(?:~~([（(][^~()（）]*[）)])~~|([（(][^()（）]*[）)])|\(\(([^)]+)\)\)|([A-Za-z0-9ぁ-ゖァ-ヺ])(?=__|~~|==))[ \t]*(?===[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/)) &&
+          (!(m[3] || m[4]) || !/^(?:==[^=]+==|__[^_]+__|~~(?!~)[^~]+~~)[A-Za-z]/.test(rem.slice(m[0].length)))) {
         var marker = m[1] || m[2];
         out += '<sub class="underline-marker">' +
           (m[3] ? choiceLabelHtml(m[3], "choice-inline") : markerLabelHtml(marker || m[4])) + "</sub>";
@@ -358,7 +360,7 @@
         if ((footnotes.literalPrefix && rem.indexOf(footnotes.literalPrefix, end) === end) ||
             /^(?:https?:\/\/|ftp:\/\/|mailto:|www\.)/i.test(rem.slice(end))) break;
         // 文中の A__語__ / 1__語__ でも記号の直前で区切り、下付きとして処理する。
-        if (/[A-Za-z0-9ぁ-ゖァ-ヺ]/.test(ch) && /\s/.test(rem[end - 1]) &&
+        if (/[A-Za-z0-9ぁ-ゖァ-ヺ]/.test(ch) && /[\s“‘"'(（【「『]/.test(rem[end - 1]) &&
             (rem.slice(end + 1, end + 3) === "==" || rem.slice(end + 1, end + 3) === "__" || rem.slice(end + 1, end + 3) === "~~")) break;
         if (ch === "[" || ch === "#" || ch === "=" || ch === "_" ||
             ch === ":" || ch === "~" || ch === "^" || ch === "{" || ch === "(" || ch === "（" || ch === "*" ||
