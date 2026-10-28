@@ -16,6 +16,19 @@ for(const input of phonetics){
 }
 const choices='((1)) c__o__st　((2)) e__x__amine　((5)) __th__ough';
 assert.doesNotMatch(M.render(choices).html,/underline-marker/);
+const terminalWords=['t__oe__','a__che__','b__oy__','w__eigh__','__toe__','t__o__e'];
+const phoneticLead='次の各群の単語の下線部の発音が他と異なるものを選べ。\n\n';
+for(const input of terminalWords){
+ for(const html of [M.render(input,{phoneticWords:true}).html,M.render(phoneticLead+input).html]){
+  assert.doesNotMatch(html,/underline-marker/,input);
+  assert.ok(html.includes(input.replace(/__([^_]+)__/,'<u>$1</u>')),input);
+ }
+}
+assert.match(M.render('t__oe__').html,/underline-marker/,'ordinary bare lowercase label retained');
+assert.doesNotMatch(M.render(phoneticLead+'((1)) t__oe__　((2)) __toe__').html,/underline-marker/);
+for(const input of ['A__word__','イ__語句__','(a)__word__','~~(1)~~__in__side']){
+ assert.match(M.render(phoneticLead+input).html,/underline-marker/,input);
+}
 for(const prefix of ['', 'He said “', 'He said "', 'He said ‘', 'He said 「']){
  for(const marker of ['A','a','1','ニ']){
   const html=M.render(prefix+marker+'__underlined words__.').html;
@@ -36,7 +49,7 @@ if(!process.argv.includes('--browser')){console.log('PASS phonetic word segments
  try{for(const width of [1280,390]){
   const page=await browser.newPage({viewport:{width,height:1000}});await page.route('**/*',r=>r.abort());
   const css=fs.readFileSync(path.join(root,'assets/css/main.css'),'utf8');
-  await page.setContent(`<style>${css}</style><div id="print-area" class="print-out exam-doc" style="display:block;width:calc(100% - 30px);margin:15px"><div id="words">${phonetics.map(x=>M.render(x).html).join('')}</div><div id="choices">${M.render(choices).html}</div><div id="labels">${M.render('Donors include “ニ__people of note__,” and A__urgent__ requests.').html}</div></div>`);
+  await page.setContent(`<style>${css}</style><div id="print-area" class="print-out exam-doc" style="display:block;width:calc(100% - 30px);margin:15px"><div id="words">${phonetics.concat(terminalWords).map(x=>M.render(x,{phoneticWords:true}).html).join('')}</div><div id="choices">${M.render(phoneticLead+choices+'　((3)) t__oe__　((4)) __toe__').html}</div><div id="labels">${M.render('Donors include “ニ__people of note__,” and A__urgent__ requests.').html}</div></div>`);
   for(const media of ['screen','print']){
    await page.emulateMedia({media});
    assert.equal(await page.locator('#words .underline-marker,#choices .underline-marker').count(),0);
