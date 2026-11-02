@@ -2939,7 +2939,8 @@
     document.body.appendChild(probe);
     $all(selector, root).forEach(function (group) {
       var style = getComputedStyle(group);
-      var fontSize = forPrint ? (PRINT_FS_PT[Store.getPrintFontSize()] || 12) * 4 / 3 : parseFloat(style.fontSize);
+      var printSize = root.classList.contains("viewer-optimized") ? Store.getFontSize() : Store.getPrintFontSize();
+      var fontSize = forPrint ? (PRINT_FS_PT[printSize] || 12) * 4 / 3 : parseFloat(style.fontSize);
       probe.style.fontSize = fontSize + "px"; probe.style.fontFamily = style.fontFamily;
       var width = forPrint ? probe.getBoundingClientRect().width : group.getBoundingClientRect().width;
       var children = Array.prototype.slice.call(group.children), maxWidth = 0;
