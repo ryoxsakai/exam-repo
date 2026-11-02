@@ -28,15 +28,21 @@
 }
 
 /* Keep each note together where possible; long notes wrap within the paper. */
-.print-optimize-footnotes .print-part-q .footnote-section ol {
+.print-optimize-footnotes .print-part-q .footnote-section ol,
+#exam-modal-body .footnote-section ol,
+.viewer-optimized .footnote-section ol {
   display: flex; flex-wrap: wrap; column-gap: 1.5em; row-gap: .25em;
 }
-.print-optimize-footnotes .print-part-q .footnote-section li {
+.print-optimize-footnotes .print-part-q .footnote-section li,
+#exam-modal-body .footnote-section li,
+.viewer-optimized .footnote-section li {
   flex: 0 1 auto; max-width: 100%; min-width: 0; margin: 0;
   box-sizing: border-box; overflow-wrap: anywhere;
   break-inside: avoid; page-break-inside: avoid;
 }
-.print-optimize-footnotes .print-part-q .footnote-section .footnote-number {
+.print-optimize-footnotes .print-part-q .footnote-section .footnote-number,
+#exam-modal-body .footnote-section .footnote-number,
+.viewer-optimized .footnote-section .footnote-number {
   flex-shrink: 0;
 }
 

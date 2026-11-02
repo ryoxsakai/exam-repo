@@ -41,6 +41,7 @@ jobs:
       - run: node scripts/test-markup-dash.cjs --browser
       - run: node scripts/test-blank-sentence-spacing.cjs --browser
       - run: node scripts/test-bullet-indent.cjs
+      - run: node scripts/test-viewer-layout.cjs
       - run: node scripts/test-marker-width.cjs
       - run: node scripts/test-parentheses-labels.cjs
       - run: node scripts/test-angle-markers.cjs --browser

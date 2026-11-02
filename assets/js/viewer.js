@@ -1970,8 +1970,32 @@
       body += head + '<div class="exam-section">' + fields.join('<hr class="exam-hr exam-field-sep">') + "</div>";
     });
     el("exam-modal-body").innerHTML = body || '<div class="empty">大問が登録されていません。</div>';
+    layoutExamModal();
+    watchExamModalLayout();
     wirePrintChecks();
     buildExamShortcuts();
+  }
+
+  var examLayoutObserver = null, examLayoutFrame = 0;
+  function layoutExamModal() {
+    var root = el("exam-modal-body");
+    optimizePrintChoices(root);
+    layoutPrintAnswerGroups(root);
+  }
+  function scheduleExamModalLayout() {
+    if (examLayoutFrame) cancelAnimationFrame(examLayoutFrame);
+    examLayoutFrame = requestAnimationFrame(function () {
+      examLayoutFrame = 0;
+      layoutExamModal();
+    });
+  }
+  function watchExamModalLayout() {
+    if (!examLayoutObserver && typeof ResizeObserver !== "undefined") {
+      examLayoutObserver = new ResizeObserver(scheduleExamModalLayout);
+      examLayoutObserver.observe(el("exam-modal-body"));
+      el("exam-modal-body").addEventListener("load", scheduleExamModalLayout, true);
+    }
+    if (document.fonts) document.fonts.ready.then(scheduleExamModalLayout);
   }
 
   // モーダル下部に「大問N / セクション」への横スクロール式ショートカットを生成
@@ -2038,7 +2062,7 @@
       area = create("div", { id: "print-area" });
       document.body.appendChild(area);
     }
-    area.className = "fs-" + Store.getFontSize();
+    area.className = "viewer-optimized fs-" + Store.getFontSize();
     var clone = el("exam-modal-body").cloneNode(true);
     $all(".print-check", clone).forEach(function (n) { n.parentNode.removeChild(n); });
     $all(".exam-section", clone).forEach(function (sec) {
@@ -2060,6 +2084,8 @@
     });
     area.innerHTML = '<h1 class="print-title">' + esc(el("exam-modal-title").textContent) + "</h1>" +
       clone.innerHTML;
+    optimizePrintChoices(area, true);
+    layoutPrintAnswerGroups(area, true);
     window.print();
   }
 
@@ -2097,7 +2123,7 @@
   }
   function renderField(label, icon, text, metricText, dialogueSource) {
     var body = isBodySection(label);
-    var r = Markup.render(text, markupOpts(label, dialogueSource));
+    var rendered = renderDisplayContent(label, text, { optimizeChoices: true, optimizeAnswers: true, compactCommentary: true }, dialogueSource);
     var checked = Store.isPrintSection(label) ? " checked" : "";
     var wc = "";
     if (label === "本文") {
@@ -2112,7 +2138,7 @@
       '<label class="print-check" title="チェックした項目のみ印刷されます">' +
       '<input type="checkbox" data-printsec="' + esc(label) + '"' + checked + '><span>印刷</span></label>' +
       "</div>" +
-      '<div class="exam-doc' + (body ? "" : " no-indent") + '">' + r.html + wc + "</div></div>";
+      '<div class="exam-doc' + (body ? "" : " no-indent") + '">' + rendered + wc + "</div></div>";
   }
 
   /* ---------------- 問題印刷タブ ---------------- */
@@ -2202,6 +2228,24 @@
     return html + (groupOpen ? "</div>" : "");
   }
 
+  // Shared display-only transformations for the viewer and optional print settings.
+  function renderDisplayContent(label, text, opts, dialogueSource) {
+    if (opts && opts.optimizeChoices && ["問題", "設問"].indexOf(label) >= 0) {
+      text = text.split("\n").map(function (line) {
+        if (!/^\s*\(\([^)]+\)\)\s+\S/.test(line)) return line;
+        return line.replace(/([^\s])([ \t　]+)(?=\(\([^)]+\)\)\s+\S)/g, "$1\n");
+      }).join("\n");
+    }
+    var rendered = opts && opts.optimizeAnswers && label === "解答"
+      ? renderOptimizedAnswers(text, markupOpts(label, dialogueSource))
+      : Markup.render(text, markupOpts(label, dialogueSource)).html;
+    if (opts && opts.compactCommentary && label === "解説") {
+      // Remove only blank-line spacers. Keep real line breaks, paragraphs, headings and tables.
+      rendered = rendered.replace(/<div style="height:\.6em"><\/div>/g, "");
+    }
+    return rendered;
+  }
+
   function printField(label, text, opts, dialogueSource) {
     var body = isBodySection(label);
     var hideLabel = opts && opts.hideLabels && LABEL_HIDABLE.indexOf(label) >= 0;
@@ -2217,19 +2261,7 @@
         return quote + phrase + closeQuote + prep + token;
       });
     }
-    if (opts && opts.optimizeChoices && ["問題", "設問"].indexOf(label) >= 0) {
-      text = text.split("\n").map(function (line) {
-        if (!/^\s*\(\([^)]+\)\)\s+\S/.test(line)) return line;
-        return line.replace(/([^\s])([ \t　]+)(?=\(\([^)]+\)\)\s+\S)/g, "$1\n");
-      }).join("\n");
-    }
-    var rendered = opts && opts.optimizeAnswers && label === "解答"
-      ? renderOptimizedAnswers(text, markupOpts(label, dialogueSource))
-      : Markup.render(text, markupOpts(label, dialogueSource)).html;
-    if (opts && opts.compactCommentary && label === "解説") {
-      // Remove only blank-line spacers. Keep real line breaks, paragraphs, headings and tables.
-      rendered = rendered.replace(/<div style="height:\.6em"><\/div>/g, "");
-    }
+    var rendered = renderDisplayContent(label, text, opts, dialogueSource);
     refs.forEach(function (ref) {
       rendered = rendered.replace(ref.token, '<span class="print-line-ref" data-phrase="' + esc(ref.phrase) + '" data-original="' + esc(ref.original) + '">' + esc(ref.original) + "</span>");
     });
@@ -2838,7 +2870,7 @@
 
   // Only consecutive standalone choices belong to a group; prose and blank badges are boundaries.
   function optimizePrintChoices(root, forPrint) {
-    $all(".print-part-q .exam-doc", root).forEach(function (doc) {
+    $all(".print-part-q .exam-doc, .exam-field[data-sectype=\"問題\"] .exam-doc, .exam-field[data-sectype=\"設問\"] .exam-doc", root).forEach(function (doc) {
       var node = doc.firstElementChild;
       while (node) {
         if (!node.classList.contains("answer-choice")) { node = node.nextElementSibling; continue; }
