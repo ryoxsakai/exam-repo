@@ -7,6 +7,7 @@ on:
       - 'panel/**'
       - 'scripts/test-marker-decoration-panel.cjs'
       - 'scripts/test-exam-panel.cjs'
+      - 'scripts/test-viewer-layout.cjs'
       - 'index.html'
       - 'setting/index.html'
       - 'scripts/test-markup-double.cjs'
