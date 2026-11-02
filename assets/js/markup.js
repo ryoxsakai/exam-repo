@@ -706,7 +706,11 @@
         ? !badgeNum && !/^\[[^\[\]]{1,2}\]/.test(trimmed) && !/^《/.test(trimmed)
         : (paraStart && (paraNum ? (!badgeNum && /^["'“‘]?[A-Za-z]/.test(trimmed)) : /^["'“‘]?[A-Z]/.test(trimmed))));
       var prefix = badgeNum ? '<span class="para-badge">' + esc(badgeNum) + "</span>" : "";
-      var content = bulletLine
+      // The lead wrapper can contain a literal note marker (*) or nested bold.
+      // Render its contents separately so those characters cannot break the wrapper.
+      var content = leadLine
+        ? '<strong>' + inline(line.trim().slice(2, -2), footnotes, true) + '</strong>'
+        : bulletLine
         ? '<span class="bullet-marker">・ </span><span class="bullet-text">' + inline(bullet[1], footnotes, leadLine) + '</span>'
         : speaker
         ? esc(speaker.prefix || "") + '<strong class="dialogue-speaker">' + esc(speaker[1] + speaker[2]) + '</strong>' +
