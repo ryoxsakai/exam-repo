@@ -21,7 +21,7 @@ assert.equal(await page.locator('#print-area .print-answer-item').count(),3);
 assert.equal(await page.locator('#print-area .footnote-section ol').evaluate(e=>getComputedStyle(e).display),'flex');
 // Inline prose references stay inside answer 1, including unpunctuated Japanese.
 await page.evaluate(()=>{
- for(const source of ['{{1}} 解答は {{2}} と同じ','{{1}} Same as {{2}} above','[[1]] 解答は [[2]] と同じ']) {
+ for(const source of ['{{1}} 解答は {{2}} と同じ','{{1}} Same as {{2}} above','{{1}} See {{2}} above','[[1]] See [[2]] above','[[1]] 解答は [[2]] と同じ']) {
   const d=document.createElement('div');d.innerHTML=testViewer.renderField('解答','',source);
   if(d.querySelectorAll('.print-answer-item').length!==1)throw Error('Reference split: '+source);
  }

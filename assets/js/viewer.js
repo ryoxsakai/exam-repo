@@ -2189,7 +2189,8 @@
         var match = part.match(marker), body = match && match[2].trim();
         // Without an explicit full-width separator, only compact answer tokens
         // are unambiguous. Prose may refer to another question without punctuation.
-        return body && body.length <= 80 && /^[A-Za-z0-9０-９()[\]{}・,\/＋+−―–—=<>_-]+$/.test(body);
+        return body && body.length <= 80 && (/^(?:[A-Za-z]|[0-9０-９]+)$/.test(body) ||
+          /^(?:\(\([^()]+\)\)|\[\[[^\]]+\]\]|[・,\/＋+−―–—=<>_-])+$/.test(body));
       });
             // Full-width spaces are the stored separator for answer entries. Keep
       // ordinary sentence references (separated by an ASCII space) inline.
