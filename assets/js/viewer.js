@@ -2030,6 +2030,7 @@
     var body = el("exam-modal-body");
     FS_ORDER.forEach(function (s) { body.classList.remove("fs-" + s); });
     body.classList.add("fs-" + size);
+    scheduleExamModalLayout();
     el("exam-fontsize").title = "文字サイズ変更（現在: " + FS_LABEL[size] + "）";
   }
   function cycleFontSize() {
@@ -2186,7 +2187,9 @@
       // Compact answer lists may share a line. Sentence references to other questions stay inline.
       var compactList = parts.length > 1 && parts.every(function (part) {
         var match = part.match(marker), body = match && match[2].trim();
-        return body && body.length <= 80 && !/[.!?。！？](?:\s|$)/.test(body) && !/\{\{/.test(body);
+        // Without an explicit full-width separator, only compact answer tokens
+        // are unambiguous. Prose may refer to another question without punctuation.
+        return body && body.length <= 80 && /^[A-Za-z0-9０-９()[\]{}・,\/＋+−―–—=<>_-]+$/.test(body);
       });
             // Full-width spaces are the stored separator for answer entries. Keep
       // ordinary sentence references (separated by an ASCII space) inline.
