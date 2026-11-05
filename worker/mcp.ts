@@ -998,7 +998,18 @@ function validateQuestionRecord(row: Record<string, unknown>) {
   if (markerCount(problemText, "((") !== markerCount(problemText, "))")) add("unbalanced_choice", "error", "選択肢マーカー(( ))の左右が一致しません。");
 
   const problemOnly = problemText.split(/\n\s*\{\{解答\}\}/)[0];
-  const choiceNumbers = Array.from(problemOnly.matchAll(/^\s*\(\((\d+)\)\)/gm), (match) => Number(match[1]));
+  // Only scan choice rows, not prose references such as ((1))〜((5)).
+  // A row may start with a blank label and contain several horizontal choices.
+  const choiceNumbers = problemOnly.split(/\r?\n/).flatMap((line) => {
+    const choiceRow = line.replace(/^\s*(?:\[\[[^\]\r\n]+\]\]\s*)?/, "");
+    if (!/^\(\(\d+\)\)(?!\s*[〜～–—-]\s*\(\()/.test(choiceRow)) return [];
+    const first = choiceRow.match(/^\(\((\d+)\)\)/)!;
+    // Horizontal labels use a column gap (2+ spaces, tab or fullwidth space).
+    // A single-space prose reference or a numbered underline is not a column.
+    const rest = choiceRow.slice(first[0].length);
+    const inlineChoices = rest.matchAll(/(?:[^\S\r\n]{2,}|[\t\u3000])\(\((\d+)\)\)(?=[^\S\r\n]+\S)(?!\s*(?:__|==|~~|[〜～–—-]\s*\(\())/g);
+    return [Number(first[1]), ...Array.from(inlineChoices, (match) => Number(match[1]))];
+  });
   if (choiceNumbers.length) {
     let expected = 1;
     let discontinuous = false;

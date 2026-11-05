@@ -1,0 +1,29 @@
+name: Test question validation
+
+on:
+  pull_request:
+    paths:
+      - "worker/**"
+      - "panel/**"
+      - "scripts/test-question-validation.cjs"
+      - ".github/workflows/question-validation-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  question-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --prefix panel
+      - run: npm run build --prefix panel
+      - run: npm test --prefix panel
+      - run: node scripts/test-d1-overload.cjs
+      - run: node scripts/test-oauth-browser-session.cjs
+      - run: node scripts/test-oauth-refresh.cjs
+      - run: node scripts/test-question-validation.cjs
