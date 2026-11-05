@@ -831,7 +831,7 @@
     for (var i = 0; i < lines.length; i++) {
       var l = lines[i].trim();
       if (!l) continue;
-      var m = l.match(/^《([^》]+)》/);
+      var m = l.match(/^(?:@@\s*)?《([^》]+)》/);
       return m ? m[1] : "";
     }
     return "";

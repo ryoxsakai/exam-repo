@@ -33,6 +33,7 @@ jobs:
           node scripts/test-oauth-browser-session.cjs
           node scripts/test-oauth-refresh.cjs
           node scripts/test-question-validation.cjs
+          node scripts/test-zenyaku-title.cjs
 
       - name: Deploy Worker to Cloudflare
         uses: cloudflare/wrangler-action@v3
