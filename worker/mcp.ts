@@ -998,7 +998,13 @@ function validateQuestionRecord(row: Record<string, unknown>) {
   if (markerCount(problemText, "((") !== markerCount(problemText, "))")) add("unbalanced_choice", "error", "選択肢マーカー(( ))の左右が一致しません。");
 
   const problemOnly = problemText.split(/\n\s*\{\{解答\}\}/)[0];
-  const choiceNumbers = Array.from(problemOnly.matchAll(/^\s*\(\((\d+)\)\)/gm), (match) => Number(match[1]));
+  // Only scan choice rows, not prose references such as ((1))〜((5)).
+  // A row may start with a blank label and contain several horizontal choices.
+  const choiceNumbers = problemOnly.split(/\r?\n/).flatMap((line) => {
+    const choiceRow = line.replace(/^\s*(?:\[\[[^\]\r\n]+\]\]\s*)?/, "");
+    if (!/^\(\(\d+\)\)(?!\s*[〜～–—-]\s*\(\()/.test(choiceRow)) return [];
+    return Array.from(choiceRow.matchAll(/(?:^|\s)\(\((\d+)\)\)/g), (match) => Number(match[1]));
+  });
   if (choiceNumbers.length) {
     let expected = 1;
     let discontinuous = false;
