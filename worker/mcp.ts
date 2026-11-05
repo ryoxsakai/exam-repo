@@ -1003,7 +1003,12 @@ function validateQuestionRecord(row: Record<string, unknown>) {
   const choiceNumbers = problemOnly.split(/\r?\n/).flatMap((line) => {
     const choiceRow = line.replace(/^\s*(?:\[\[[^\]\r\n]+\]\]\s*)?/, "");
     if (!/^\(\(\d+\)\)(?!\s*[〜～–—-]\s*\(\()/.test(choiceRow)) return [];
-    return Array.from(choiceRow.matchAll(/(?:^|\s)\(\((\d+)\)\)/g), (match) => Number(match[1]));
+    const first = choiceRow.match(/^\(\((\d+)\)\)/)!;
+    // Horizontal labels use a column gap (2+ spaces, tab or fullwidth space).
+    // A single-space prose reference or a numbered underline is not a column.
+    const rest = choiceRow.slice(first[0].length);
+    const inlineChoices = rest.matchAll(/(?:[^\S\r\n]{2,}|[\t\u3000])\(\((\d+)\)\)(?=[^\S\r\n]+\S)(?!\s*(?:__|==|~~|[〜～–—-]\s*\(\())/g);
+    return [Number(first[1]), ...Array.from(inlineChoices, (match) => Number(match[1]))];
   });
   if (choiceNumbers.length) {
     let expected = 1;

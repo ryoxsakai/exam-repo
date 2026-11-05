@@ -57,6 +57,13 @@ const { buildSync } = require('../panel/node_modules/esbuild');
     await check('missing choice',[choices[0],...choices.slice(2)].join('  '),'((5))',['non_contiguous_choices']);
     await check('misordered choice',[choices[0],choices[2],choices[1]].join('\n'),'((3))',['non_contiguous_choices']);
     await check('stored answer section excluded',choices.join('  ')+'\n{{解答}}\n((9))','((6))',['answer_out_of_range']);
-    console.log('Question validation: 16 MCP regressions passed; reads only, registered data unchanged');
+    for (const decoration of ['__underlined text__', '==double underline==', '~~wavy underline~~']) {
+      await check('inline underline excluded '+decoration, '((1)) Refer to ((4))'+decoration+'.\n((2)) bravo\n((3)) charlie', '((3))');
+      await check('underline cannot inflate maximum '+decoration, '((1)) Refer to  ((9)) '+decoration+'.  ((2)) bravo  ((3)) charlie', '((4))', ['answer_out_of_range']);
+    }
+    await check('inline prose reference', '((1)) Refer to ((4)) in the passage.\n((2)) bravo\n((3)) charlie', '((4))', ['answer_out_of_range']);
+    await check('inline range in a choice', '((1)) Choose from  ((1))〜((9)) here.  ((2)) bravo  ((3)) charlie', '((4))', ['answer_out_of_range']);
+    await check('tab separated', choices.join('\t'), '((5))');
+    console.log('Question validation: 25 MCP regressions passed; reads only, registered data unchanged');
   } finally { fs.rmSync(tmp,{recursive:true,force:true}); }
 })().catch(error=>{console.error(error);process.exitCode=1;});
