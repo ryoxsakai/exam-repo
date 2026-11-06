@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "worker/**"
+      - "assets/js/markup*.js"
+      - "index.html"
+      - "scripts/test-zenyaku-title.cjs"
       - "panel/**"
       - "scripts/test-question-validation.cjs"
       - ".github/workflows/question-validation-test.yml"
@@ -27,3 +30,4 @@ jobs:
       - run: node scripts/test-oauth-browser-session.cjs
       - run: node scripts/test-oauth-refresh.cjs
       - run: node scripts/test-question-validation.cjs
+      - run: node scripts/test-zenyaku-title.cjs

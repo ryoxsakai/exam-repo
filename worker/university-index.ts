@@ -5,6 +5,7 @@ export interface UniversityIndexEnv {
 
 export interface UniversityIndex {
   version: 1;
+  title_extraction_version: 2;
   university: { id: number; name: string; reading: string; abbreviation: string };
   exams: Array<{
     id: number;
@@ -51,7 +52,7 @@ export function extractZenyakuTitle(problemText: string): string {
   for (const raw of zenyakuLines) {
     const line = raw.trim();
     if (!line) continue;
-    const title = line.match(/^《([^》]+)》/);
+    const title = line.match(/^(?:@@\s*)?《([^》]+)》/);
     return title ? title[1] : "";
   }
   return "";
@@ -92,7 +93,7 @@ async function buildUniversityIndex(env: UniversityIndexEnv, universityId: numbe
       });
     }
   }
-  return { version: 1, university, exams };
+  return { version: 1, title_extraction_version: 2, university, exams };
 }
 
 // 更新時は該当大学だけ再構築する。初回閲覧時にも同じ関数で既存データを埋める。
@@ -112,7 +113,12 @@ export async function refreshUniversityIndex(env: UniversityIndexEnv, university
 export async function readUniversityIndex(env: UniversityIndexEnv, universityId: number): Promise<UniversityIndex | null> {
   if (!env.IMAGES) throw new Error("R2 binding is unavailable for university indexes");
   const cached = await env.IMAGES.get(keyFor(universityId));
-  if (cached) return JSON.parse(await cached.text()) as UniversityIndex;
+  if (cached) {
+    const index = JSON.parse(await cached.text()) as UniversityIndex;
+    // 旧 v1 もキーを維持し、閲覧された大学だけ新版の抽出で再生成する。
+    // 一括無効化による D1 の集中読み取りを避ける。
+    if (index.title_extraction_version === 2) return index;
+  }
   return refreshUniversityIndex(env, universityId);
 }
 
