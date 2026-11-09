@@ -244,13 +244,14 @@
         out += '<span class="para-badge para-badge-inline">' + esc(m[1]) + "</span>";
         rem = rem.slice(m[0].length); continue;
       }
-      // ##語::訳## 脚注
+      // ##本文|見出し語::訳## または従来の ##語::訳## 脚注
       // 語中の ^ は「本文では除去（大小はそのまま）、注では ^ の直前の文字を小文字化」する
       // マーカー。例: ##M^isdiagnosis::誤診## → 本文「Misdiagnosis」/ 注「misdiagnosis」
       if ((m = rem.match(/^##([^:#]+)::([^#]+)##/))) {
         var idx = footnotes.length + 1;
-        var dispWord = m[1].replace(/\^/g, "");
-        var footWord = m[1].replace(/(.)\^/g, function (_, ch) { return ch.toLowerCase(); }).replace(/\^/g, "");
+        var parts = m[1].split("|");
+        var dispWord = parts[0].replace(/\^/g, "");
+        var footWord = (parts.length === 2 && parts[1] ? parts[1] : parts[0]).replace(/(.)\^/g, function (_, ch) { return ch.toLowerCase(); }).replace(/\^/g, "");
         footnotes.push({ index: idx, word: footWord, translation: m[2] });
         out += '<span title="' + esc(footWord + ": " + m[2]) + '">' + esc(dispWord) +
                '<sup class="footnote-number">*' + idx + "</sup></span>";
@@ -421,6 +422,10 @@
     var t = line.trim().replace(/^\|/, "").replace(/\|$/, "");
     var cells = [], buf = "";
     for (var i = 0; i < t.length; i++) {
+      if (t.slice(i, i + 2) === "##") {
+        var note = t.slice(i).match(/^##([^:#]+)::([^#]+)##/);
+        if (note) { buf += note[0]; i += note[0].length - 1; continue; }
+      }
       if (t[i] === "\\" && t[i + 1] === "|") { buf += "|"; i++; continue; }
       if (t[i] === "|") { cells.push(buf.trim()); buf = ""; continue; }
       buf += t[i];
@@ -769,7 +774,7 @@
     t = t.replace(/\{\{[^}]*\}\}/g, " ");           // 問見出し
     t = t.replace(/\[\[[^\]]*\]\]/g, " ");          // 空所
     t = t.replace(/^\s*\[[^\[\]]+\]\s?/gm, "");     // 段落番号 [1]（行頭・単角括弧）
-    t = t.replace(/##([^:#]+)::[^#]+##/g, function (_, w) { return w.replace(/\^/g, ""); }); // 脚注 → 語のみ残す（^マーカー除去）
+    t = t.replace(/##([^:#]+)::[^#]+##/g, function (_, w) { return w.split("|")[0].replace(/\^/g, ""); }); // 本文の語のみ残す
     t = t.replace(/!\[[^\]]*\]\([^)\s]+\)(?:\{[^}\n]*\})?/g, " "); // 画像と表示オプション → 除去
     t = t.replace(/!!!!([\s\S]+?)!!!!/g, " ");      // 出典 → 除去
     t = t.replace(/\|\|\|\|([\s\S]+?)\|\|\|\|/g, "$1"); // 斜字 → テキスト残す
