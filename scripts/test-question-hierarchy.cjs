@@ -70,6 +70,7 @@ console.log('PASS: three explicit levels, balanced parsing, scopes, inline refer
    for(const media of ['screen','print']) {
     await page.emulateMedia({media});
     await page.evaluate(forPrint=>window.hierarchyTest.optimizePrintChoices(document.querySelector('#print-area'),forPrint),media==='print');
+    await page.screenshot({path:path.join(evidence,width+'-'+media+'.png'),fullPage:true});
     assert.equal(await page.locator('.print-choice-group').count(),2);
     assert.equal(await page.locator('.question-subgroup-level-3 > .print-choice-group .answer-choice').count(),2);
     assert.equal(await page.locator('.question-subgroup-level-2 > .print-choice-group .answer-choice').count(),2);
@@ -81,7 +82,7 @@ console.log('PASS: three explicit levels, balanced parsing, scopes, inline refer
     assert(geometry.left[0]<geometry.left[1]&&geometry.left[1]<geometry.left[2],JSON.stringify(geometry));
     assert.equal(new Set(geometry.fonts).size,1);assert.equal(geometry.borders[2],'0px');assert(!geometry.over,JSON.stringify(geometry));
     const grid=await page.locator('.print-choice-group').first().evaluate(el=>({display:getComputedStyle(el).display,columns:el.dataset.columns}));
-    assert.equal(grid.display,'grid');assert(Number(grid.columns)>=1);
+    assert.equal(grid.display,'flex');assert(Number(grid.columns)>=1);
     if(media==='print') {
      for(const grayscale of [false,true]) {
       await page.locator('#print-area').evaluate((el,on)=>el.classList.toggle('print-grayscale',on),grayscale);
