@@ -62,7 +62,7 @@ console.log('PASS: three explicit levels, balanced parsing, scopes, inline refer
  const evidence='/tmp/exam-question-hierarchy';fs.mkdirSync(evidence,{recursive:true});
  try {
   for(const width of [1280,390]) {
-   const page=await browserInstance.newPage({viewport:{width,height:1000}});await page.route('**/*',r=>r.abort());
+   const page=await browserInstance.newPage({viewport:{width,height:1000}});await page.route('**/*',r=>r.request().url()==='https://hierarchy.test/'?r.fulfill({contentType:'text/html',body:'<!doctype html><html></html>'}):r.abort());await page.goto('https://hierarchy.test/');
    await page.setContent('<style>'+read('assets/css/main.css')+'\n'+read('assets/css/print-choices.css')+'</style><div id="print-area" class="print-out fs-md" style="display:block;width:calc(100% - 40px);margin:20px"><div class="print-part-q"><div class="exam-doc">'+result.html+'</div></div></div>');
    await page.addScriptTag({content:read('assets/js/store.js')});
    await page.addScriptTag({content:'window.Difficulty={BAND_LABEL:{}};window.UI={el:()=>null,$all:(s,r)=>(r||document).querySelectorAll(s),escapeHtml:String};'});
