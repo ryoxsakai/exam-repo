@@ -101,7 +101,7 @@ console.log('PASS: standalone/inline blanks, old notation, malformed/literal col
  try {
   for(const width of [1280,390]) {
    const page=await browser.newPage({viewport:{width,height:1000}});await page.route('**/*',r=>r.abort());
-   await page.setContent('<style>'+read('assets/css/main.css')+'\n'+read('assets/css/print-choices.css')+'</style><main style="padding:20px"><section class="exam-doc" id="viewer">'+rendered+'<p>References [[=A=]]</p>'+M.render('[[A]] [[--A--]] [[(e)]] [[((e))]] [[（（１２））]] [[((あ))]] 空所 [[=A=]] を選ぶ。').html+'</section><section id="editor" class="exam-doc" style="max-width:480px">'+M.render('[[=A=]]',{paraNum:true}).html+'</section><section class="exam-doc" id="nested">'+M.render('{{問7}} Parent\n{{{(4)}}} Child\n[[=A=]]').html+'</section></main><div id="print-area" class="print-out fs-md" style="display:block">'+printed+'</div>');
+   await page.setContent('<style>'+read('assets/css/main.css')+'\n'+read('assets/css/print-choices.css')+'</style><main style="padding:20px"><section class="exam-doc" id="viewer">'+rendered+M.render('Reference [[=A=]]').html+M.render('[[A]] [[--A--]] [[(e)]] [[((e))]] [[（（１２））]] [[((あ))]] 空所 [[=A=]] を選ぶ。').html+'</section><section id="editor" class="exam-doc" style="max-width:480px">'+M.render('[[=A=]]',{paraNum:true}).html+'</section><section class="exam-doc" id="nested">'+M.render('{{問7}} Parent\n{{{(4)}}} Child\n[[=A=]]').html+'</section></main><div id="print-area" class="print-out fs-md" style="display:block">'+printed+'</div>');
    for(const media of ['screen','print']) {
     await page.emulateMedia({media});
     const geometry=await page.evaluate(()=>({
@@ -120,6 +120,7 @@ console.log('PASS: standalone/inline blanks, old notation, malformed/literal col
     reports.push({width,media,...geometry});
    }
    await page.emulateMedia({media:'screen'});await page.screenshot({path:path.join(evidence,width+'.png'),fullPage:true});
+   await page.emulateMedia({media:'print'});
    await page.pdf({path:path.join(evidence,width+'.pdf'),format:'A4',printBackground:true});await page.close();
   }
   fs.writeFileSync(path.join(evidence,'geometry.json'),JSON.stringify(reports,null,2));
