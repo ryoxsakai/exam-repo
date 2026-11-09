@@ -107,6 +107,16 @@
     return out.slice(0, -1) + "&nbsp;&nbsp;";
   }
 
+  // Sentence punctuation can be inside a formatting element (e.g. __Question?__).
+  // Preserve the element and widen the following space outside it.
+  function widenSpaceAfterFormattedSentence(out, rem) {
+    var end = out.match(/([A-Za-z]*)([.?!])([”’"')\]）】」』]*)(?:<\/(?:u|strong|em|span|mark)>)+([”’"')\]）】」』]*)$/);
+    var next = rem.match(/^[ \t]+(?=[A-Z“‘"'(\[])/);
+    if (!end || !next) return null;
+    if (end[2] === "." && !end[3] && !end[4] && ABBREV.test(end[1])) return null;
+    return next[0].length;
+  }
+
   // ストレートクォート → スマートクォート変換
   function smartQuotes(s) {
     s = s.replace(/(^|[\s(\[{—])"/g, "$1“");  // opening "
@@ -162,6 +172,11 @@
     var rem = text;
     while (rem.length > 0) {
       var m;
+      var gap = widenSpaceAfterFormattedSentence(out, rem);
+      if (gap) {
+        out += "&nbsp;&nbsp;";
+        rem = rem.slice(gap);
+      }
       out = maybeWidenTrailingSpace(out, rem[0]);
 
       // Opaque source fragments never enter typography or the exam notation parser.
