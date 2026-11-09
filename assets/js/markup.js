@@ -650,10 +650,11 @@
       // A paragraph omission occupies one complete line of its current column,
       // including nested questions. Keep the stored token and following paragraph
       // intact; inline mentions are handled as ordinary-sized references above.
-      var paragraphBlank = trimmed.match(/^(?:@@\s*)?\[\[=([^=\[\]\r\n]*)=\]\]$/);
-      if (paragraphBlank) {
-        html += '<span class="blk blank-line"><span class="blank-badge blank-badge-line">' +
-          blankLabelHtml(paragraphBlank[1]) + '</span></span>';
+      var paragraphBlank = trimmed.match(/^(?:@@\s*)?(?:\[([^\[\]\r\n]{1,2})\][ \t\u3000]*)?(?:@@\s*)?\[\[=([^=\[\]\r\n]*)=\]\]$/);
+      if (paragraphBlank && (!paragraphBlank[1] || paragraphBlank[1].trim())) {
+        html += '<span class="blk blank-line">' +
+          (paragraphBlank[1] ? '<span class="para-badge">' + esc(paragraphBlank[1]) + '</span>' : '') +
+          '<span class="blank-badge blank-badge-line">' + blankLabelHtml(paragraphBlank[2]) + '</span></span>';
         paraStart = true;
         continue;
       }
@@ -749,7 +750,8 @@
       // ((A)) 本文 → 選択肢（行頭）。ただし 1行に (()) が複数ある場合は
       // ブロック化せず通常行として描画し、先頭も含めて全てインライン丸ラベルにする。
       var cm = line.match(/^\s*[（(]{2}([^()（）]+)[）)]{2}\s*([\s\S]*)/);
-      var choiceCount = (line.match(/[（(]{2}[^()（）]+[）)]{2}/g) || []).length;
+      // A circled label inside a blank is not another answer choice in this row.
+      var choiceCount = (line.replace(/\[\[[^\]\r\n]*\]\]/g, "").match(/[（(]{2}[^()（）]+[）)]{2}/g) || []).length;
       if (cm && choiceCount === 1 && !/^[（(]{2}[^()（）]+[）)]{2}(?:==[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/.test(trimmed)) {
         html += '<div class="answer-choice">' + choiceLabelHtml(cm[1], "answer-choice-label") +
                 '<span class="answer-choice-text">' +

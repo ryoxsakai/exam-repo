@@ -367,7 +367,7 @@ function analyzeQuestionFormatRecord(row: Record<string, unknown>) {
   const instructionText = questionSection || taskText;
   const markerCounts = {
     blank: countPattern(taskText, /\[\[[\s\S]*?\]\]/g),
-    choice: countPattern(taskText, /[（(]{2}[^()（）]+[）)]{2}/g),
+    choice: countPattern(taskText.replace(/\[\[[^\]\r\n]*\]\]/g, " "), /[（(]{2}[^()（）]+[）)]{2}/g),
     underline: countPattern(taskText, /__([\s\S]*?)__/g),
     highlight: countPattern(taskText, /==([\s\S]*?)==(?::[A-Za-z]+)?/g),
   };
@@ -1036,7 +1036,7 @@ function validateQuestionRecord(row: Record<string, unknown>) {
     if (discontinuous) add("non_contiguous_choices", "warning", "数字の選択肢番号に欠落または不自然な並びがあります。");
 
     const maxChoice = Math.max(...choiceNumbers);
-    const answerNumbers = Array.from(normalizeChoiceMarkers(answerText).matchAll(/\(\((\d+)\)\)/g), (match) => Number(match[1]));
+    const answerNumbers = Array.from(normalizeChoiceMarkers(answerText.replace(/\[\[[^\]\r\n]*\]\]/g, " ")).matchAll(/\(\((\d+)\)\)/g), (match) => Number(match[1]));
     if (answerNumbers.some((number) => number > maxChoice)) add("answer_out_of_range", "error", "解答番号が問題内の選択肢番号の範囲を超えています。");
   }
 

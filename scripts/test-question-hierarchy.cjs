@@ -70,6 +70,7 @@ console.log('PASS: three explicit levels, balanced parsing, scopes, inline refer
    for(const media of ['screen','print']) {
     await page.emulateMedia({media});
     await page.evaluate(forPrint=>window.hierarchyTest.optimizePrintChoices(document.querySelector('#print-area'),forPrint),media==='print');
+    await page.screenshot({path:path.join(evidence,width+'-'+media+'.png'),fullPage:true});
     assert.equal(await page.locator('.print-choice-group').count(),2);
     assert.equal(await page.locator('.question-subgroup-level-3 > .print-choice-group .answer-choice').count(),2);
     assert.equal(await page.locator('.question-subgroup-level-2 > .print-choice-group .answer-choice').count(),2);
@@ -79,15 +80,16 @@ console.log('PASS: three explicit levels, balanced parsing, scopes, inline refer
      return {left:[parent,child,grand].map(e=>e.getBoundingClientRect().left),fonts:[parent,child,grand].map(e=>getComputedStyle(e).fontSize), borders:[parent,child,grand].map(e=>getComputedStyle(e.querySelector('.question-badge')).borderTopWidth),over:document.documentElement.scrollWidth>innerWidth};
     });
     assert(geometry.left[0]<geometry.left[1]&&geometry.left[1]<geometry.left[2],JSON.stringify(geometry));
-    assert.equal(new Set(geometry.fonts).size,1);assert.equal(geometry.borders[2],'0px');assert(!geometry.over,JSON.stringify(geometry));
+    assert.equal(new Set(geometry.fonts).size,1);
+    assert(Math.abs(geometry.left[1]-geometry.left[0]-parseFloat(geometry.fonts[1]))<.1);
+    assert(Math.abs(geometry.left[2]-geometry.left[1]-parseFloat(geometry.fonts[2]))<.1);assert(geometry.borders.every(v=>v==='0px'));assert(!geometry.over,JSON.stringify(geometry));
     const grid=await page.locator('.print-choice-group').first().evaluate(el=>({display:getComputedStyle(el).display,columns:el.dataset.columns}));
-    assert.equal(grid.display,'grid');assert(Number(grid.columns)>=1);
+    assert.equal(grid.display,'flex');assert(Number(grid.columns)>=1);
     if(media==='print') {
      for(const grayscale of [false,true]) {
       await page.locator('#print-area').evaluate((el,on)=>el.classList.toggle('print-grayscale',on),grayscale);
-      const styles=await page.evaluate(()=>[...document.querySelectorAll('.question-badge')].slice(0,3).map(el=>({bg:getComputedStyle(el).backgroundColor,image:getComputedStyle(el).backgroundImage,border:getComputedStyle(el).borderTopWidth})));
-      assert.equal(styles[1].bg,'rgb(255, 255, 255)');assert.equal(styles[1].image,'none');assert.equal(styles[1].border,'1px');
-      assert.equal(styles[2].bg,'rgba(0, 0, 0, 0)');assert.equal(styles[2].border,'0px');
+      const styles=await page.evaluate(()=>[...document.querySelectorAll('.question-badge')].slice(0,3).map(el=>({bg:getComputedStyle(el).backgroundColor,image:getComputedStyle(el).backgroundImage,border:getComputedStyle(el).borderTopWidth,weight:getComputedStyle(el).fontWeight,gap:parseFloat(getComputedStyle(el).marginRight),font:parseFloat(getComputedStyle(el).fontSize)})));
+      styles.forEach(style=>{assert.equal(style.bg,'rgba(0, 0, 0, 0)');assert.equal(style.image,'none');assert.equal(style.border,'0px');assert.equal(style.weight,'700');assert(Math.abs(style.gap-style.font)<.1);});
      }
      await page.locator('#print-area').evaluate(el=>el.classList.remove('print-grayscale'));
     }

@@ -16,6 +16,9 @@ for(const [token,label] of [['[[=A=]]','A'],['[[=12=]]','12'],['[[= =]]',' '],['
  assert.equal(M.strip(token).trim(),'');
  assert.equal(M.render('空所 '+token+' に入る段落').html,'<span class="blk">空所 <span class="blank-badge">'+label+'</span> に入る段落</span>');
 }
+for(const input of ['[13] [[= =]]','@@[13] [[= =]]','[13] @@[[= =]]']) assert.equal(M.render(input,{paraNum:true}).html,'<span class="blk blank-line"><span class="para-badge">13</span><span class="blank-badge blank-badge-line"> </span></span>');
+assert.doesNotMatch(M.render('[13] [[----]]').html,/blank-badge-line/);
+assert.doesNotMatch(M.render('[ ] [[=A=]]').html,/blank-badge-line/);
 // Explicit inner choice labels use the same glyph/fallback rules as choices.
 for(const [label,glyph] of [['e','ⓔ'],['E','Ⓔ'],['1','①'],['１２','⑫'],['ア','㋐']]) {
  for(const open of ['((', '（（', '(（', '（(']) for(const close of ['))','））',')）','）)']) {
@@ -28,6 +31,8 @@ for(const [label,glyph] of [['e','ⓔ'],['E','Ⓔ'],['1','①'],['１２','⑫']
   }
  }
 }
+assert.match(M.render('((1)) Choose [[((e))]] here.').html,/class="answer-choice"/);
+assert.match(M.render('（（１）） Choose [[（（e））]] here.').html,/class="answer-choice"/);
 for(const label of ['あ','51','０１']) assert.match(M.render('[[（（'+label+'））]]').html,/choice-inline choice-label-compact|choice-inline"/);
 for(const literal of ['(e)','(((e)))','prefix ((e))','**e**','__e__','((e)) suffix']) assert.equal(M.render('[['+literal+']]').html,'<span class="blk"><span class="blank-badge">'+literal+'</span></span>');
 // Explicit circled labels retain their original number, like other choice labels;
@@ -44,9 +49,9 @@ for(const literal of ['`[[=A=]]`','https://example.test/[[=A=]]','![[[=A=]]](htt
 assert.doesNotMatch(M.render('@@**Choose [[=A=]] now.**').html,/blank-badge-line/);
 assert.doesNotMatch(M.render('| Blank | Label |\n| --- | --- |\n| [[=A=]] | A |').html,/blank-badge-line/);
 assert.match(M.render('==double underline==').html,/double-underline/);
-const prose='First paragraph.\n\n[[=A=]]\n\nNext paragraph.\n[[= =]]\nLast paragraph.';
+const prose='First paragraph.\n\n[[=A=]]\n\nNext paragraph.\n[[= =]]\nLast paragraph.\n\n[13] [[= =]]';
 const rendered=M.render(prose,{paraNum:true}).html;
-assert.equal((rendered.match(/blank-badge-line/g)||[]).length,2);
+assert.equal((rendered.match(/blank-badge-line/g)||[]).length,3);
 assert.match(rendered,/class="blk indent">Next paragraph/);
 assert.match(rendered,/class="blk indent">Last paragraph/);
 assert.match(M.render('{{問7}} Parent\n{{{(4)}}} Child\n[[=A=]]\n{{問8}} Next').html,/blank-badge-line">A<\/span><\/span><\/div><div class="question-block-header/);
@@ -101,7 +106,8 @@ console.log('PASS: standalone/inline blanks, old notation, malformed/literal col
     const geometry=await page.evaluate(()=>({
      blanks:[...document.querySelectorAll('.blank-badge-line')].filter(n=>n.getBoundingClientRect().width).map(n=>{
       const r=n.getBoundingClientRect(),p=n.parentElement.getBoundingClientRect(),s=getComputedStyle(n);const range=document.createRange();range.selectNodeContents(n);const glyph=range.getBoundingClientRect();
-      return {width:r.width,parent:p.width,left:r.left,parentLeft:p.left,height:r.height,font:parseFloat(s.fontSize),center:r.left+r.width/2,labelCenter:glyph.left+glyph.width/2,label:n.textContent,breakInside:getComputedStyle(n.parentElement).breakInside};}),
+      const prefix=n.previousElementSibling,offset=prefix?prefix.getBoundingClientRect().width+parseFloat(getComputedStyle(prefix).marginRight):0;
+      return {width:r.width,parent:p.width-offset,left:r.left,parentLeft:p.left+offset,height:r.height,font:parseFloat(s.fontSize),center:r.left+r.width/2,labelCenter:glyph.left+glyph.width/2,label:n.textContent,breakInside:getComputedStyle(n.parentElement).breakInside};}),
      old:[...document.querySelectorAll('#viewer .blank-badge:not(.blank-badge-line)')].map(n=>({label:n.textContent,width:n.getBoundingClientRect().width,font:parseFloat(getComputedStyle(n).fontSize),wide:n.classList.contains('blank-badge-wide')})),
      circles:[...document.querySelectorAll('.blank-badge > .choice-inline')].filter(n=>n.getBoundingClientRect().width).map(n=>{const r=n.getBoundingClientRect(),p=n.parentElement.getBoundingClientRect();return {center:r.left+r.width/2,parentCenter:p.left+p.width/2,top:r.top,bottom:r.bottom,parentTop:p.top,parentBottom:p.bottom,font:getComputedStyle(n).fontFamily,parentFont:getComputedStyle(n.parentElement).fontFamily};}),
      overflow:document.documentElement.scrollWidth>innerWidth
