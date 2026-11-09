@@ -26,6 +26,18 @@
       .replace(/"/g, "&quot;");
   }
 
+  // Braces encode hierarchy, not the numbering convention inside the label.
+  // Match a complete balanced token before the legacy double-brace form.
+  function questionTag(text) {
+    var match = String(text).match(/^(\{{2,4})([^{}\n]+)(\}{2,4})(?!})/);
+    if (!match || match[1].length !== match[3].length) return null;
+    return { raw: match[0], label: match[2], level: match[1].length - 1 };
+  }
+  function questionLevelClass(level) { return level > 1 ? " question-level-" + level : ""; }
+  function questionBadge(tag) {
+    return '<span class="question-badge' + questionLevelClass(tag.level) + '">' + esc(tag.label) + '</span>';
+  }
+
   // Shared by underline markers, question numbers and references in every section.
   function markerLabelHtml(marker) {
     var angle = String(marker || "").match(/^(<<|<|〈|《)([0-9]{1,2})(>>|>|〉|》)$/);
@@ -44,10 +56,13 @@
 
   // 選択肢ラベルの表示用丸囲み文字。データは常に ((1)) / ((a)) / ((ア)) の
   // 記法を保持し、対応するUnicode文字がある場合だけ表示時に置き換える。
+  // 全角数字はラベル内だけ半角相当に解釈し、本文や通常の (1) は変換しない。
   // ひらがな・51以上・拗音などはUnicodeにないため、従来のCSS丸枠へフォールバックする。
   var CIRCLED_KATAKANA = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヰヱヲ";
   function circledChoiceLabel(label) {
-    var s = String(label);
+    var s = String(label).replace(/[０-９]/g, function (digit) {
+      return String.fromCharCode(digit.charCodeAt(0) - 0xFEE0);
+    });
     if (/^(?:[1-9]|[1-4]\d|50)$/.test(s)) {
       var n = Number(s);
       if (n <= 20) return String.fromCodePoint(0x2460 + n - 1); // ①〜⑳
@@ -329,7 +344,7 @@
       }
       // 下線・波線に隣接する番号・単独記号は下付き。旧 ~~(1)~~ 記法も解釈する。
       // 語内下線 c__o__st の c や ((5)) __th__ough の選択肢は番号にしない。
-      if ((m = rem.match(/^(?:~~([（(][^~()（）]*[）)])~~|([（(][^()（）]*[）)])|\(\(([^)]+)\)\)|([0-9]{1,2}|[A-Za-zぁ-ゖァ-ヺ])(?=__|~~|==))[ \t]*(?===[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/)) &&
+      if ((m = rem.match(/^(?:~~([（(][^~()（）]*[）)])~~|([（(][^()（）]*[）)])|[（(]{2}([^()（）]+)[）)]{2}|([0-9]{1,2}|[A-Za-zぁ-ゖァ-ヺ])(?=__|~~|==))[ \t]*(?===[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/)) &&
           (!(m[3] || m[4]) || !/^(?:==[^=]+==|__[^_]+__|~~(?!~)[^~]+~~)[A-Za-z]/.test(rem.slice(m[0].length))) &&
           !(footnotes.phoneticWords && (m[3] || (m[4] && /^[a-z]$/.test(m[4]))) && /^__[A-Za-z]+__/.test(rem.slice(m[0].length)))) {
         var marker = m[1] || m[2];
@@ -357,13 +372,18 @@
         out += "<strong>" + inline(m[1], footnotes, leadLine) + "</strong>";
         rem = rem.slice(m[0].length); continue;
       }
-      // {{問N}}（行中）
-      if ((m = rem.match(/^\{\{([^}]+)\}\}/))) {
-        out += '<span class="question-badge">' + esc(m[1]) + "</span>";
-        rem = rem.slice(m[0].length); continue;
+      // Parent/child/grandchild references also keep their level inline.
+      var question = questionTag(rem);
+      if (question) {
+        out += questionBadge(question);
+        rem = rem.slice(question.raw.length); continue;
       }
-      // ((A)) 選択肢ラベル（行中・インライン。丸囲みラベルのみ表示）
-      if ((m = rem.match(/^\(\(([^)]+)\)\)/))) {
+      // Do not reinterpret a suffix of malformed/unsupported brace runs.
+      if ((m = rem.match(/^\{{2,}/))) {
+        out += esc(m[0]); rem = rem.slice(m[0].length); continue;
+      }
+      // ((A)) / （（１）） 選択肢ラベル（半角・全角括弧の混在も許可）
+      if ((m = rem.match(/^[（(]{2}([^()（）]+)[）)]{2}/))) {
         out += choiceLabelHtml(m[1], "choice-inline");
         rem = rem.slice(m[0].length); continue;
       }
@@ -597,7 +617,12 @@
     var lines = source.split("\n");
     var interviewAliases = interviewSpeakers(lines);
     var translationLabels = opts && opts.zenyaku ? sourceDialogueLabels(opts.dialogueSource) : {};
-    var html = "";
+    var html = "", questionGroups = [];
+    function closeQuestionGroups(level) {
+      while (questionGroups.length && questionGroups[questionGroups.length - 1] >= level) {
+        html += "</div>"; questionGroups.pop();
+      }
+    }
     var paraStart = true; // 段落先頭か（空行・見出し・選択肢・区切りの直後）
 
     for (var i = 0; i < lines.length; i++) {
@@ -607,7 +632,7 @@
       var leadLine = /^@@\*\*[\s\S]+\*\*$/.test(trimmed);
 
       if (trimmed === "") { html += '<div style="height:.6em"></div>'; paraStart = true; continue; }
-      if (trimmed === "----") { html += '<hr class="exam-hr">'; paraStart = true; continue; }
+      if (trimmed === "----") { closeQuestionGroups(1); html += '<hr class="exam-hr">'; paraStart = true; continue; }
 
       // Convert prose list markers only; keep negative numbers and algebra intact.
       var bulletLine = false;
@@ -628,10 +653,16 @@
         continue;
       }
 
-      // {{問N}} 行頭 → 見出し
-      var qm = trimmed.match(/^\{\{([^}]+)\}\}/);
+      // Explicit hierarchy applies to the heading and its following content.
+      var qm = questionTag(trimmed);
       if (qm) {
-        var rest = trimmed.slice(qm[0].length).trim();
+        closeQuestionGroups(qm.level);
+        if (qm.level > 1) {
+          html += '<div class="question-subgroup question-subgroup-level-' + qm.level + '">';
+          questionGroups.push(qm.level);
+        }
+        var levelClass = questionLevelClass(qm.level);
+        var rest = trimmed.slice(qm.raw.length).trim();
         // Paired sentences share the badge's text column, like quoted exchanges.
         // Require an (a)/(b) sequence so ordinary parenthesized prose stays intact.
         var pairPattern = /^(@@)?(\([a-zA-Z]\)|[a-zA-Z]\))[ \t]*(.+)$/;
@@ -658,8 +689,8 @@
               pairedHtml += '<span class="blk sentence-pair-line"><span class="sentence-pair-label">' +
                 inline(row.match[2], footnotes) + '</span>' + inline(row.match[3], footnotes) + '</span>';
             });
-            html += '<div class="question-block-header sentence-pair"><span class="question-badge">' +
-              esc(qm[1]) + '</span><div class="qtext">' + pairedHtml + '</div></div>';
+            html += '<div class="question-block-header sentence-pair' + levelClass + '">' +
+              questionBadge(qm) + '<div class="qtext">' + pairedHtml + '</div></div>';
             i = pairRows[pairRows.length - 1].index;
             paraStart = true;
             continue;
@@ -678,13 +709,13 @@
             i = quoteLine;
             nextLine = quoteLine + 1;
           }
-          html += '<div class="question-block-header quoted-dialogue"><span class="question-badge">' +
-            esc(qm[1]) + '</span><div class="qtext">' + quotedLines + '</div></div>';
+          html += '<div class="question-block-header quoted-dialogue' + levelClass + '">' +
+            questionBadge(qm) + '<div class="qtext">' + quotedLines + '</div></div>';
           paraStart = true;
           continue;
         }
-        html += '<div class="question-block-header"><span class="question-badge">' +
-                esc(qm[1]) + "</span>" +
+        html += '<div class="question-block-header' + levelClass + '">' +
+                questionBadge(qm) +
                 (rest ? '<span class="qtext">' + inline(rest, footnotes) + "</span>" : "") +
                 "</div>";
         paraStart = true;
@@ -693,9 +724,9 @@
 
       // ((A)) 本文 → 選択肢（行頭）。ただし 1行に (()) が複数ある場合は
       // ブロック化せず通常行として描画し、先頭も含めて全てインライン丸ラベルにする。
-      var cm = line.match(/^\s*\(\(([^)]+)\)\)\s*([\s\S]*)/);
-      var choiceCount = (line.match(/\(\([^)]+\)\)/g) || []).length;
-      if (cm && choiceCount === 1 && !/^\(\([^)]+\)\)(?:==[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/.test(trimmed)) {
+      var cm = line.match(/^\s*[（(]{2}([^()（）]+)[）)]{2}\s*([\s\S]*)/);
+      var choiceCount = (line.match(/[（(]{2}[^()（）]+[）)]{2}/g) || []).length;
+      if (cm && choiceCount === 1 && !/^[（(]{2}[^()（）]+[）)]{2}(?:==[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/.test(trimmed)) {
         html += '<div class="answer-choice">' + choiceLabelHtml(cm[1], "answer-choice-label") +
                 '<span class="answer-choice-text">' +
                 (cm[2] ? inline(cm[2], footnotes) : "") + "</span></div>";
@@ -751,6 +782,7 @@
       paraStart = false;
     }
 
+    closeQuestionGroups(1);
     if (footnotes.length) {
       html += '<div class="footnote-section"><ol>';
       footnotes.forEach(function (fn) {
@@ -777,7 +809,7 @@
   // 英文抽出用: 記法を取り除いてプレーン英文テキストにする（コーパス分析の前処理）
   function strip(text) {
     var t = String(text == null ? "" : text);
-    t = t.replace(/\{\{[^}]*\}\}/g, " ");           // 問見出し
+    t = t.replace(/(?<!\{)(?:\{\{\{\{[^{}\n]*\}\}\}\}|\{\{\{[^{}\n]*\}\}\}|\{\{[^{}\n]*\}\})(?!})/g, " ");           // 問見出し
     t = t.replace(/\[\[[^\]]*\]\]/g, " ");          // 空所
     t = t.replace(/^\s*\[[^\[\]]+\]\s?/gm, "");     // 段落番号 [1]（行頭・単角括弧）
     t = t.replace(/##([^:#]+)::[^#]+##/g, function (_, w) { return w.split("|")[0].replace(/\^/g, ""); }); // 本文の語のみ残す
@@ -794,7 +826,7 @@
     t = t.replace(/~~~([^~]+)~~~/g, "$1");       // 旧波線
     t = t.replace(/~~([^~]+)~~/g, "$1");            // 波線
     t = t.replace(/\^\^([^^]+)\^\^/g, "$1");        // 上付き
-    t = t.replace(/\(\(([^)]+)\)\)/g, " ");         // 選択肢ラベル
+    t = t.replace(/[（(]{2}([^()（）]+)[）)]{2}/g, " ");         // 選択肢ラベル
     t = t.replace(/<<[0-9]{1,2}>>|<[0-9]{1,2}>|〈[0-9]{1,2}〉|《[0-9]{1,2}》/g, " "); // 番号付き山括弧
     t = t.replace(/<[^>]*>/g, " ");                 // HTML タグ
     t = t.replace(/^@@\s?/gm, "");                  // @@ 字下げ抑制タグ
@@ -809,7 +841,7 @@
     var lines = (text || "").split("\n");
     var curType = "問題", curLines = [];
     for (var i = 0; i < lines.length; i++) {
-      var m = lines[i].trim().match(/^\{\{([^0-9A-Za-z}]+)\}\}$/);
+      var m = lines[i].trim().match(/^\{\{([^0-9A-Za-z{}]+)\}\}$/);
       if (m) {
         var t = curLines.join("\n").trim();
         if (t) sections.push({ type: curType, text: t });

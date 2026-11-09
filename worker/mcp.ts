@@ -207,7 +207,7 @@ function normalizeToolName(value: unknown) {
 function extractMarkedSection(value: unknown, marker: string) {
   const text = String(value ?? "");
   const heading = `{{${marker}}}`;
-  const start = text.indexOf(heading);
+  const start = text.search(new RegExp("(?<!\\{)" + heading.replace(/[{}]/g, "\\$&") + "(?!})"));
   if (start < 0) return "";
 
   const remainder = text.slice(start + heading.length);
@@ -244,7 +244,7 @@ function optionalNonNegativeInteger(value: unknown, name: string) {
 export function cleanPassageText(value: unknown) {
   return String(value ?? "")
     .replace(/!\[[^\]]*\]\([^)\s]+\)(?:\{[^}\n]*\})?/g, " ")
-    .replace(/\{\{[^}]*\}\}/g, " ")
+    .replace(/(?<!\{)(?:\{\{\{\{[^{}\n]*\}\}\}\}|\{\{\{[^{}\n]*\}\}\}|\{\{[^{}\n]*\}\})(?!})/g, " ")
     .replace(/^\s*\[[^\[\]]+\]\s?/gm, "")
     .replace(/##([^:#]+)::[^#]+##/g, (_match, word: string) => word.split("|")[0].replace(/\^/g, ""))
     .replace(/!!!![\s\S]*?!!!!/g, " ")
@@ -256,7 +256,7 @@ export function cleanPassageText(value: unknown) {
     .replace(/__([\s\S]*?)__/g, "$1")
     .replace(/==([\s\S]*?)==(?::[A-Za-z]+)?/g, "$1")
     .replace(/\[\[[\s\S]*?\]\]/g, " ")
-    .replace(/\(\([\s\S]*?\)\)/g, " ")
+    .replace(/[（(]{2}[^()（）]+[）)]{2}/g, " ")
     .replace(/<[^>]*>/g, " ")
     .replace(/\^\^([^^]+)\^\^/g, "$1")
     .replace(/^@@\s?/gm, "")
@@ -367,7 +367,7 @@ function analyzeQuestionFormatRecord(row: Record<string, unknown>) {
   const instructionText = questionSection || taskText;
   const markerCounts = {
     blank: countPattern(taskText, /\[\[[\s\S]*?\]\]/g),
-    choice: countPattern(taskText, /\(\([\s\S]*?\)\)/g),
+    choice: countPattern(taskText, /[（(]{2}[^()（）]+[）)]{2}/g),
     underline: countPattern(taskText, /__([\s\S]*?)__/g),
     highlight: countPattern(taskText, /==([\s\S]*?)==(?::[A-Za-z]+)?/g),
   };
@@ -970,6 +970,16 @@ function markerCount(text: string, marker: string) {
   return text.split(marker).length - 1;
 }
 
+// Read-only interpretation of explicit choice tokens; never normalize surrounding prose.
+function normalizeChoiceMarkers(text: string) {
+  return text.replace(/[（(]{2}([^()（）]+)[）)]{2}/g, (_, label: string) =>
+    "((" + label.replace(/[０-９]/g, digit => String.fromCharCode(digit.charCodeAt(0) - 0xFEE0)) + "))");
+}
+
+function hasUnbalancedChoiceMarkers(text: string) {
+  return countPattern(text, /[（(]{2}/g) !== countPattern(text, /[）)]{2}/g);
+}
+
 function validateQuestionRecord(row: Record<string, unknown>) {
   const problemText = String(row.problem_text ?? "");
   const answerText = String(row.answer_text ?? "");
@@ -995,9 +1005,9 @@ function validateQuestionRecord(row: Record<string, unknown>) {
   if (markerCount(problemText, "##") % 2 !== 0) add("unclosed_glossary", "error", "語注マーカー##が閉じていません。");
   if (markerCount(problemText, "!!!!") % 2 !== 0) add("unclosed_source", "error", "出典マーカー!!!!が閉じていません。");
   if (markerCount(problemText, "[[") !== markerCount(problemText, "]]")) add("unbalanced_blank", "error", "空所マーカー[[ ]]の左右が一致しません。");
-  if (markerCount(problemText, "((") !== markerCount(problemText, "))")) add("unbalanced_choice", "error", "選択肢マーカー(( ))の左右が一致しません。");
+  if (hasUnbalancedChoiceMarkers(problemText)) add("unbalanced_choice", "error", "選択肢マーカー(( ))の左右が一致しません。");
 
-  const problemOnly = problemText.split(/\n\s*\{\{解答\}\}/)[0];
+  const problemOnly = normalizeChoiceMarkers(problemText).split(/\n\s*\{\{解答\}\}/)[0];
   // Only scan choice rows, not prose references such as ((1))〜((5)).
   // A row may start with a blank label and contain several horizontal choices.
   const choiceNumbers = problemOnly.split(/\r?\n/).flatMap((line) => {
@@ -1026,7 +1036,7 @@ function validateQuestionRecord(row: Record<string, unknown>) {
     if (discontinuous) add("non_contiguous_choices", "warning", "数字の選択肢番号に欠落または不自然な並びがあります。");
 
     const maxChoice = Math.max(...choiceNumbers);
-    const answerNumbers = Array.from(answerText.matchAll(/\(\((\d+)\)\)/g), (match) => Number(match[1]));
+    const answerNumbers = Array.from(normalizeChoiceMarkers(answerText).matchAll(/\(\((\d+)\)\)/g), (match) => Number(match[1]));
     if (answerNumbers.some((number) => number > maxChoice)) add("answer_out_of_range", "error", "解答番号が問題内の選択肢番号の範囲を超えています。");
   }
 
@@ -1055,7 +1065,7 @@ function correctionTargetText(row: Record<string, unknown>, targetField: Correct
 function replaceMarkedSection(value: unknown, marker: string, replacement: string) {
   const text = String(value ?? "");
   const heading = `{{${marker}}}`;
-  const headingStart = text.indexOf(heading);
+  const headingStart = text.search(new RegExp("(?<!\\{)" + heading.replace(/[{}]/g, "\\$&") + "(?!})"));
   if (headingStart < 0) return `${text.trimEnd()}${text.trim() ? "\n\n" : ""}${heading}\n${replacement.trim()}`;
 
   const contentStart = headingStart + heading.length;
@@ -1076,7 +1086,7 @@ function detectCorrectionAuditIssues(text: string, targetField: CorrectionTarget
   if (/[A-Za-z]{2,}-\s*\n\s*[a-z]{2,}/u.test(text)) add("ocr_split_hyphenated_word", "warning", "改行をまたいで分断されたハイフン語を検出しました。");
   if (/\b(?:[A-Za-z]\s+){5,}[A-Za-z]\b/u.test(text)) add("ocr_split_letters", "warning", "文字単位に不自然に分離された英語を検出しました。");
   if (markerCount(text, "[[") !== markerCount(text, "]]")) add("unbalanced_blank", "error", "空所マーカー[[ ]]の左右が一致しません。");
-  if (markerCount(text, "((") !== markerCount(text, "))")) add("unbalanced_choice", "error", "選択肢マーカー(( ))の左右が一致しません。");
+  if (hasUnbalancedChoiceMarkers(text)) add("unbalanced_choice", "error", "選択肢マーカー(( ))の左右が一致しません。");
   if (markerCount(text, "##") % 2 !== 0) add("unclosed_glossary", "error", "語注マーカー##が閉じていません。");
   if (markerCount(text, "!!!!") % 2 !== 0) add("unclosed_source", "error", "出典マーカー!!!!が閉じていません。");
   if (!text.trim()) add(`empty_${targetField}`, "warning", "監査対象のテキストが空です。");

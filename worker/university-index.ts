@@ -38,7 +38,7 @@ export function extractZenyakuTitle(problemText: string): string {
   let curLines: string[] = [];
   let zenyakuLines: string[] | null = null;
   for (const raw of lines) {
-    const m = raw.trim().match(/^\{\{([^0-9A-Za-z}]+)\}\}$/);
+    const m = raw.trim().match(/^\{\{([^0-9A-Za-z{}]+)\}\}$/);
     if (m) {
       if (curType === "全訳" && zenyakuLines === null) zenyakuLines = curLines;
       curType = m[1];

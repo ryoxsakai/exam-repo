@@ -750,16 +750,21 @@ body.sortlist-dragging-touch .sort-item * {
   .question-block-header { margin: 10px 0 6px; }
 }
 .question-badge {
-  /* [[]]（blank-badge）と同サイズ。薄いブルーのグラデーション背景 */
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 2.2em; padding: calc(.1em + 0.5px) 0.7em; margin: 0 5px 0 0;
-  background: linear-gradient(135deg, #F0FAFD, #CAF0F8);
-  color: var(--navy); border: 1.5px solid var(--sky); border-radius: 3px;
-  font-size: .82em; font-family: var(--sans); font-weight: 700; vertical-align: .04em; line-height: 1;
-  text-indent: 0; white-space: nowrap; flex-shrink: 0; letter-spacing: .03em;
+  /* Question tags are bold text, with one full character of trailing space. */
+  display: inline-block; padding: 0; margin: 0 1em 0 0;
+  min-width: 0; width: auto; background: none; border: 0; border-radius: 0;
+  color: inherit; font: inherit; font-weight: 700; vertical-align: baseline;
+  text-indent: 0; white-space: nowrap; flex-shrink: 0; letter-spacing: inherit;
 }
+/* Hierarchy is shown by indentation only; body text stays full-size. */
+.question-subgroup { margin-left: 1em; min-width: 0; break-inside: auto; }
+.question-subgroup-level-3 { margin-left: 2em; }
+.question-subgroup-level-2 > .question-subgroup-level-3 { margin-left: 1em; }
+.question-block-header.question-level-2 { margin-top: 12px; }
+.question-block-header.question-level-3 { margin-top: 8px; }
+.question-block-header.question-level-2,
+.question-block-header.question-level-3 { break-after: avoid; page-break-after: avoid; }
 /* リード文中の参照は左右均等の小さな余白。本文・問題の表示は変更しない。 */
-.exam-doc .lead-line .question-badge,
 .exam-doc .lead-line .choice-inline,
 .exam-doc .lead-line .blank-badge { margin: 0 .2em; }
 
@@ -1212,10 +1217,8 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   #print-area.lh-5 .exam-doc { line-height: 2.8; }
   /* バッジとハイライトは背景・色を保持して印刷 */
   #print-area .question-badge {
-    -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    background: linear-gradient(135deg,#F0FAFD,#CAF0F8) !important;
-    background-image: linear-gradient(135deg,#F0FAFD,#CAF0F8) !important;
-    color: #0f2944 !important; border-color: #7dd3fc !important;
+    background: none !important; background-image: none !important;
+    color: inherit !important; border: 0 !important;
   }
   #print-area .blank-badge {
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
@@ -1235,8 +1238,8 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   /* グレースケール印刷では色付き要素を灰色系へ統一する。 */
   #print-area.print-out.print-grayscale { -webkit-filter: grayscale(1); filter: grayscale(1); }
   #print-area.print-out.print-grayscale .question-badge {
-    background: #e5e7eb !important; background-image: none !important;
-    color: #111827 !important; border-color: #9ca3af !important;
+    background: none !important; background-image: none !important;
+    color: inherit !important; border: 0 !important;
   }
   #print-area.print-out.print-grayscale mark.hl { background: #d1d5db !important; }
   /* ハイライトの文字色は黒に統一（リセットで上書き済みだが明示） */
