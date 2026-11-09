@@ -810,6 +810,9 @@ body.sortlist-dragging-touch .sort-item * {
 
 /* [[-- --]] [[--A--]] … 通常空所の3倍幅の空欄。中身の空白を保持（pre） */
 .blank-badge-wide { width: 12em; white-space: pre; }
+/* [[=A=]] on its own line fills the current text column, not the page/viewport. */
+.exam-doc .blank-line { text-indent: 0; break-inside: avoid; page-break-inside: avoid; }
+.blank-badge-line { display: flex; width: 100%; max-width: 100%; white-space: pre; }
 /* 段落番号バッジ：桁数によらず正方形にし、2桁の字間を詰める */
 .para-badge {
   display: inline-flex; align-items: center; justify-content: center; position: relative; top: 1px;
@@ -913,6 +916,9 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
 .choice-inline.choice-label-unicode {
   display: inline; vertical-align: baseline;
 }
+/* [[((e))]] reuses circled choices without shrinking/changing the outer blank.
+   In print it inherits the blank's Arial stack instead of the screen UI font. */
+.blank-badge > .choice-inline { margin: 0; font-family: inherit; color: inherit; font-size: 1em; }
 .choice-label-unicode .choice-label-text { transform: none; }
 /* Unicodeがないひらがな等のフォールバックも、Unicode丸囲み文字と同じ見た目に揃える。 */
 .choice-inline:not(.choice-label-unicode) {

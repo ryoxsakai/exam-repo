@@ -4,6 +4,7 @@
      {{問N}}        … 大問見出しバッジ
      [[N]] [[A]]    … 空所バッジ
      [[-- --]] [[--A--]] … 3倍幅の空欄（ダッシュで囲む。中身はラベル表示・空白保持）
+     [[=A=]]       … 単独行なら本文幅いっぱいの段落空所。行中は通常幅の参照
      ##語::訳##     … 脚注（語注）。語中の ^ は注のみ直前文字を小文字化（M^isdiagnosis → 本文Misdiagnosis/注misdiagnosis）
      ==語==         … 二重下線
      ::語:: :色     … ハイライト（色: yellow/blue/red/purple/pink/green/aqua）。旧 ==語==:色 も互換表示
@@ -80,6 +81,13 @@
       (!unicode && String(label).length >= 2 ? " choice-label-compact" : "");
     return '<span class="' + classes + '"><span class="choice-label-text">' +
       esc(unicode || label) + "</span></span>";
+  }
+
+  // Only an entire explicit ((choice)) label is interpreted inside a blank.
+  // Ordinary (e), prose and other markup stay literal; no recursive rendering.
+  function blankLabelHtml(label) {
+    var choice = String(label).match(/^[（(]{2}([^()（）]+)[）)]{2}$/);
+    return choice ? choiceLabelHtml(choice[1], "choice-inline") : esc(label);
   }
 
   // 画像URLの基準（Worker のベースURL）。![alt](/api/image/KEY) のような相対参照を解決する。
@@ -229,11 +237,16 @@
         // 先頭が -- のもの（[[--]] [[----]] [[-- --]] [[--A--]] 等）は3倍幅の空欄。
         // 前後のダッシュのみ除いた中身をラベルとして表示する（空白は保持。
         // [[-- --]]=半角スペース / [[--　--]]=全角スペース が中に入る）。
-        if (/^--/.test(m[1])) {
+        var paragraphLabel = m[1].match(/^=([^=\[\]\r\n]*)=$/);
+        if (paragraphLabel) {
+          // Inline references keep a compact badge; only a standalone source
+          // line becomes a full-width paragraph blank in render().
+          out += '<span class="blank-badge">' + blankLabelHtml(paragraphLabel[1]) + "</span>";
+        } else if (/^--/.test(m[1])) {
           var label = m[1].replace(/^-+/, "").replace(/-+$/, "");
-          out += '<span class="blank-badge blank-badge-wide">' + esc(label) + "</span>";
+          out += '<span class="blank-badge blank-badge-wide">' + blankLabelHtml(label) + "</span>";
         } else {
-          out += '<span class="blank-badge">' + esc(m[1]) + "</span>";
+          out += '<span class="blank-badge">' + blankLabelHtml(m[1]) + "</span>";
         }
         rem = rem.slice(m[0].length);
         // 括弧で囲んだ空所 ([[3]]) は閉じ括弧をバッジの直後へ寄せる。
@@ -633,6 +646,17 @@
 
       if (trimmed === "") { html += '<div style="height:.6em"></div>'; paraStart = true; continue; }
       if (trimmed === "----") { closeQuestionGroups(1); html += '<hr class="exam-hr">'; paraStart = true; continue; }
+
+      // A paragraph omission occupies one complete line of its current column,
+      // including nested questions. Keep the stored token and following paragraph
+      // intact; inline mentions are handled as ordinary-sized references above.
+      var paragraphBlank = trimmed.match(/^(?:@@\s*)?\[\[=([^=\[\]\r\n]*)=\]\]$/);
+      if (paragraphBlank) {
+        html += '<span class="blk blank-line"><span class="blank-badge blank-badge-line">' +
+          blankLabelHtml(paragraphBlank[1]) + '</span></span>';
+        paraStart = true;
+        continue;
+      }
 
       // Convert prose list markers only; keep negative numbers and algebra intact.
       var bulletLine = false;

@@ -30,6 +30,7 @@ jobs:
           npm run build --prefix panel
           npm test --prefix panel
           node scripts/test-question-hierarchy.cjs
+          node scripts/test-paragraph-blanks.cjs
           node scripts/test-fullwidth-choices.cjs
           node scripts/test-glossary-lemma.cjs
           node scripts/test-glossary-table-boundary.cjs

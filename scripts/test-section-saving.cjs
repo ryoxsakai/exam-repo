@@ -50,6 +50,7 @@ const fixtures = [
   [sec('本文', body), sec('注意事項', 'Custom Japanese section.'), sec('問題', 'Next question.')]
 ];
 fixtures.push([sec('設問', '{{問7}} Parent\n{{{(1)}}} Child\n{{{{a}}}} Grandchild\n((1)) First'), sec('解答','{{問7}}\n{{{(1)}}}\n{{{{a}}}} ((1))'), sec('解説','{{問7}}\n{{{(1)}}} Reason')]);
+fixtures.push([sec('本文', 'First.\n\n[[=A=]]\n\nNext.'), sec('設問', '{{問1}} 空所 [[=A=]] を選ぶ。'), sec('解答', '[[=A=]] ((1))')]);
 let rounds = 0;
 for (const [fixtureIndex, original] of fixtures.entries()) {
   let current = plain(original), previous = null;
