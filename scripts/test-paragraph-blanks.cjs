@@ -56,7 +56,7 @@ assert.match(rendered,/class="blk indent">Next paragraph/);
 assert.match(rendered,/class="blk indent">Last paragraph/);
 assert.match(M.render('{{問7}} Parent\n{{{(4)}}} Child\n[[=A=]]\n{{問8}} Next').html,/blank-badge-line">A<\/span><\/span><\/div><div class="question-block-header/);
 const sections=[{type:'リード文',text:'[[=66=]]〜[[=70=]] を選ぶ。'},
- {type:'本文',text:'First [[((e))]] and [[（（１２））]] and [[((あ))]].\n\n[[=66=]]\n\nNext.\n\n[[--68--]]\n\n[[70]]'},
+ {type:'本文',text:'First [[((e))]] and [[（（１２））]] and [[((あ))]].\n\n[[=66=]]\n\nNext.\n\n[[--68--]]\n\n[[70]]\n\n[13] [[= =]]'},
  {type:'設問',text:'{{問7}} 空所 [[66]] / [[=68=]] / [[=70=]].'},
  {type:'解答',text:'[[=66=]] A\n[[68]] B\n[[=70=]] C'},
  {type:'解説',text:'[[=66-70=]]: [[=A=]], [[=99=]], [[=66]], [[66=]]'}];
@@ -65,6 +65,7 @@ assert.equal(JSON.stringify(sections),original);
 assert.equal(renumbered[0].text,'[[=1=]]〜[[=3=]] を選ぶ。');
 assert.match(renumbered[1].text,/\[\[=1=\]\]/);
 assert.match(renumbered[1].text,/\[\[--2--\]\]/);
+assert.match(renumbered[1].text,/\[13\] \[\[= =\]\]/);
 assert.equal(renumbered[2].text,'{{問1}} 空所 [[1]] / [[=2=]] / [[=3=]].');
 assert.equal(renumbered[3].text,'[[=1=]] A\n[[2]] B\n[[=3=]] C');
 assert.equal(renumbered[4].text,'[[=1-3=]]: [[=A=]], [[=99=]], [[=66]], [[66=]]');
