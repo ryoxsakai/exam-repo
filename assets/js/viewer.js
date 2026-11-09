@@ -2190,7 +2190,7 @@
         // Without an explicit full-width separator, only compact answer tokens
         // are unambiguous. Prose may refer to another question without punctuation.
         return body && body.length <= 80 && (/^(?:[A-Za-z]|[0-9０-９]+)$/.test(body) ||
-          /^(?:\(\([^()]+\)\)|\[\[[^\]]+\]\]|[・,\/＋+−―–—=<>_-])+$/.test(body));
+          /^(?:[（(]{2}[^()（）]+[）)]{2}|\[\[[^\]]+\]\]|[・,\/＋+−―–—=<>_-])+$/.test(body));
       });
             // Full-width spaces are the stored separator for answer entries. Keep
       // ordinary sentence references (separated by an ASCII space) inline.
@@ -2236,8 +2236,8 @@
   function renderDisplayContent(label, text, opts, dialogueSource) {
     if (opts && opts.optimizeChoices && ["問題", "設問"].indexOf(label) >= 0) {
       text = text.split("\n").map(function (line) {
-        if (!/^\s*\(\([^)]+\)\)\s+\S/.test(line)) return line;
-        return line.replace(/([^\s])([ \t　]+)(?=\(\([^)]+\)\)\s+\S)/g, "$1\n");
+        if (!/^\s*[（(]{2}[^()（）]+[）)]{2}\s+\S/.test(line)) return line;
+        return line.replace(/([^\s])([ \t　]+)(?=[（(]{2}[^()（）]+[）)]{2}\s+\S)/g, "$1\n");
       }).join("\n");
     }
     var rendered = opts && opts.optimizeAnswers && label === "解答"
@@ -2335,7 +2335,7 @@
     var namedCount = 0, questionCount = 0, blankCount = 0;
     function protectedText(text, transform) {
       var saved = [];
-      var safe = String(text || "").replace(/!\[[^\]]*\]\([^\n]*?\)|https?:\/\/[^\s<>]+|##[\s\S]*?##|!!!![\s\S]*?!!!!|`[^`\n]*`/g, function (m) {
+      var safe = String(text || "").replace(/(?<!\{)(?:\{\{\{\{[^{}\n]+\}\}\}\}|\{\{\{[^{}\n]+\}\}\})(?!})|!\[[^\]]*\]\([^\n]*?\)|https?:\/\/[^\s<>]+|##[\s\S]*?##|!!!![\s\S]*?!!!!|`[^`\n]*`/g, function (m) {
         saved.push(m); return "\u0001" + (saved.length - 1) + "\u0002";
       });
       return transform(safe).replace(/\u0001(\d+)\u0002/g, function (_, i) { return saved[Number(i)]; });
@@ -2874,7 +2874,7 @@
 
   // Only consecutive standalone choices belong to a group; prose and blank badges are boundaries.
   function optimizePrintChoices(root, forPrint) {
-    $all(".print-part-q .exam-doc, .exam-field[data-sectype=\"問題\"] .exam-doc, .exam-field[data-sectype=\"設問\"] .exam-doc", root).forEach(function (doc) {
+    $all(".print-part-q .exam-doc, .print-part-q .question-subgroup, .exam-field[data-sectype=\"問題\"] .exam-doc, .exam-field[data-sectype=\"問題\"] .question-subgroup, .exam-field[data-sectype=\"設問\"] .exam-doc, .exam-field[data-sectype=\"設問\"] .question-subgroup", root).forEach(function (doc) {
       var node = doc.firstElementChild;
       while (node) {
         if (!node.classList.contains("answer-choice")) { node = node.nextElementSibling; continue; }
@@ -2947,6 +2947,10 @@
       var fontSize = forPrint ? (PRINT_FS_PT[printSize] || 12) * 4 / 3 : parseFloat(style.fontSize);
       probe.style.fontSize = fontSize + "px"; probe.style.fontFamily = style.fontFamily;
       var width = forPrint ? probe.getBoundingClientRect().width : group.getBoundingClientRect().width;
+      if (forPrint && group.closest(".question-subgroup")) {
+        var depth = group.closest(".question-subgroup-level-3") ? 2 : 1;
+        width -= depth * fontSize * .8;
+      }
       var children = Array.prototype.slice.call(group.children), maxWidth = 0;
       children.forEach(function (choice) {
         var copy = choice.cloneNode(true);

@@ -10,8 +10,8 @@ const { buildSync } = require('../panel/node_modules/esbuild');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'exam-validation-'));
   try {
     const out = path.join(tmp, 'mcp.mjs');
-    buildSync({entryPoints:['worker/mcp.ts'], bundle:true, platform:'node', format:'esm', outfile:out});
-    const { handleMcpRoute } = await import(pathToFileURL(out));
+    buildSync({stdin:{contents:fs.readFileSync('worker/mcp.ts','utf8') + '\nexport { normalizeChoiceMarkers, detectCorrectionAuditIssues, analyzeQuestionFormatRecord };', resolveDir:path.resolve('worker'), loader:'ts'}, bundle:true, platform:'node', format:'esm', outfile:out});
+    const { handleMcpRoute, normalizeChoiceMarkers, detectCorrectionAuditIssues, analyzeQuestionFormatRecord, cleanPassageText } = await import(pathToFileURL(out));
     let row;
     const env = { EXAM_SESSION_SECRET:'synthetic-validation-only', DB:{
       prepare(sql) {
@@ -64,6 +64,32 @@ const { buildSync } = require('../panel/node_modules/esbuild');
     await check('inline prose reference', '((1)) Refer to ((4)) in the passage.\n((2)) bravo\n((3)) charlie', '((4))', ['answer_out_of_range']);
     await check('inline range in a choice', '((1)) Choose from  ((1))〜((9)) here.  ((2)) bravo  ((3)) charlie', '((4))', ['answer_out_of_range']);
     await check('tab separated', choices.join('\t'), '((5))');
-    console.log('Question validation: 25 MCP regressions passed; reads only, registered data unchanged');
+    const fullwidthChoices = ['（（１）） alpha', '(（２)) bravo', '（(3)） charlie'];
+    for (const separator of ['\n', '  ', '　', '\t']) {
+      await check('fullwidth and mixed choices '+JSON.stringify(separator), fullwidthChoices.join(separator), '（（３））');
+      await check('fullwidth answer range '+JSON.stringify(separator), fullwidthChoices.join(separator), '(（４）)', ['answer_out_of_range']);
+    }
+    await check('fullwidth missing choice', [fullwidthChoices[0],fullwidthChoices[2]].join('　'), '（（３））', ['non_contiguous_choices']);
+    await check('fullwidth range excluded', '（（１））〜(（９）)から選ぶ\n'+fullwidthChoices.join('　'), '（（４））', ['answer_out_of_range']);
+    await check('fullwidth inline underline excluded', '（（１）） Refer to  （（９）） __words__.　'+fullwidthChoices.slice(1).join('　'), '（（４））', ['answer_out_of_range']);
+    await check('fullwidth blank prefix', '[[ア]] '+fullwidthChoices.join('　'), '（（３））');
+    await check('fullwidth answer section excluded', fullwidthChoices.join('　')+'\n{{解答}}\n（（９））', '（（４））', ['answer_out_of_range']);
+    await check('single parentheses are not choices', '（１） ordinary prose\n(2) ordinary prose', '（（９））');
+    await check('fullwidth unbalanced open', '（（１） missing delimiter', '（（１））', ['unbalanced_choice']);
+    await check('mixed unbalanced close', '１)） missing opener', '（（１））', ['unbalanced_choice']);
+    const format = analyzeQuestionFormatRecord({problem_text:fullwidthChoices.join('\n')});
+    assert.equal(format.marker_counts.choice, 3);
+    assert.ok(format.formats.includes('multiple_choice'));
+    assert.equal(cleanPassageText(fullwidthChoices.join('\n')), cleanPassageText(normalizeChoiceMarkers(fullwidthChoices.join('\n'))));
+    const prose = '（普通の文章） (１) ＡＢ１２ {{問３}} [[４]]';
+    assert.equal(normalizeChoiceMarkers(prose), prose, 'normalization is limited to explicit choice tokens');
+    assert.equal(normalizeChoiceMarkers('（（１）） and (（２))'), '((1)) and ((2))');
+    for (const text of [...fullwidthChoices, '（（（１）））', prose]) {
+      assert.deepEqual(detectCorrectionAuditIssues(text, 'problem_text'), [], 'audit accepts '+text);
+    }
+    for (const text of ['（（１） missing closer', '１)） missing opener']) {
+      assert.deepEqual(detectCorrectionAuditIssues(text, 'problem_text').map(issue => issue.code), ['unbalanced_choice']);
+    }
+    console.log('Question validation: ASCII/fullwidth/mixed choices, ranges, audits, missing delimiters, prose and answer mapping passed; reads only, registered data unchanged');
   } finally { fs.rmSync(tmp,{recursive:true,force:true}); }
 })().catch(error=>{console.error(error);process.exitCode=1;});

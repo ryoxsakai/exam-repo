@@ -29,6 +29,8 @@ jobs:
           npm ci --prefix panel
           npm run build --prefix panel
           npm test --prefix panel
+          node scripts/test-question-hierarchy.cjs
+          node scripts/test-fullwidth-choices.cjs
           node scripts/test-glossary-lemma.cjs
           node scripts/test-glossary-table-boundary.cjs
           node scripts/test-d1-overload.cjs

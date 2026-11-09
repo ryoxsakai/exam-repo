@@ -758,6 +758,31 @@ body.sortlist-dragging-touch .sort-item * {
   font-size: .82em; font-family: var(--sans); font-weight: 700; vertical-align: .04em; line-height: 1;
   text-indent: 0; white-space: nowrap; flex-shrink: 0; letter-spacing: .03em;
 }
+/* Explicit child/grandchild structure. Keep body text full-size and allow page breaks. */
+.question-subgroup { margin-left: .8em; min-width: 0; break-inside: auto; }
+.question-subgroup-level-3 { margin-left: 1.6em; }
+.question-subgroup-level-2 > .question-subgroup-level-3 { margin-left: .8em; }
+.question-block-header.question-level-2 { margin-top: 12px; }
+.question-block-header.question-level-3 { margin-top: 8px; }
+.question-block-header.question-level-2,
+.question-block-header.question-level-3 { break-after: avoid; page-break-after: avoid; }
+.question-badge.question-level-2 {
+  background: #fff; border: 1px solid #64748b; border-radius: 2px;
+}
+.question-badge.question-level-3 {
+  background: transparent; border: 0; border-bottom: 1px solid #64748b;
+  border-radius: 0; font-weight: 600;
+}
+@media print {
+  #print-area .question-badge.question-level-2,
+  #print-area.print-out.print-grayscale .question-badge.question-level-2 {
+    background: #fff !important; background-image: none !important; border-color: #475569 !important;
+  }
+  #print-area .question-badge.question-level-3,
+  #print-area.print-out.print-grayscale .question-badge.question-level-3 {
+    background: transparent !important; background-image: none !important; border-color: #475569 !important;
+  }
+}
 /* リード文中の参照は左右均等の小さな余白。本文・問題の表示は変更しない。 */
 .exam-doc .lead-line .question-badge,
 .exam-doc .lead-line .choice-inline,
