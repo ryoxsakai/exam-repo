@@ -128,12 +128,18 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   assert.equal(await page.locator('#pr-optimize-answers').isChecked(),true);assert.equal(await page.locator('#pr-compact-commentary').isChecked(),true);
   await page.evaluate(()=>__answersTest.runPrint());await page.waitForFunction(()=>window.__prints===1);
   assert.equal(await page.locator('#print-area .print-answer-group').count(),4);
-  assert.equal(await page.locator('#print-area .print-answer-group').first().getAttribute('data-columns'),'2');
+  const answerColumns=Number(await page.locator('#print-area .print-answer-group').first().getAttribute('data-columns'));
+  assert.ok(answerColumns>=2&&answerColumns<=4,'Short answers should use multiple columns at their natural label width');
   await page.emulateMedia({media:'print'});
   await plainLabels('#print-area');
   await checkBlanks('#print-area',true);
-  const rows=await page.locator('#print-area .print-answer-group').first().locator('.print-answer-item').evaluateAll(items=>items.map(x=>({x:x.getBoundingClientRect().left,y:x.getBoundingClientRect().top})));
-  assert.ok(Math.abs(rows[0].x-rows[2].x)<1);assert.ok(Math.abs(rows[1].x-rows[3].x)<1);assert.ok(rows[2].y>rows[0].y);
+  const rows=await page.locator('#print-area .print-answer-group').first().locator('.print-answer-item').evaluateAll(items=>items.map(x=>({x:x.getBoundingClientRect().left,y:x.getBoundingClientRect().top,right:x.getBoundingClientRect().right,groupRight:x.parentElement.getBoundingClientRect().right,scrollWidth:x.scrollWidth,clientWidth:x.clientWidth})));
+  for(let i=0;i<rows.length;i++){
+    assert.ok(rows[i].right<=rows[i].groupRight+1,'Answer columns must stay within the group');
+    assert.ok(rows[i].scrollWidth<=rows[i].clientWidth+1,'Answer content must not overflow its column');
+    if(i%answerColumns){assert.ok(rows[i].x>rows[i-1].x);assert.ok(Math.abs(rows[i].y-rows[i-1].y)<1);}
+    if(i>=answerColumns){assert.ok(Math.abs(rows[i].x-rows[i-answerColumns].x)<1);assert.ok(rows[i].y>rows[i-answerColumns].y);}
+  }
   if(width===1280)await page.screenshot({path:'/tmp/print-answers-layout.png',fullPage:true});
   await page.pdf({path:'/tmp/print-answers-'+width+'.pdf',format:'A4'});
   assert.equal(JSON.stringify(questions),source);assert.deepEqual(errors,[]);
