@@ -246,7 +246,7 @@ export function cleanPassageText(value: unknown) {
     .replace(/!\[[^\]]*\]\([^)\s]+\)(?:\{[^}\n]*\})?/g, " ")
     .replace(/\{\{[^}]*\}\}/g, " ")
     .replace(/^\s*\[[^\[\]]+\]\s?/gm, "")
-    .replace(/##([^:#]+)::[^#]+##/g, (_match, word: string) => word.replace(/\^/g, ""))
+    .replace(/##([^:#]+)::[^#]+##/g, (_match, word: string) => word.split("|")[0].replace(/\^/g, ""))
     .replace(/!!!![\s\S]*?!!!!/g, " ")
     .replace(/\|\|\|\|([\s\S]+?)\|\|\|\|/g, "$1")
     .replace(/^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/gm, " ")
