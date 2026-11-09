@@ -2903,33 +2903,8 @@
   }
 
   function alignPrintQuestionBadges(root) {
-    var oldStyle = root.getAttribute("style");
-    var hidden = !root.getBoundingClientRect().width;
-    if (hidden) {
-      root.style.setProperty("display", "block", "important");
-      root.style.position = "absolute"; root.style.left = "-100000px";
-      root.style.visibility = "hidden";
-    }
-    // University printouts share a width across questions, answers and exam dates.
-    // Unscoped favorite questions retain their individual width groups.
-    var scopes = new Map();
-    $all(".print-q", root).forEach(function (question) {
-      var key = question.getAttribute("data-print-badge-scope") || question;
-      var badges = scopes.get(key) || [];
-      scopes.set(key, badges.concat($all(".question-badge", question)));
-    });
-    scopes.forEach(function (badges) {
-      var widest = 0;
-      badges.forEach(function (badge) { badge.style.width = ""; });
-      badges.forEach(function (badge) {
-        widest = Math.max(widest, badge.getBoundingClientRect().width);
-      });
-      if (widest) badges.forEach(function (badge) { badge.style.width = Math.ceil(widest * 100) / 100 + "px"; });
-    });
-    if (hidden) {
-      if (oldStyle === null) root.removeAttribute("style");
-      else root.setAttribute("style", oldStyle);
-    }
+    // Legacy previews may have fixed widths. Plain bold labels use their natural width.
+    $all(".question-badge", root).forEach(function (badge) { badge.style.width = ""; });
   }
 
   function layoutPrintAnswerGroups(root, forPrint) {
@@ -2949,7 +2924,7 @@
       var width = forPrint ? probe.getBoundingClientRect().width : group.getBoundingClientRect().width;
       if (forPrint && group.closest(".question-subgroup")) {
         var depth = group.closest(".question-subgroup-level-3") ? 2 : 1;
-        width -= depth * fontSize * .8;
+        width -= depth * fontSize;
       }
       var children = Array.prototype.slice.call(group.children), maxWidth = 0;
       children.forEach(function (choice) {

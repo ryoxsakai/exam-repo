@@ -84,11 +84,13 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
     assert.ok(Number(await group.getAttribute('data-columns'))>=(forPrint?2:1));
   };
   assert.equal(await page.locator('#pr-optimize-answers').isChecked(),false);assert.equal(await page.locator('#pr-compact-commentary').isChecked(),false);
-  const equalBadges=async root=>{
-    const groups=await page.locator(root+' .print-q').evaluateAll(qs=>qs.map(q=>[...q.querySelectorAll('.question-badge')].map(b=>b.getBoundingClientRect().width)));
-    const widths=groups.flat();
-    assert.ok(widths.length>1);
-    assert.ok(Math.max(...widths)-Math.min(...widths)<.1,'Badge widths match across the entire university, including questions and answers');
+  const plainLabels=async root=>{
+    const labels=await page.locator(root+' .question-badge').evaluateAll(nodes=>nodes.map(b=>{
+      const style=getComputedStyle(b);return {width:b.style.width,border:style.borderTopWidth,bg:style.backgroundImage,
+        gap:parseFloat(style.marginRight),font:parseFloat(style.fontSize),weight:style.fontWeight};
+    }));
+    assert.ok(labels.length>1);
+    labels.forEach(label=>{assert.equal(label.width,'');assert.equal(label.border,'0px');assert.equal(label.bg,'none');assert.equal(label.weight,'700');assert.ok(Math.abs(label.gap-label.font)<.1);});
   };
   const scopeCheck=await page.evaluate(()=>{
     const root=document.createElement('div');root.className='print-doc';
@@ -99,11 +101,11 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
     const reduced=root.querySelector('.question-badge').getBoundingClientRect().width;
     root.remove();return {widths,reduced};
   });
-  assert.ok(Math.abs(scopeCheck.widths[0]-scopeCheck.widths[1])<.1);
-  assert.ok(scopeCheck.widths[1]>scopeCheck.widths[2]);
-  assert.ok(scopeCheck.widths[1]>scopeCheck.widths[3]);
-  assert.ok(scopeCheck.reduced<scopeCheck.widths[1]);
-  await equalBadges('#print-preview');
+  assert.ok(scopeCheck.widths[0]>scopeCheck.widths[1],"Long labels retain natural width");
+  assert.ok(Math.abs(scopeCheck.widths[1]-scopeCheck.widths[2])<.1);
+  assert.ok(Math.abs(scopeCheck.widths[1]-scopeCheck.widths[3])<.1);
+  assert.ok(Math.abs(scopeCheck.reduced-scopeCheck.widths[1])<.1,"Removing another label cannot change this label width");
+  await plainLabels('#print-preview');
   const baseline=await page.locator('#print-preview .print-part-a').innerHTML();
   const questionBaseline=await page.locator('#print-preview .print-part-q').innerHTML();
   await page.locator('#pr-optimize-answers').check();
@@ -128,7 +130,7 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   assert.equal(await page.locator('#print-area .print-answer-group').count(),4);
   assert.equal(await page.locator('#print-area .print-answer-group').first().getAttribute('data-columns'),'2');
   await page.emulateMedia({media:'print'});
-  await equalBadges('#print-area');
+  await plainLabels('#print-area');
   await checkBlanks('#print-area',true);
   const rows=await page.locator('#print-area .print-answer-group').first().locator('.print-answer-item').evaluateAll(items=>items.map(x=>({x:x.getBoundingClientRect().left,y:x.getBoundingClientRect().top})));
   assert.ok(Math.abs(rows[0].x-rows[2].x)<1);assert.ok(Math.abs(rows[1].x-rows[3].x)<1);assert.ok(rows[2].y>rows[0].y);
