@@ -409,6 +409,10 @@
   }
 
   // ---- Markdown 風テーブル ----
+  // 語注内とエスケープ済みのパイプは、splitRow と同様にセル区切りとみなさない。
+  function hasTableSeparator(line) {
+    return line.replace(/##([^:#]+)::([^#]+)##|\\\|/g, "").indexOf("|") >= 0;
+  }
   // 区切り行か（パイプを含む `|---|:--:|` 等。本文の `----` と混同しないため
   // 必ずパイプを1つ以上含むことを条件にする）
   function isTableSep(line) {
@@ -446,7 +450,7 @@
     var bodies = [], idx = start + 2;
     for (; idx < lines.length; idx++) {
       var lt = lines[idx].trim();
-      if (lt === "" || lt.indexOf("|") < 0) break;
+      if (lt === "" || !hasTableSeparator(lt)) break;
       bodies.push(splitRow(lines[idx]));
     }
     function cell(tag, txt, al) {
@@ -616,7 +620,7 @@
       }
 
       // Markdown 風テーブル（ヘッダ行 + 区切り行 |---|---| が続く場合）
-      if (trimmed.indexOf("|") >= 0 && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+      if (hasTableSeparator(trimmed) && i + 1 < lines.length && isTableSep(lines[i + 1])) {
         var tbl = renderTable(lines, i, footnotes);
         html += tbl.html;
         i = tbl.next - 1; // for ループの ++ で次行へ
