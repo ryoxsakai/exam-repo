@@ -47,7 +47,7 @@ if(process.argv.includes('--browser'))(async()=>{
   await page.route('**/*',r=>r.request().url()==='https://font.test/biz.ttf'&&loaded?r.fulfill({status:200,contentType:'font/ttf',body:font}):r.abort());
   const face=loaded?'@font-face{font-family:"BIZ UDGothic";font-weight:700;src:url("https://font.test/biz.ttf") format("truetype");font-display:swap;}':'';
   const text='{{1}} Parent\n{{{12}}} Child\n{{{{123}}}} Grandchild\n{{問1}} Mixed\n{{１２}} Fullwidth source';
-  await page.setContent('<style>'+css+face+'</style><div id="fixture" class="exam-doc" style="font-size:20px;width:calc(100% - 40px);margin:20px">'+M.render(text).html+'</div>');
+  await page.setContent('<style>'+css+face+'</style><div id="print-area" class="exam-doc print-out" style="display:block;font-size:20px;width:calc(100% - 40px);margin:20px">'+M.render(text).html+'</div>');
   await page.evaluate(()=>document.fonts.ready);
   if(loaded)assert.equal(await page.evaluate(()=>document.fonts.check('700 20px "BIZ UDGothic"','１123問')),true);
   for(const media of ['screen','print']){
@@ -59,7 +59,11 @@ if(process.argv.includes('--browser'))(async()=>{
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   }
   await page.emulateMedia({media:'screen'});await page.screenshot({path:'/tmp/exam-question-gothic-'+width+'-'+loaded+'.png',fullPage:true});
-  if(loaded)await page.pdf({path:'/tmp/exam-question-gothic-'+width+'.pdf',format:'A4',printBackground:true});
+  if(loaded){
+   const pdf='/tmp/exam-question-gothic-'+width+'.pdf';await page.pdf({path:pdf,format:'A4',printBackground:true});
+   const extracted=require('node:child_process').execFileSync('pdftotext',[pdf,'-'],{encoding:'utf8'});
+   for(const label of ['Parent','Child','Grandchild','Mixed','Fullwidth source'])assert.ok(extracted.includes(label),'Real print content: '+label);
+  }
   await page.close();
  }console.log('PASS: actual BIZ font 2:1 metrics, 700 weight, fallback, desktop/mobile screen/print, screenshots and PDFs');}finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
