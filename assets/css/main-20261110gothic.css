@@ -751,7 +751,7 @@ body.sortlist-dragging-touch .sort-item * {
 }
 .question-badge {
   /* BIZ UD (not proportional UDP): halfwidth digits are exactly half an em. */
-  display: inline-block; padding: 0; margin: 0 1em 0 0;
+  display: inline-block; padding: 0; margin: 0;
   min-width: 0; width: auto; background: none; border: 0; border-radius: 0;
   color: inherit; font: inherit;
   font-family: "BIZ UDGothic", "BIZ UDゴシック", "MS Gothic", "ＭＳ ゴシック", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
@@ -759,6 +759,8 @@ body.sortlist-dragging-touch .sort-item * {
   font-feature-settings: "palt" 0, "pkna" 0; vertical-align: baseline;
   text-indent: 0; white-space: nowrap; flex-shrink: 0; letter-spacing: 0;
 }
+/* Inline references keep natural spacing; only leading question headings get a gap. */
+.question-block-header > .question-badge { margin-right: 1em; }
 /* Hierarchy is shown by indentation only; body text stays full-size. */
 .question-subgroup { margin-left: 1em; min-width: 0; break-inside: auto; }
 .question-subgroup-level-3 { margin-left: 2em; }

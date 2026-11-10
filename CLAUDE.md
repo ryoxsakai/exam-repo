@@ -354,7 +354,7 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 
 `{{}}` / `{{{}}}` / `{{{{}}}}` の設問ラベルは BIZ UDGothic 700（Google Fonts、比例幅の UDP ではない）で表示する。ASCII 数字は 0.5em、全角数字は 1em。未取得時はローカルの BIZ UD / MS ゴシック等へフォールバックする。ラベルのみを対象に、連続数字1桁は全角、2桁以上は半角へ表示変換する（`問1→問１`、`０１→01`、`1２3→123`）。小数・桁区切りと区別できない `1.5` / `１．５` / `1,000` はその数字列全体を維持し、ハイフン等で区切る `1-2` は `１-２` とする。保存原文・見出し階層・採番や解答対応の識別子・空所と選択肢は変更しない。
 
-共通の `Markup.questionBadge` を通常表示と viewer の解答最適化で利用。フォントは閲覧・設定・会話パネルの HTML で読み込む。会話パネル CSP は Google Fonts CSS とフォントの2ドメインだけを resourceDomains に追加する（connectDomains は空のまま）。既存の1em右余白を保つ。
+共通の `Markup.questionBadge` を通常表示と viewer の解答最適化で利用。フォントは閲覧・設定・会話パネルの HTML で読み込む。会話パネル CSP は Google Fonts CSS とフォントの2ドメインだけを resourceDomains に追加する（connectDomains は空のまま）。右余白は `.question-block-header > .question-badge` の先頭見出しだけ1emとし、リード文・本文・設問文中の参照は0にする。最適化解答の先頭ラベルは `print-choices.css` の専用規則で1emを維持する。
 
 比較根拠（Google Fonts の公式配布ファイル、2026-11-10に700で計測）:
 - [BIZ UDGothic](https://github.com/googlefonts/morisawa-biz-ud-gothic): ASCII 0–9 は1024/2048、全角０–９は2048/2048。教育・ビジネス文書向けのUDゴシック。

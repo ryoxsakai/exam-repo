@@ -87,10 +87,10 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   const plainLabels=async root=>{
     const labels=await page.locator(root+' .question-badge').evaluateAll(nodes=>nodes.map(b=>{
       const style=getComputedStyle(b);return {width:b.style.width,border:style.borderTopWidth,bg:style.backgroundImage,
-        gap:parseFloat(style.marginRight),font:parseFloat(style.fontSize),weight:style.fontWeight};
+        gap:parseFloat(style.marginRight),font:parseFloat(style.fontSize),weight:style.fontWeight,leading:b.matches('.question-block-header > .question-badge,.print-answer-item > .question-badge')};
     }));
     assert.ok(labels.length>1);
-    labels.forEach(label=>{assert.equal(label.width,'');assert.equal(label.border,'0px');assert.equal(label.bg,'none');assert.equal(label.weight,'700');assert.ok(Math.abs(label.gap-label.font)<.1);});
+    labels.forEach(label=>{assert.equal(label.width,'');assert.equal(label.border,'0px');assert.equal(label.bg,'none');assert.equal(label.weight,'700');assert.ok(Math.abs(label.gap-(label.leading?label.font:0))<.1);});
   };
   const scopeCheck=await page.evaluate(()=>{
     const root=document.createElement('div');root.className='print-doc';
