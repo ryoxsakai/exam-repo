@@ -1466,4 +1466,13 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   text-decoration: var(--marker-decoration, none);
   text-underline-offset: var(--marker-offset, auto);
 }
+/* Single-character round labels fit parentheses and text into one local em.
+   Only horizontal scale changes; fonts, glyph height and baseline are retained.
+   Two-character round labels and numeric angle labels retain their wider cells. */
+.exam-doc .marker-parentheses-fit { width: 1em; text-decoration: none; clip-path: inset(-1em 0 -1em 0); }
+.exam-doc .marker-fit-inner { font-variant-east-asian: normal; font-feature-settings: normal; display: inline-block; width: max-content; white-space: nowrap; transform: scaleX(var(--marker-fit-scale, .5)); transform-origin: left center; text-decoration: var(--marker-decoration, none); text-underline-offset: var(--marker-offset, auto); }
+.exam-doc .marker-parentheses-fit .marker-label { display: inline; min-width: 0; text-decoration: none; }
+/* Trim only invisible outer sidebearings, measured in the resolved font. */
+.exam-doc .marker-fit-open { margin-left: calc(-1 * var(--marker-outside-trim, 0px)); }
+.exam-doc .marker-fit-close { margin-right: calc(-1 * var(--marker-outside-trim, 0px)); }
 /* exam-shared:markers:end */

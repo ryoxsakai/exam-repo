@@ -60,6 +60,7 @@
       var sourceStyle = doc.createElement("style"); sourceStyle.textContent = css; doc.head.appendChild(sourceStyle);
       doc.body.appendChild(source);
       await doc.fonts.ready;
+      if (window.Markup && window.Markup.fitMarkerLabels) window.Markup.fitMarkerLabels(doc);
       await Promise.all(Array.from(source.querySelectorAll("img")).map(function (img) { return img.decode ? img.decode().catch(function () {}) : Promise.resolve(); }));
       // Paged.js 0.4 marks any inline-styled node without explicit display as hidden.
       [source].concat(Array.from(source.querySelectorAll("[style]"))).forEach(function (node) {
@@ -71,6 +72,7 @@
       var previewer = new frame.contentWindow.PagedModule.Previewer();
       await previewer.preview(source.outerHTML, [{"booklet.css": css}], doc.getElementById("booklet-pages"));
       await doc.fonts.ready;
+      if (window.Markup && window.Markup.fitMarkerLabels) window.Markup.fitMarkerLabels(doc);
       var pages = Array.from(doc.querySelectorAll(".pagedjs_page"));
       // A forced left break at the very start is ignored by pagination engines.
       var answerIndex = pages.findIndex(function (page) { return !!page.querySelector("[data-booklet-answer-start]"); });

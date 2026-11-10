@@ -27,7 +27,7 @@ const rows = markers.flatMap(marker => styles.map(style => ({marker, style, html
    await page.route('**/*',r=>r.abort());
    const originalCss=execFileSync('git',['show','80d864e2a059a7983257b48a7d7ccb4be32d9815:assets/css/main.css'],{cwd:root,encoding:'utf8'});
    await page.setContent(`<style id="sheet">${originalCss}</style><main id="print-area" class="exam-doc" style="display:block">${M.render(markers.join(' ')+' (1)__following text__').html}</main>`);
-   const measure=()=>page.locator('.marker-label').evaluateAll(nodes=>nodes.map(n=>{const r=document.createRange();r.selectNodeContents(n);const glyph=r.getBoundingClientRect();return [n.parentElement.getBoundingClientRect().width,n.getBoundingClientRect().width,glyph.width,glyph.height];}));
+   const measure=()=>page.locator('.marker-label').evaluateAll(nodes=>nodes.filter(n=>!n.closest('.marker-parentheses-fit')).map(n=>{const r=document.createRange();r.selectNodeContents(n);const glyph=r.getBoundingClientRect();return [n.parentElement.getBoundingClientRect().width,n.getBoundingClientRect().width,glyph.width,glyph.height];}));
    for (const media of ['screen','print']) {
     await page.emulateMedia({media});await page.locator('#sheet').evaluate((n,c)=>n.textContent=c,originalCss);const before=await measure();
     await page.locator('#sheet').evaluate((n,c)=>n.textContent=c,css);const after=await measure();
@@ -39,19 +39,20 @@ const rows = markers.flatMap(marker => styles.map(style => ({marker, style, html
    const page = await browser.newPage({viewport:{width,height:1000}});
    await page.route('**/*', route => route.abort());
    await page.setContent(`<style>${sheet}</style><style>body{margin:20px;background:white;color:black}.exam-doc{font:24px/2.5 var(--serif)!important;color:black!important;width:300px} .case{height:60px}.case .blk{display:inline!important;text-align:left!important}.case{display:block} #narrow{width:1px} .off,.off *{text-decoration:none!important}</style><main id="print-area" class="exam-doc" style="display:block">${rows.map((row,i)=>`<div class="case" id="c${i}">${row.html}</div>`).join('')}<div id="following">${M.render('(1)__word__ and <2>==text==').html}</div><div id="narrow">${M.render('(12) 〈12〉').html}</div></main>`);
-   await page.evaluate(()=>document.fonts.ready);
+   await page.addScriptTag({content:fs.readFileSync(path.join(root,'assets/js/markup.js'),'utf8')});
+   await page.evaluate(async()=>{await document.fonts.ready;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));});
    for (const media of ['screen','print']) {
     await page.emulateMedia({media});
     const layout = await page.evaluate(()=>({
      markers:[...document.querySelectorAll('.marker-parentheses,.marker-angle')].map(n=>({display:getComputedStyle(n).display,whiteSpace:getComputedStyle(n).whiteSpace,width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height})),
-     labels:[...document.querySelectorAll('.marker-label')].map(n=>({minimum:getComputedStyle(n).minWidth,align:getComputedStyle(n).textAlign})),
+     labels:[...document.querySelectorAll('.marker-label')].map(n=>({fit:!!n.closest('.marker-parentheses-fit'),minimum:getComputedStyle(n).minWidth,align:getComputedStyle(n).textAlign})),
      angleFonts:[...document.querySelectorAll('.marker-angle-glyph')].map(n=>getComputedStyle(n).fontFamily),
      following:[...document.querySelectorAll('#following .underline-marker span')].map(n=>getComputedStyle(n).textDecorationLine),
-     decoration:[...document.querySelectorAll('.case .marker-label')].map(n=>({line:getComputedStyle(n).textDecorationLine,style:getComputedStyle(n).textDecorationStyle})),
+     decoration:[...document.querySelectorAll('.case .marker-label')].map(n=>{const paint=n.closest('.marker-parentheses-fit')?.querySelector('.marker-fit-inner')||n;return {line:getComputedStyle(paint).textDecorationLine,style:getComputedStyle(paint).textDecorationStyle}}),
      markerFont:getComputedStyle(document.querySelector('.marker-label')).fontFamily,
      fonts:[...document.fonts].map(n=>({family:n.family,unicodeRange:n.unicodeRange}))
     }));
-    const missingStyles = layout.markers.some(n=>n.display!==(baseline?'inline-flex':'inline-block')||n.whiteSpace!=='nowrap') || layout.labels.some(n=>n.align!=='center'||n.minimum==='0px') || !layout.fonts.some(n=>n.family==='Exam Angle Brackets') || !layout.fonts.some(n=>n.family==='Exam Parentheses');
+    const missingStyles = layout.markers.some(n=>n.display!==(baseline?'inline-flex':'inline-block')||n.whiteSpace!=='nowrap') || layout.labels.some(n=>n.align!=='center'||(n.fit?n.minimum!=='0px':n.minimum==='0px')) || !layout.fonts.some(n=>n.family==='Exam Angle Brackets') || !layout.fonts.some(n=>n.family==='Exam Parentheses');
     if (baseline && surface==='panel') assert.ok(missingStyles, 'reproduce omitted panel marker styles');
     else assert.equal(missingStyles,false,`${surface} includes complete marker layout and font faces`);
     if (!baseline) {
@@ -60,16 +61,27 @@ const rows = markers.flatMap(marker => styles.map(style => ({marker, style, html
      layout.decoration.forEach((n,i)=>{assert.equal(n.line,'underline'); assert.equal(n.style,['solid','double','wavy'][i%3]);});
     }
     assert.ok(layout.following.every(n=>n==='none'), 'marker preceding underlined text remains undecorated');
+    const paintedStyles=[];
     for (let i=0;i<rows.length;i++) {
      const locator = page.locator('#c'+i);
      const decorated=await locator.screenshot({animations:'disabled'});
+     const outside=await locator.evaluate(n=>{
+      const marker=n.querySelector('.marker-parentheses-fit');if(!marker)return [];
+      const box=marker.getBoundingClientRect(),row=n.getBoundingClientRect();
+      return [{x:Math.floor(box.left)-10,y:row.top+1,width:9,height:row.height-2},{x:Math.ceil(box.right)+1,y:row.top+1,width:10,height:row.height-2}];
+     });
+     const outsideDecorated=await Promise.all(outside.map(clip=>page.screenshot({clip,animations:'disabled'})));
      await locator.evaluate(n=>n.classList.add('off'));
      const plain=await locator.screenshot({animations:'disabled'});
+     const outsidePlain=await Promise.all(outside.map(clip=>page.screenshot({clip,animations:'disabled'})));
+     if(!baseline)outsideDecorated.forEach((raster,j)=>assert.ok(raster.equals(outsidePlain[j]),'Decorations stay inside the one-em marker: '+rows[i].marker));
      await locator.evaluate(n=>n.classList.remove('off'));
      const visible=!decorated.equals(plain);
      if (!visible) missing++;
      report.push({surface,width,media,...rows[i],visible});
      if (!baseline) assert.ok(visible, `${surface} ${width} ${media} ${rows[i].style}${rows[i].marker} decoration is painted`);
+     paintedStyles.push(decorated);
+     if(!baseline&&i%3===2){assert.ok(!paintedStyles[i].equals(paintedStyles[i-1]));assert.ok(!paintedStyles[i].equals(paintedStyles[i-2]));assert.ok(!paintedStyles[i-1].equals(paintedStyles[i-2]), 'Single, double and wavy decorations have distinct raster output');}
     }
    }
    await page.emulateMedia({media:'screen'});

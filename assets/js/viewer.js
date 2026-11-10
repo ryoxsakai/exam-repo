@@ -2745,8 +2745,12 @@
     items.reverse().forEach(function (it) {
       var node = nodes[it.nodeIndex];
       if (!node || !node.parentNode) return;
-      var at = lineAnchorOffset(node, it.offset);
-      var rest = at < node.nodeValue.length ? node.splitText(at) : node.nextSibling;
+      // Keep line-number anchors outside horizontally fitted text, so the
+      // label transform cannot compress or misposition the margin line number.
+      var fittedMarker = node.parentElement && node.parentElement.closest(".marker-parentheses-fit");
+      var parent = fittedMarker ? fittedMarker.parentNode : node.parentNode;
+      var at = fittedMarker ? 0 : lineAnchorOffset(node, it.offset);
+      var rest = fittedMarker ? fittedMarker.nextSibling : (at < node.nodeValue.length ? node.splitText(at) : node.nextSibling);
       var anchor = create("span", { class: "print-linenum", "aria-hidden": "true" });
       var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -2758,7 +2762,7 @@
       text.textContent = String(it.lineNo);
       svg.appendChild(text);
       anchor.appendChild(svg);
-      node.parentNode.insertBefore(anchor, rest);
+      parent.insertBefore(anchor, rest);
     });
     return $all(".print-linenum", examDoc);
   }
