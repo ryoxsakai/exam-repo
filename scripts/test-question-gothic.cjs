@@ -60,7 +60,9 @@ if(process.argv.includes('--browser'))(async()=>{
   }
   await page.emulateMedia({media:'screen'});await page.screenshot({path:'/tmp/exam-question-gothic-'+width+'-'+loaded+'.png',fullPage:true});
   if(loaded){
+   await page.emulateMedia({media:'print'});
    const pdf='/tmp/exam-question-gothic-'+width+'.pdf';await page.pdf({path:pdf,format:'A4',printBackground:true});
+   const info=require('node:child_process').execFileSync('pdfinfo',[pdf],{encoding:'utf8'});assert.match(info,/Pages:\s+1\s*\n/,'Short fixture has no trailing blank sheet');
    const extracted=require('node:child_process').execFileSync('pdftotext',[pdf,'-'],{encoding:'utf8'});
    for(const label of ['Parent','Child','Grandchild','Mixed','Fullwidth source'])assert.ok(extracted.includes(label),'Real print content: '+label);
   }
