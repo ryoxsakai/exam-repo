@@ -19,8 +19,10 @@ assert.match(render('![図](a.png){caption="a } b \\"quoted\\" & <script>" align
 assert.match(render('![図](a.png){size=invalid}'), /\{size=invalid\}/);
 assert.equal((render('![a](a.png){size=small}\n![b](b.png){caption="B"}').match(/role="figure"/g)||[]).length, 2);
 const source = fs.readFileSync(path.join(root,'worker/mcp.ts'), 'utf8');
-const clean = source.slice(source.indexOf('function cleanPassageText'), source.indexOf('function englishWords')).replace('value: unknown', 'value');
-vm.runInContext(clean, context);
+const clean = source.slice(source.indexOf('function cleanPassageText'), source.indexOf('function englishWords'));
+// Compile the real helper, including typed callbacks, rather than stripping one annotation.
+const {transformSync} = require('../panel/node_modules/esbuild');
+vm.runInContext(transformSync(clean, {loader:'ts', target:'es2022'}).code, context);
 const text = 'One two. ![alt](https://example.test/image.png){caption="English __caption__" size=small align=left} Three.';
 assert.equal(context.cleanPassageText(text).trim(), 'One two.   Three.');
 assert.equal(context.Markup.strip(text).trim(), 'One two.   Three.');

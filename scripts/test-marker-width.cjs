@@ -3,10 +3,19 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
 const {execFileSync}=require('node:child_process');
 const {chromium}=require('../panel/node_modules/playwright');
 const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
-const baselineRef='5eab0f1';
-const oldCss=execFileSync('git',['show',baselineRef+':assets/css/main.css'],{cwd:root,encoding:'utf8'}),css=read('assets/css/main.css');
+const css=read('assets/css/main.css'),oldCss=css;
+const parserSource=read('assets/js/markup.js');
+// Isolate the one-character fit feature, not unrelated current typography.
+// Both sides retain the same question-tag font/digit formatting and CSS;
+// disabling this one branch leaves its fitting-only CSS selectors unused.
+const fitBranch='if (m[2].length === 1) {';
+assert.equal(parserSource.split(fitBranch).length-1,1,'Fit baseline must disable exactly one known branch');
+const baselineSource=parserSource.replace(fitBranch,'if (false) {');
 const parser=source=>{const context={window:{}};vm.runInNewContext(source,context);return context.window.Markup;};
-const M=parser(read('assets/js/markup.js')),oldM=parser(execFileSync('git',['show',baselineRef+':assets/js/markup.js'],{cwd:root,encoding:'utf8'}));
+const M=parser(parserSource),oldM=parser(baselineSource);
+assert.match(M.render('(A)').html,/marker-parentheses-fit/);
+assert.doesNotMatch(oldM.render('(A)').html,/marker-parentheses-fit/);
+assert.notEqual(M.render('(A)').html,oldM.render('(A)').html,'The baseline really excludes fitting');
 for(const file of ['index.html','setting/index.html']){
  const html=read(file);for(const [pattern,canonical] of [[/href="([^"?]*\/main[^"?]*\.css)/,'assets/css/main.css'],[/src="([^"?]*\/markup[^"?]*\.js)/,'assets/js/markup.js']]){
   assert.equal(fs.readFileSync(path.resolve(root,path.dirname(file),html.match(pattern)[1]),'utf8'),read(canonical));

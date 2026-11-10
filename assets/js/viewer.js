@@ -2225,7 +2225,7 @@
       if (long && groupOpen) { html += "</div>"; groupOpen = false; }
       if (!groupOpen) { html += '<div class="print-answer-group">'; groupOpen = true; }
       html += '<div class="print-answer-item' + (long ? ' print-answer-long' : '') + '">' +
-        '<span class="' + (blankAnswers ? 'blank-badge' : 'question-badge') + '">' + esc(entry.label) + '</span>' +
+        (blankAnswers ? '<span class="blank-badge">' + esc(entry.label) + '</span>' : Markup.questionBadge({label: entry.label, level: 1})) +
         '<div class="print-answer-text">' + Markup.render(body, options).html + '</div></div>';
       if (long) { html += '</div>'; groupOpen = false; }
     });

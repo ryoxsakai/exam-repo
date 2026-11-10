@@ -11,7 +11,7 @@ for (const path of ['assets/js/markup.js', 'assets/js/markup-20261109sentence.js
     ['__Really!__ Yes.', /Really!<\/u>&nbsp;&nbsp;Yes/],
     ['**Finished.** Next.', /Finished\.<\/strong>&nbsp;&nbsp;Next/],
     ['__Really?__  “Yes.”', /Really\?<\/u>&nbsp;&nbsp;“Yes/],
-    ['__Really?__ (1) Yes.', /Really\?<\/u>&nbsp;&nbsp;<span/],
+    ['__Really?__ (1) Yes.', /Really\?<\/u>&nbsp;&nbsp;<(?:span|exam-marker-fit) class="marker-parentheses/],
     ['__Dr.__ Smith', /Dr\.<\/u> Smith/],
     ['__Really?__ yes', /Really\?<\/u> yes/],
     ['Ordinary? Next.', /Ordinary\?&nbsp;&nbsp;Next/],

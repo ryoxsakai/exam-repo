@@ -349,3 +349,18 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 ### 閲覧モーダルの標準最適化
 
 閲覧モーダルは選択肢・解答・注釈の最適化と解説の空白行除去を標準適用する。`renderDisplayContent` を印刷タブと共有し、保存原文・印刷タブの設定は変更しない。列数はResizeObserver・画像load・フォントreadyで再計測し、モーダル印刷は用紙幅で再計測する。両HTMLは `markup-20261102leadnotes.js` を参照する。回帰: `node scripts/test-viewer-layout.cjs`（合成DOM、PC/mobile/resize、長文・表・図記法、脚注、モーダル印刷PDF）。実機iOSは未確認。
+
+### 設問タグの太字ゴシック・数字幅（2026-11-10）
+
+`{{}}` / `{{{}}}` / `{{{{}}}}` の設問ラベルは BIZ UDGothic 700（Google Fonts、比例幅の UDP ではない）で表示する。ASCII 数字は 0.5em、全角数字は 1em。未取得時はローカルの BIZ UD / MS ゴシック等へフォールバックする。ラベルのみを対象に、連続数字1桁は全角、2桁以上は半角へ表示変換する（`問1→問１`、`０１→01`、`1２3→123`）。小数・桁区切りと区別できない `1.5` / `１．５` / `1,000` はその数字列全体を維持し、ハイフン等で区切る `1-2` は `１-２` とする。保存原文・見出し階層・採番や解答対応の識別子・空所と選択肢は変更しない。
+
+共通の `Markup.questionBadge` を通常表示と viewer の解答最適化で利用。フォントは閲覧・設定・会話パネルの HTML で読み込む。会話パネル CSP は Google Fonts CSS とフォントの2ドメインだけを resourceDomains に追加する（connectDomains は空のまま）。既存の1em右余白を保つ。
+
+比較根拠（Google Fonts の公式配布ファイル、2026-11-10に700で計測）:
+- [BIZ UDGothic](https://github.com/googlefonts/morisawa-biz-ud-gothic): ASCII 0–9 は1024/2048、全角０–９は2048/2048。教育・ビジネス文書向けのUDゴシック。
+- [Noto Sans JP](https://fonts.google.com/noto/specimen/Noto+Sans+JP): ASCII数字は590/1000、全角数字は1000/1000で、正確な2:1にはならない。
+- [M PLUS 1 Code](https://fonts.google.com/specimen/M+PLUS+1+Code): ASCII数字は500/1000、今回の公式ファイルにはU+FF10（全角０）がなく、全角数字に別フォントが混ざるため不採用。
+
+公式配布元は `https://raw.githubusercontent.com/google/fonts/main/ofl/` 以下の `bizudgothic/BIZUDGothic-Bold.ttf`、`notosansjp/NotoSansJP[wght].ttf`、`mplus1code/MPLUS1Code[wght].ttf`。BIZ Boldの確認済みSHA-256は `98a528b6b638463041968783cc0f63adaf4cdc26f5398afed68bab712d1113f3`。フォントファイルをリポジトリに同梱しない。
+
+回帰: `node scripts/test-question-gothic.cjs`、`node scripts/test-question-gothic.cjs --browser`（公式フォントの取得、PC/mobile・画面/印刷、1桁/2桁の同幅、3桁1.5倍幅、フォールバック、スクリーンショットとPDF）。`QUESTION_GOTHIC_FONT` で検証用フォントファイルを指定できる。採番回帰は数字の表示幅と識別子を区別して確認する。

@@ -2100,7 +2100,7 @@ async function mcp(request: Request, env: McpEnv, url: URL) {
   if (msg.method === "resources/read") {
     if (msg.params?.uri !== PANEL_URI) return rpcError(msg.id, -32002, "Resource not found");
     return rpc(msg.id, { contents: [{ ...PANEL_RESOURCE, text: PANEL_HTML, _meta: {
-      ui: { csp: { connectDomains: [], resourceDomains: [baseUrl(url)] } },
+      ui: { csp: { connectDomains: [], resourceDomains: [baseUrl(url), "https://fonts.googleapis.com", "https://fonts.gstatic.com"] } },
       "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["fullscreen"] },
     } }] });
   }

@@ -64,7 +64,7 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   await page.locator('#pr-compact-commentary').check();const compact=await commentary(page).innerHTML();
   assert.equal(compact,beforeCommentary.replace(/<div style="height:\.6em"><\/div>/g,''));assert.equal(await commentary(page).locator('table').count(),1);
   await page.locator('#pr-renumber').check();await page.locator('#pr-linenum').check();await page.locator('#pr-optimize-choices').check();
-  const labels=await page.locator('#print-preview .print-answer-group').first().locator('.print-answer-item > .question-badge').allTextContents();assert.deepEqual(labels,['1','2','3','4']);
+  const labels=await page.locator('#print-preview .print-answer-group').first().locator('.print-answer-item > .question-badge').allTextContents();assert.deepEqual(labels,['１','２','３','４']);
   assert.equal(await page.locator('#print-preview .print-choice-group').getAttribute('data-columns'),width===1280?'3':await page.locator('#print-preview .print-choice-group').getAttribute('data-columns'));
   assert.equal(await page.evaluate(()=>Store.getPrintOptimizeAnswers()&&Store.getPrintCompactCommentary()),true);
   await page.locator('#pr-optimize-answers').uncheck();await page.locator('#pr-compact-commentary').uncheck();await page.locator('#pr-renumber').uncheck();await page.locator('#pr-linenum').uncheck();await page.locator('#pr-optimize-choices').uncheck();
