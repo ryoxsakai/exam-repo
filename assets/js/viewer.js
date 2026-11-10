@@ -2347,7 +2347,7 @@
       }
     }
     var rangeJoin = "\\s*(?:[〜～~–—-]|から|to)\\s*";
-    var blankLabel = "\\[\\[\\s*(?:--\\s*)?\\d+\\s*(?:--)?\\s*\\]\\]";
+    var blankLabel = "\\[\\[\\s*(?:(?:--\\s*)?\\d+\\s*(?:--)?|=\\s*\\d+\\s*=)\\s*\\]\\]";
     var questionLabel = "\\{\\{\\s*(?:問\\s*)?\\d+\\s*\\}\\}";
     var referenceRanges = new RegExp(blankLabel + "(?:" + rangeJoin + blankLabel + ")+|" +
       questionLabel + "(?:" + rangeJoin + questionLabel + ")+|問\\s*\\d+(?:" + rangeJoin + "(?:問\\s*)?\\d+)+", "g");
@@ -2374,8 +2374,9 @@
               named: /^\s*(?:@@)?(?:\*\*)?(?:\{\{\s*問|問)/.test(line), marked: !!m[1]});
           }
         });
-        text.replace(/\[\[\s*(?:--\s*)?(\d+)\s*(?:--)?\s*\]\]/g, function (_, n) {
-          blankDefinitions.push({n: n, type: sec.type}); return _;
+        text.replace(new RegExp(blankLabel, "g"), function (token) {
+          var n = token.match(/\d+/)[0];
+          blankDefinitions.push({n: n, type: sec.type}); return token;
         });
         return text;
       });
@@ -2420,6 +2421,11 @@
         // バッジを先に置換して退避し、生成した「問1」を後段でもう一度変換しない。
         var labels = [];
         function label(value) { labels.push(value); return "\u0003" + (labels.length - 1) + "\u0004"; }
+        // Equal-delimited paragraph blanks share the normal blank number map,
+        // but must retain both delimiters (malformed tokens are not rewritten).
+        text = text.replace(/(\[\[\s*=\s*)(\d+)((?:\s*(?:[〜～~–—-]|から|to)\s*\d+)*)(\s*=\s*\]\])/g, function (_, a, n, rest, b) {
+          return label(a + blankNumber(n) + rest.replace(/\d+/g, blankNumber) + b);
+        });
         // {{56-61}} 等の範囲見出しも、実際の空所・小問の対応表を共有する。
         text = text.replace(/(\{\{\s*(?:問\s*)?)(\d+)((?:\s*(?:[〜～~–—-]|から|to)\s*(?:問\s*)?\d+)+)(\s*\}\})/g, function (_, a, n, rest, b) {
           var resolve = /問/.test(a) ? questionNumber : itemNumber;
