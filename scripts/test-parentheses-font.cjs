@@ -22,9 +22,10 @@ if(!process.argv.includes('--browser'))process.exit(0);
    await page.evaluate(async()=>{await document.fonts.load('16px "Noto Serif JP"','AaW1ア12AB');await document.fonts.ready;Markup.fitMarkerLabels(document);});
    const result=await page.evaluate(()=>[...document.querySelectorAll('.marker-parentheses')].map(n=>{
     const label=n.querySelector('.marker-label'),range=document.createRange();range.selectNodeContents(label);const r=range.getBoundingClientRect();
-    return {text:n.textContent,font:getComputedStyle(label).fontFamily,size:parseFloat(getComputedStyle(n).fontSize),width:n.getBoundingClientRect().width,labelWidth:r.width,scale:n.firstElementChild.style.getPropertyValue('--marker-fit-scale')};
+    return {text:n.textContent,font:getComputedStyle(label).fontFamily,size:parseFloat(getComputedStyle(n).fontSize),width:n.getBoundingClientRect().width,labelWidth:r.width,scale:n.firstElementChild.style.getPropertyValue('--marker-fit-scale'),transform:getComputedStyle(n.firstElementChild).transform,natural:n.firstElementChild.getBoundingClientRect().width};
    }));
-   for(const n of result){assert.equal(n.font,'"Noto Serif JP", serif');if(n.scale)assert.ok(Math.abs(n.width-n.size*1.5)<.05,JSON.stringify(n));}
+   for(const n of result){assert.equal(n.font,'"Noto Serif JP", serif');if(n.scale){assert.equal(n.transform,'none');assert.ok(Math.abs(n.width-n.natural)<.05,JSON.stringify(n));}}
+   assert.ok(result[2].width>result[1].width,'W is naturally wider than a, rather than both fitting a fixed box');
    assert.ok(await page.evaluate(()=>document.fonts.check('16px "Noto Serif JP"','A')));
    const unrelated=await page.locator('.question-badge,.blank-badge,.choice-inline,.marker-angle .marker-label').evaluateAll(ns=>ns.map(n=>getComputedStyle(n).fontFamily));
    assert.ok(unrelated.every(f=>f!=='"Noto Serif JP", serif'));
@@ -33,6 +34,6 @@ if(!process.argv.includes('--browser'))process.exit(0);
   }
   await page.close();
  }
- fs.writeFileSync('/tmp/exam-noto-geometry.json',JSON.stringify(report,null,2));console.log('PASS: real Noto Serif JP, viewer/panel, desktop/mobile, screen/print; 1.5em fit and unrelated fonts preserved');
+ fs.writeFileSync('/tmp/exam-noto-geometry.json',JSON.stringify(report,null,2));console.log('PASS: real Noto Serif JP, viewer/panel, desktop/mobile, screen/print; natural width and unrelated fonts preserved');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

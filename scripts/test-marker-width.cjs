@@ -33,7 +33,7 @@ for(const type of ['リード文','本文','設問','解答','全訳','解説'])
 }
 assert.doesNotMatch(M.render(unaffected).html,/marker-parentheses-fit/);
 assert.equal((M.render(source).html.match(/marker-parentheses-fit/g)||[]).length,markers.length+11);
-console.log('PASS: only single-character round labels fit; all sections, source extraction and independent notation preserved');
+console.log('PASS: single-character round labels retain text wrappers; all sections, source extraction and independent notation preserved');
 if(process.argv.includes('--unit'))process.exit(0);
 const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSync(evidence,{recursive:true});
 (async()=>{
@@ -54,14 +54,14 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
      const text=n.querySelector('.marker-fit-inner'),box=n.getBoundingClientRect(),glyph=text.getBoundingClientRect(),font=parseFloat(getComputedStyle(n).fontSize);
      const transform=text.style.transform;text.style.transform='none';const natural=text.getBoundingClientRect();text.style.transform=transform;
      const range=document.createRange();range.selectNodeContents(n);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);const selected=selection.toString();selection.removeAllRanges();
-     return {text:n.textContent,selected,width:box.width,font,glyphWidth:glyph.width,glyphHeight:glyph.height,naturalHeight:natural.height,labelWidth:n.querySelector('.marker-label').getBoundingClientRect().width};
+     return {text:n.textContent,selected,width:box.width,font,transform:getComputedStyle(text).transform,naturalWidth:natural.width,glyphWidth:glyph.width,glyphHeight:glyph.height,naturalHeight:natural.height,labelWidth:n.querySelector('.marker-label').getBoundingClientRect().width};
     }),
     baseline:(()=>{const n=document.querySelector('#baseline .marker-fit-inner'),probe=document.createElement('span');probe.style.cssText='display:inline-block;width:0;height:0;vertical-align:baseline';n.appendChild(probe);const actual=probe.getBoundingClientRect().top;probe.remove();return {actual,expected:document.querySelector('#baseline-probe').getBoundingClientRect().top};})(),
     overflow:document.documentElement.scrollWidth>innerWidth
    }));
    if(!font)await page.screenshot({path:path.join(evidence,`candidate-${width}-${media}.png`),fullPage:true});
    fs.writeFileSync(path.join(evidence,'latest-geometry.json'),JSON.stringify({width,media,font,geometry},null,2));
-   geometry.markers.forEach(n=>{assert.ok(Math.abs(n.width-n.font*1.5)<.05,JSON.stringify(n));assert.ok(Math.abs(n.glyphWidth-n.width)<.1,JSON.stringify(n));assert.ok(Math.abs(n.glyphHeight-n.naturalHeight)<.05,'Fitting never shrinks glyph height');assert.equal(n.selected,n.text,'Selection preserves original text');});
+   geometry.markers.forEach(n=>{assert.equal(n.transform,'none');assert.ok(Math.abs(n.width-n.naturalWidth)<.05,JSON.stringify(n));assert.ok(Math.abs(n.glyphWidth-n.width)<.1,JSON.stringify(n));assert.ok(Math.abs(n.glyphHeight-n.naturalHeight)<.05,'Fitting never shrinks glyph height');assert.equal(n.selected,n.text,'Selection preserves original text');});
    for(let i=0;i<markers.length;i+=2){
     const ascii=geometry.markers[i],wide=geometry.markers[i+1];
     assert.ok(wide.labelWidth>=ascii.labelWidth*.75,'Fullwidth sidebearings must not squeeze the label: '+JSON.stringify({ascii,wide}));
@@ -73,15 +73,14 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
      const file=path.join(evidence,`after-${width}.pdf`);await page.pdf({path:file,format:'A4',printBackground:true});const extracted=execFileSync('pdftotext',['-layout',file,'-'],{encoding:'utf8'}).replace(/\s/g,'');for(const token of ['(A)','(a)','(あ)','(ア)','（A）','（ア）'])assert.ok(extracted.includes(token),'PDF retains '+token);
     }}
   }
-  // Same-advance font replacement still requires recomputing glyph ink bounds.
-  const fontRefit=await page.evaluate(()=>{
-   const marker=[...document.querySelectorAll('#labels .marker-parentheses-fit')].find(n=>n.textContent==='（A）');
-   const bracket=marker.querySelector('.marker-fit-open'),before=bracket.style.getPropertyValue('--marker-outside-trim');
-   bracket.style.setProperty('--marker-outside-trim','0px');
-   document.fonts.dispatchEvent(new Event('loadingdone'));
-   return {before,after:bracket.style.getPropertyValue('--marker-outside-trim')};
-  });
-  assert.equal(fontRefit.after,fontRefit.before);
+  // Legacy fitting variables must have no visible effect on natural glyph widths.
+  const natural=await page.locator('#labels .marker-parentheses-fit').evaluateAll(nodes=>nodes.map(n=>{
+   const before=n.getBoundingClientRect().width;
+   n.firstElementChild.style.setProperty('--marker-fit-scale','.01');
+   n.querySelector('.marker-fit-open').style.setProperty('--marker-outside-trim','100px');
+   return {before,after:n.getBoundingClientRect().width,transform:getComputedStyle(n.firstElementChild).transform,margin:getComputedStyle(n.querySelector('.marker-fit-open')).marginLeft};
+  }));
+  natural.forEach(n=>{assert.equal(n.before,n.after);assert.equal(n.transform,'none');assert.equal(n.margin,'0px');});
   // Refit existing elements after font changes and hidden-to-visible transitions.
   await page.emulateMedia({media:'screen'});
   for(const style of ['font-family:monospace;font-size:25px','font-family:serif;font-size:13px']){
@@ -89,7 +88,7 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(r)));await page.locator('#labels').evaluate(n=>n.style.display='');
    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
    const fitted=await page.locator('#labels .marker-parentheses-fit').evaluateAll(nodes=>nodes.map(n=>({outer:n.getBoundingClientRect().width,inner:n.firstElementChild.getBoundingClientRect().width,font:parseFloat(getComputedStyle(n).fontSize)})));
-   fitted.forEach(n=>{assert.ok(Math.abs(n.outer-n.font*1.5)<.1);assert.ok(Math.abs(n.inner-n.outer)<.1);});
+   fitted.forEach(n=>{assert.ok(Math.abs(n.inner-n.outer)<.1);});
   }
   // Line numbers must stay outside horizontally fitted text, including marker-only lines.
   await page.setContent('<style>'+css+'</style><main id="print-area" class="print-out fs-md lh-3" style="display:block;margin:30px"><div id="line-fixture" class="exam-doc linenum-target">'+M.render('First line.\nSecond line.\nThird line.\nFourth line.\n(A) Fifth line.\nSixth line.\nSeventh line.\nEighth line.\nNinth line.\n(ア)\nEleventh line.\nTwelfth line.').html+'</div></main>');
@@ -123,10 +122,10 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
     return {calls,registered:!!frame.contentWindow.customElements.get('exam-marker-fit'),pages:doc.querySelectorAll('.pagedjs_page').length,labels:[...doc.querySelectorAll('.pagedjs_page .marker-parentheses-fit')].map(n=>({outer:n.getBoundingClientRect().width,inner:n.firstElementChild.getBoundingClientRect().width,font:parseFloat(frame.contentWindow.getComputedStyle(n).fontSize)}))};
    }finally{Markup.fitMarkerLabels=original;}
   });
-  assert.equal(booklet.calls,2);assert.equal(booklet.registered,false);assert.ok(booklet.pages>=1);assert.equal(booklet.labels.length,3);booklet.labels.forEach(n=>{assert.ok(Math.abs(n.outer-n.font*1.5)<.1);assert.ok(Math.abs(n.inner-n.outer)<.1);});
+  assert.equal(booklet.calls,2);assert.equal(booklet.registered,false);assert.ok(booklet.pages>=1);assert.equal(booklet.labels.length,3);booklet.labels.forEach(n=>{assert.ok(Math.abs(n.inner-n.outer)<.1);});
   await page.close();
  }
  assert.equal(JSON.stringify({source,unaffected}),original);fs.writeFileSync(path.join(evidence,'geometry.json'),JSON.stringify(reports,null,2));
- console.log('PASS: exact1.5em, normal glyph height/baseline, no overflow, original selection/PDF text, default/serif/sans, desktop/mobile screen/print');
+ console.log('PASS: natural-width, normal glyph height/baseline, no overflow, original selection/PDF text, default/serif/sans, desktop/mobile screen/print');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1});
