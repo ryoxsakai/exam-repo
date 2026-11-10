@@ -350,17 +350,14 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 
 閲覧モーダルは選択肢・解答・注釈の最適化と解説の空白行除去を標準適用する。`renderDisplayContent` を印刷タブと共有し、保存原文・印刷タブの設定は変更しない。列数はResizeObserver・画像load・フォントreadyで再計測し、モーダル印刷は用紙幅で再計測する。両HTMLは `markup-20261102leadnotes.js` を参照する。回帰: `node scripts/test-viewer-layout.cjs`（合成DOM、PC/mobile/resize、長文・表・図記法、脚注、モーダル印刷PDF）。実機iOSは未確認。
 
-### 設問タグの太字ゴシック・数字幅（2026-11-10）
+### 設問タグのKosugi・数字幅（2026-11-10）
 
-`{{}}` / `{{{}}}` / `{{{{}}}}` の設問ラベルは BIZ UDGothic 700（Google Fonts、比例幅の UDP ではない）で表示する。ASCII 数字は 0.5em、全角数字は 1em。未取得時はローカルの BIZ UD / MS ゴシック等へフォールバックする。ラベルのみを対象に、連続数字1桁は全角、2桁以上は半角へ表示変換する（`問1→問１`、`０１→01`、`1２3→123`）。小数・桁区切りと区別できない `1.5` / `１．５` / `1,000` はその数字列全体を維持し、ハイフン等で区切る `1-2` は `１-２` とする。保存原文・見出し階層・採番や解答対応の識別子・空所と選択肢は変更しない。
+`{{}}` / `{{{}}}` / `{{{{}}}}` の設問ラベルは Kosugi（Kosugi Maruではない）を `font-weight: 700; font-synthesis: weight` で太字表示する。Google Fontsの公式配布は通常400だけなので、`family=Kosugi` で400を正しく読み込み、ブラウザの合成太字を使う。700用の実フォントがあるようには宣言しない。未取得時はMSゴシック・ヒラギノ角ゴ等へフォールバックする。
 
-共通の `Markup.questionBadge` を通常表示と viewer の解答最適化で利用。フォントは閲覧・設定・会話パネルの HTML で読み込む。会話パネル CSP は Google Fonts CSS とフォントの2ドメインだけを resourceDomains に追加する（connectDomains は空のまま）。右余白は `.question-block-header > .question-badge` の先頭見出しだけ1emとし、リード文・本文・設問文中の参照は0にする。最適化解答の先頭ラベルは `print-choices.css` の専用規則で1emを維持する。
+公式 `apache/kosugi/METADATA.pb` はnormal400、`Kosugi-Regular.ttf` を指定。実ファイルは1024 units/emで、ASCII数字・英字は512、全角数字・英字は1024。数字1桁の全角「１」と半角2桁「12」は同幅になる。SHA-256は `f5e81d6a6b865d9b88c54d2d3c16bcaa3b239dfcefaf2a62976ac9dc7574bab7`。フォントは同梱しない。公式配布元: https://github.com/google/fonts/tree/main/apache/kosugi 。
 
-比較根拠（Google Fonts の公式配布ファイル、2026-11-10に700で計測）:
-- [BIZ UDGothic](https://github.com/googlefonts/morisawa-biz-ud-gothic): ASCII 0–9 は1024/2048、全角０–９は2048/2048。教育・ビジネス文書向けのUDゴシック。
-- [Noto Sans JP](https://fonts.google.com/noto/specimen/Noto+Sans+JP): ASCII数字は590/1000、全角数字は1000/1000で、正確な2:1にはならない。
-- [M PLUS 1 Code](https://fonts.google.com/specimen/M+PLUS+1+Code): ASCII数字は500/1000、今回の公式ファイルにはU+FF10（全角０）がなく、全角数字に別フォントが混ざるため不採用。
+ラベルのみを対象に、連続数字1桁は全角、2桁以上は半角へ表示変換する（`問1→問１`、`０１→01`、`1２3→123`）。小数・桁区切りと区別できない `1.5` / `１．５` / `1,000` はその数字列全体を維持し、ハイフン等で区切る `1-2` は `１-２` とする。設問タグ内の英字は大文字・小文字とも全角へ表示変換する（`A→Ａ`、`b→ｂ`、`A1→Ａ１`）。既存の全角英字は維持する。変換は `questionLabel` 内だけで行い、保存原文・意味上のラベル・採番や解答対応の識別子・空所・選択肢・通常の丸括弧内の英字は変更しない。
 
-公式配布元は `https://raw.githubusercontent.com/google/fonts/main/ofl/` 以下の `bizudgothic/BIZUDGothic-Bold.ttf`、`notosansjp/NotoSansJP[wght].ttf`、`mplus1code/MPLUS1Code[wght].ttf`。BIZ Boldの確認済みSHA-256は `98a528b6b638463041968783cc0f63adaf4cdc26f5398afed68bab712d1113f3`。フォントファイルをリポジトリに同梱しない。
+共通の `Markup.questionBadge` を通常表示とviewerの解答最適化で利用。親・子・孫、行中の参照、会話パネルと印刷で共通。フォントは閲覧・設定・会話パネルのHTMLで読み込む。会話パネルCSPはGoogle Fonts CSSとフォントの2ドメインだけをresourceDomainsに許可する（connectDomainsは空のまま）。右余白は `.question-block-header > .question-badge` の先頭見出しだけ1emとし、リード文・本文・設問文中の参照は0にする。最適化解答の先頭ラベルは `print-choices.css` の専用規則で1emを維持する。公開CSSは `main-20261110kosugi.css`、公開JSは `markup-20261110tagletters.js`。
 
-回帰: `node scripts/test-question-gothic.cjs`、`node scripts/test-question-gothic.cjs --browser`（公式フォントの取得、PC/mobile・画面/印刷、1桁/2桁の同幅、3桁1.5倍幅、フォールバック、スクリーンショットとPDF）。`QUESTION_GOTHIC_FONT` で検証用フォントファイルを指定できる。採番回帰は数字の表示幅と識別子を区別して確認する。
+回帰: `node scripts/test-question-gothic.cjs`、`node scripts/test-question-gothic.cjs --browser`。英字52種・既存全角の冪等性・採番と元データの維持、公式フォントのハッシュ、PC/mobile・画面/印刷、1桁/2桁の同幅・3桁1.5倍幅・全角英字1em、フォールバック、選択可能なPDF文字を確認する。400/700/合成無効化の実画素比較とPDFのラスタ比較で合成太字も検証する。`QUESTION_GOTHIC_FONT` で同じ検証済みフォントファイルを指定できる。従来の通常丸括弧ラベルの1em処理は独立して維持する。

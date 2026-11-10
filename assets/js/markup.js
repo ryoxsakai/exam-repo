@@ -38,7 +38,9 @@
   // Display only: retain source labels and numbering identities. Decimal/grouped
   // numbers are ambiguous labels, so leave those complete sequences untouched.
   function questionLabel(label) {
-    return String(label).replace(/[0-9０-９]+(?:[.．,，][0-9０-９]+)+|[0-9０-９]+/g, function (run) {
+    return String(label).replace(/[A-Za-z]/g, function (letter) {
+      return String.fromCharCode(letter.charCodeAt(0) + 0xFEE0);
+    }).replace(/[0-9０-９]+(?:[.．,，][0-9０-９]+)+|[0-9０-９]+/g, function (run) {
       if (/[.．,，]/.test(run)) return run;
       var digits = run.replace(/[０-９]/g, function (digit) {
         return String.fromCharCode(digit.charCodeAt(0) - 0xFEE0);

@@ -750,12 +750,12 @@ body.sortlist-dragging-touch .sort-item * {
   .question-block-header { margin: 10px 0 6px; }
 }
 .question-badge {
-  /* BIZ UD (not proportional UDP): halfwidth digits are exactly half an em. */
+  /* Kosugi: halfwidth digits are exactly half an em. The regular face uses synthetic bold. */
   display: inline-block; padding: 0; margin: 0;
   min-width: 0; width: auto; background: none; border: 0; border-radius: 0;
   color: inherit; font: inherit;
-  font-family: "BIZ UDGothic", "BIZ UDゴシック", "MS Gothic", "ＭＳ ゴシック", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
-  font-weight: 700; font-variant-numeric: tabular-nums; font-variant-east-asian: normal;
+  font-family: "Kosugi", "MS Gothic", "ＭＳ ゴシック", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  font-weight: 700; font-synthesis: weight; font-variant-numeric: tabular-nums; font-variant-east-asian: normal;
   font-feature-settings: "palt" 0, "pkna" 0; vertical-align: baseline;
   text-indent: 0; white-space: nowrap; flex-shrink: 0; letter-spacing: 0;
 }
