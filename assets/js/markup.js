@@ -50,12 +50,10 @@
     var m = String(marker || "").match(/^([（(])([A-Za-z0-9ぁ-ゖァ-ヺ]{1,2})([）)])$/);
     if (!m) return esc(marker || "");
     if (m[2].length === 1) {
-      // A single-character round label occupies one local em, parentheses included.
-      // SVG fits the complete text run using the actual fallback fonts, without
-      // shrinking its height or depending on a guessed horizontal CSS scale.
-      return '<span class="marker-parentheses marker-parentheses-fit"><svg class="marker-fit-svg" width="1em" height="1.2em" role="img" aria-label="' + esc(marker) + '" focusable="false">' +
-        '<text class="marker-fit-text" x="0" y=".9em" textLength="1em" lengthAdjust="spacingAndGlyphs"><tspan>' + esc(m[1]) +
-        '</tspan><tspan class="marker-label">' + esc(m[2]) + '</tspan><tspan>' + esc(m[3]) + '</tspan></text></svg></span>';
+      // Keep real HTML text for selection, accessibility and PDF extraction.
+      // The component fits its intrinsic text width after the actual fonts load.
+      return '<exam-marker-fit class="marker-parentheses marker-parentheses-fit"><span class="marker-fit-inner">' + esc(m[1]) +
+        '<span class="marker-label">' + esc(m[2]) + '</span>' + esc(m[3]) + '</span></exam-marker-fit>';
     }
     return '<span class="marker-parentheses">' + esc(m[1]) +
       '<span class="marker-label">' + esc(m[2]) + '</span>' + esc(m[3]) + '</span>';
@@ -935,6 +933,42 @@
   }
 
   function setImageBase(b) { imageBase = String(b || ""); }
+  // Autonomous custom elements connect for every renderer, including cloned
+  // print/measurement documents. Observing intrinsic text width also catches
+  // delayed font loads and fallback changes without altering stored text.
+  if (global.customElements && global.HTMLElement && !global.customElements.get("exam-marker-fit")) {
+    class ExamMarkerFit extends global.HTMLElement {
+      connectedCallback() {
+        var self = this;
+        function connect() {
+          if (!self.isConnected || !self.firstElementChild) return;
+          if (!self.fitObserver && global.ResizeObserver) {
+            self.fitObserver = new global.ResizeObserver(function () { self.fit(); });
+            self.fitObserver.observe(self);
+            self.fitObserver.observe(self.firstElementChild);
+          }
+          self.fit();
+        }
+        connect();
+        global.requestAnimationFrame(connect);
+      }
+      disconnectedCallback() {
+        if (this.fitObserver) this.fitObserver.disconnect();
+        this.fitObserver = null;
+      }
+      fit() {
+        var inner = this.firstElementChild;
+        if (!inner) return;
+        var width = parseFloat(global.getComputedStyle(this).width);
+        var natural = parseFloat(global.getComputedStyle(inner).width);
+        if (width > 0 && natural > 0) inner.style.setProperty("--marker-fit-scale", String(width / natural));
+      }
+    }
+    global.customElements.define("exam-marker-fit", ExamMarkerFit);
+    global.addEventListener("beforeprint", function () {
+      global.document.querySelectorAll("exam-marker-fit").forEach(function (label) { label.fit(); });
+    });
+  }
   global.Markup = {
     render: render, strip: strip, escape: esc, parseSections: parseSections,
     mergeLeadSections: mergeLeadSections, extractZenyakuTitle: extractZenyakuTitle,

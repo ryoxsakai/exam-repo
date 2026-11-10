@@ -2745,8 +2745,8 @@
     items.reverse().forEach(function (it) {
       var node = nodes[it.nodeIndex];
       if (!node || !node.parentNode) return;
-      // A fitted label contains SVG text. HTML anchors cannot be inserted into
-      // its tspan; keep the marker atomic and anchor on its normal text baseline.
+      // Keep line-number anchors outside horizontally fitted text, so the
+      // label transform cannot compress or misposition the margin line number.
       var fittedMarker = node.parentElement && node.parentElement.closest(".marker-parentheses-fit");
       var parent = fittedMarker ? fittedMarker.parentNode : node.parentNode;
       var at = fittedMarker ? 0 : lineAnchorOffset(node, it.offset);

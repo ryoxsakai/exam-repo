@@ -32,34 +32,35 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
  const reports=[];
  try{for(const width of [1280,390]){
   const page=await browser.newPage({viewport:{width,height:1000}});await page.route('**/*',r=>r.abort());
+  await page.addScriptTag({content:read('assets/js/markup.js')});
   const content=(sheet,markup)=>`<style id="sheet">${sheet}</style><div id="print-area" class="exam-doc print-out" style="display:block;width:calc(100% - 40px);max-width:660px;margin:20px"><div id="labels">${markup.render(source).html}</div><div id="unrelated">${markup.render(unaffected).html}</div><div id="baseline" style="white-space:nowrap"><style>#baseline > .blk{display:inline}</style>${markup.render('(A)').html}<span id="baseline-probe" style="display:inline-block;width:0;height:0;vertical-align:baseline"></span></div></div>`;
   for(const media of ['screen','print'])for(const font of ['', 'serif', 'sans-serif']){
    await page.emulateMedia({media});await page.setContent(content(oldCss,oldM));if(font)await page.locator('#print-area').evaluate((n,f)=>n.style.fontFamily=f,font);
    const old=await page.locator('#unrelated').evaluate(n=>({html:n.innerHTML,boxes:[...n.querySelectorAll('.question-badge,.blank-badge,.para-badge,.choice-inline,.marker-angle,.marker-parentheses')].map(x=>({text:x.textContent,width:x.getBoundingClientRect().width,height:x.getBoundingClientRect().height,font:getComputedStyle(x).fontFamily,size:getComputedStyle(x).fontSize}))}));
-   await page.setContent(content(css,M));if(font)await page.locator('#print-area').evaluate((n,f)=>n.style.fontFamily=f,font);await page.evaluate(()=>document.fonts.ready);
+   await page.setContent(content(css,M));if(font)await page.locator('#print-area').evaluate((n,f)=>n.style.fontFamily=f,font);await page.evaluate(async()=>{await document.fonts.ready;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));});
    const current=await page.locator('#unrelated').evaluate(n=>({html:n.innerHTML,boxes:[...n.querySelectorAll('.question-badge,.blank-badge,.para-badge,.choice-inline,.marker-angle,.marker-parentheses')].map(x=>({text:x.textContent,width:x.getBoundingClientRect().width,height:x.getBoundingClientRect().height,font:getComputedStyle(x).fontFamily,size:getComputedStyle(x).fontSize}))}));
    assert.deepEqual(current,old,'Unaffected tags, two-character and angle geometry remain identical');
    const geometry=await page.evaluate(()=>({
     markers:[...document.querySelectorAll('#labels .marker-parentheses-fit')].map(n=>{
-     const text=n.querySelector('text'),box=n.getBoundingClientRect(),glyph=text.getBoundingClientRect(),font=parseFloat(getComputedStyle(n).fontSize);
-     const clone=text.cloneNode(true);clone.removeAttribute('textLength');text.parentElement.appendChild(clone);const natural=clone.getBoundingClientRect();clone.remove();
+     const text=n.querySelector('.marker-fit-inner'),box=n.getBoundingClientRect(),glyph=text.getBoundingClientRect(),font=parseFloat(getComputedStyle(n).fontSize);
+     const transform=text.style.transform;text.style.transform='none';const natural=text.getBoundingClientRect();text.style.transform=transform;
      const range=document.createRange();range.selectNodeContents(n);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);const selected=selection.toString();selection.removeAllRanges();
-     return {text:n.textContent,label:n.querySelector('svg').getAttribute('aria-label'),selected,width:box.width,font,glyphWidth:glyph.width,glyphHeight:glyph.height,naturalHeight:natural.height,svgWidth:n.querySelector('svg').getBoundingClientRect().width};
+     return {text:n.textContent,selected,width:box.width,font,glyphWidth:glyph.width,glyphHeight:glyph.height,naturalHeight:natural.height};
     }),
-    baseline:(()=>{const n=document.querySelector('#baseline .marker-parentheses-fit'),text=n.querySelector('text'),point=text.getStartPositionOfChar(0),position=new DOMPoint(point.x,point.y).matrixTransform(text.getScreenCTM());return {actual:position.y,expected:document.querySelector('#baseline-probe').getBoundingClientRect().top};})(),
+    baseline:(()=>{const n=document.querySelector('#baseline .marker-fit-inner'),probe=document.createElement('span');probe.style.cssText='display:inline-block;width:0;height:0;vertical-align:baseline';n.appendChild(probe);const actual=probe.getBoundingClientRect().top;probe.remove();return {actual,expected:document.querySelector('#baseline-probe').getBoundingClientRect().top};})(),
     overflow:document.documentElement.scrollWidth>innerWidth
    }));
    if(!font)await page.screenshot({path:path.join(evidence,`candidate-${width}-${media}.png`),fullPage:true});
    fs.writeFileSync(path.join(evidence,'latest-geometry.json'),JSON.stringify({width,media,font,geometry},null,2));
-   geometry.markers.forEach(n=>{assert.ok(Math.abs(n.width-n.font)<.05,JSON.stringify(n));assert.ok(Math.abs(n.svgWidth-n.font)<.05);assert.ok(n.glyphWidth<=n.font+1,JSON.stringify(n));assert.ok(Math.abs(n.glyphHeight-n.naturalHeight)<.05,'Fitting never shrinks glyph height');assert.equal(n.label,n.text);assert.equal(n.selected,n.text,'Selection preserves original text');});
-   assert.ok(Math.abs(geometry.baseline.actual-geometry.baseline.expected)<.1,'SVG alphabetic baseline stays at the normal text baseline');
+   geometry.markers.forEach(n=>{assert.ok(Math.abs(n.width-n.font)<.05,JSON.stringify(n));assert.ok(n.glyphWidth<=n.font+1,JSON.stringify(n));assert.ok(Math.abs(n.glyphHeight-n.naturalHeight)<.05,'Fitting never shrinks glyph height');assert.equal(n.selected,n.text,'Selection preserves original text');});
+   assert.ok(Math.abs(geometry.baseline.actual-geometry.baseline.expected)<.1,'Fitted text keeps the normal alphabetic baseline');
    if(media==='screen')assert.equal(geometry.overflow,false);
    reports.push({width,media,font,geometry});
    if(!font){await page.screenshot({path:path.join(evidence,`after-${width}-${media}.png`),fullPage:true});if(media==='print'){
      const file=path.join(evidence,`after-${width}.pdf`);await page.pdf({path:file,format:'A4',printBackground:true});const extracted=execFileSync('pdftotext',['-layout',file,'-'],{encoding:'utf8'}).replace(/\s/g,'');for(const token of ['(A)','(a)','(あ)','(ア)','（A）','（ア）'])assert.ok(extracted.includes(token),'PDF retains '+token);
     }}
   }
-  // A line beginning with an SVG label must get its number outside the SVG.
+  // Line numbers must stay outside horizontally fitted text, including marker-only lines.
   await page.setContent('<style>'+css+'</style><main id="print-area" class="print-out fs-md lh-3" style="display:block;margin:30px"><div id="line-fixture" class="exam-doc linenum-target">'+M.render('First line.\nSecond line.\nThird line.\nFourth line.\n(A) Fifth line.\nSixth line.\nSeventh line.\nEighth line.\nNinth line.\n(ア)\nEleventh line.\nTwelfth line.').html+'</div></main>');
   await page.addScriptTag({content:read('assets/js/ui.js')});
   await page.addScriptTag({content:'window.Store={getFavCollapsed:()=>({}),getPrintFontSize:()=>"md",getPrintLineHeight:()=>"3"};window.Difficulty={BAND_LABEL:{}};'});
@@ -69,7 +70,7 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
    const result=await page.evaluate(forPrint=>{
     const doc=document.querySelector('#line-fixture'),api=window.widthLineTest;api.applyPrintLineNumbers(document.querySelector('#print-area'),forPrint);
     const measured=api.lineStartPositions(doc),map=api.referenceTextMap(doc);
-    return {count:measured.starts.length,ref:api.referenceLines(map,'(A) Fifth line.',measured.starts),text:map.text,inside:doc.querySelectorAll('.marker-fit-svg .print-linenum').length,markers:[...doc.querySelectorAll('.marker-parentheses-fit')].map(n=>n.textContent),numbers:[...doc.querySelectorAll('.print-linenum')].map(n=>({text:n.textContent,width:n.querySelector('text').getBoundingClientRect().width,parent:n.parentElement.className,left:n.querySelector('text').getBoundingClientRect().left,bodyLeft:doc.getBoundingClientRect().left}))};
+    return {count:measured.starts.length,ref:api.referenceLines(map,'(A) Fifth line.',measured.starts),text:map.text,inside:doc.querySelectorAll('.marker-fit-inner .print-linenum').length,markers:[...doc.querySelectorAll('.marker-parentheses-fit')].map(n=>n.textContent),numbers:[...doc.querySelectorAll('.print-linenum')].map(n=>({text:n.textContent,width:n.querySelector('text').getBoundingClientRect().width,parent:n.parentElement.className,left:n.querySelector('text').getBoundingClientRect().left,bodyLeft:doc.getBoundingClientRect().left}))};
    },forPrint);
    assert.equal(result.count,12);assert.equal(result.ref,'line 5');assert.equal(result.inside,0);assert.deepEqual(result.markers,['(A)','(ア)']);assert.deepEqual(result.numbers.map(n=>n.text),['5','10']);result.numbers.forEach(n=>{assert.ok(n.width>0);assert.ok(n.left<n.bodyLeft);assert.equal(n.parent,'blk');});
   }

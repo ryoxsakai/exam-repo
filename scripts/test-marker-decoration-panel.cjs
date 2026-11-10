@@ -39,7 +39,8 @@ const rows = markers.flatMap(marker => styles.map(style => ({marker, style, html
    const page = await browser.newPage({viewport:{width,height:1000}});
    await page.route('**/*', route => route.abort());
    await page.setContent(`<style>${sheet}</style><style>body{margin:20px;background:white;color:black}.exam-doc{font:24px/2.5 var(--serif)!important;color:black!important;width:300px} .case{height:60px}.case .blk{display:inline!important;text-align:left!important}.case{display:block} #narrow{width:1px} .off,.off *{text-decoration:none!important}</style><main id="print-area" class="exam-doc" style="display:block">${rows.map((row,i)=>`<div class="case" id="c${i}">${row.html}</div>`).join('')}<div id="following">${M.render('(1)__word__ and <2>==text==').html}</div><div id="narrow">${M.render('(12) 〈12〉').html}</div></main>`);
-   await page.evaluate(()=>document.fonts.ready);
+   await page.addScriptTag({content:fs.readFileSync(path.join(root,'assets/js/markup.js'),'utf8')});
+   await page.evaluate(async()=>{await document.fonts.ready;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));});
    for (const media of ['screen','print']) {
     await page.emulateMedia({media});
     const layout = await page.evaluate(()=>({
@@ -47,7 +48,7 @@ const rows = markers.flatMap(marker => styles.map(style => ({marker, style, html
      labels:[...document.querySelectorAll('.marker-label')].map(n=>({fit:!!n.closest('.marker-parentheses-fit'),minimum:getComputedStyle(n).minWidth,align:getComputedStyle(n).textAlign})),
      angleFonts:[...document.querySelectorAll('.marker-angle-glyph')].map(n=>getComputedStyle(n).fontFamily),
      following:[...document.querySelectorAll('#following .underline-marker span')].map(n=>getComputedStyle(n).textDecorationLine),
-     decoration:[...document.querySelectorAll('.case .marker-label')].map(n=>{const paint=n.closest('.marker-parentheses-fit')?.querySelector('.marker-fit-text')||n;return {line:getComputedStyle(paint).textDecorationLine,style:getComputedStyle(paint).textDecorationStyle}}),
+     decoration:[...document.querySelectorAll('.case .marker-label')].map(n=>{const paint=n.closest('.marker-parentheses-fit')?.querySelector('.marker-fit-inner')||n;return {line:getComputedStyle(paint).textDecorationLine,style:getComputedStyle(paint).textDecorationStyle}}),
      markerFont:getComputedStyle(document.querySelector('.marker-label')).fontFamily,
      fonts:[...document.fonts].map(n=>({family:n.family,unicodeRange:n.unicodeRange}))
     }));
