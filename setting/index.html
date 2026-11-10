@@ -22,7 +22,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Kosugi&family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+JP:wght@400;500;600;700;800&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="../assets/css/main-20261110kosugi.css" />
+  <link rel="stylesheet" href="../assets/css/main-20261110annotations.css" />
   <link rel="stylesheet" href="../assets/css/image-layout.css?v=20260922a" />
 </head>
 <body>
@@ -281,7 +281,7 @@
           <textarea id="cfg-ingest-prompt" rows="10" placeholder="例：
 - ①②③ は ((1))((2))((3)) に、a. b. c. は ((a))((b))((c)) に変換する
 - 下線部に付く小問番号 (1) は ~~(1)~~ で下付きにする
-- 注釈は必ず ##語::訳## の語注記法を使う
+- 語注は ##語::訳##。位置指定は ##id@語::訳## と単独行 ##-&gt;id##。自由注は :::注釈 と ::: で囲む
 - 全訳は省略せず「全訳」セクションに含める"></textarea>
         </label>
         <div class="toolbar" style="margin-top:12px">
@@ -600,9 +600,9 @@
   <script src="../assets/js/auth.js?v=20260706a"></script>
   <script src="../assets/js/api.js?v=20261015busy"></script>
   <script src="../assets/js/ui.js?v=20260726a"></script>
-  <script src="../assets/js/markup-20261110tagletters.js?publication=20261110tagletters"></script>
+  <script src="../assets/js/markup-20261110annotations.js?publication=20261110annotations"></script>
   <script src="../assets/js/corpus.js?v=20260613j"></script>
   <script src="../assets/js/difficulty.js?v=20260923a"></script>
-  <script src="../assets/js/settings.js?publication=20261110paragraph"></script>
+  <script src="../assets/js/settings.js?publication=20261110annotations"></script>
 </body>
 </html>

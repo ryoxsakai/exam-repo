@@ -204,26 +204,98 @@ function normalizeToolName(value: unknown) {
   return name.split(".").pop() || name;
 }
 
+// Keep offsets and line endings while hiding literal examples from notation scans.
+// Matches the renderer's code/comment/tag handling; ordinary HTML element contents
+// (other than pre/code) remain prose, and Markdown link destinations stay opaque.
+function blankNotation(text: string) { return text.replace(/[^\r\n]/g, " "); }
+function maskNotationLiterals(text: string) {
+  // A non-whitespace placeholder prevents `##->id##<!--example-->` and similar
+  // inline examples from becoming standalone directives after masking.
+  const literal = (value: string) => value.replace(/[^\r\n]/g, "\uFFFC");
+  const linkStart = /(?<!!)\[[^\]\n]*\]\(/g;
+  let link: RegExpExecArray | null, last = 0, masked = "";
+  while ((link = linkStart.exec(text))) {
+    let depth = 1, pos = link.index + link[0].length, quote = "", angle = false;
+    for (; pos < text.length && text[pos] !== "\n"; pos++) {
+      if (text[pos] === "\\") { pos++; continue; }
+      if (quote) { if (text[pos] === quote) quote = ""; continue; }
+      if (angle) { if (text[pos] === ">") angle = false; continue; }
+      if ((text[pos] === '"' || text[pos] === "'") && /\s/.test(text[pos - 1])) { quote = text[pos]; continue; }
+      if (text[pos] === "<" && (pos === link.index + link[0].length || /\s/.test(text[pos - 1]))) { angle = true; continue; }
+      if (text[pos] === "(") depth++;
+      if (text[pos] === ")" && --depth === 0) break;
+    }
+    if (depth !== 0) continue;
+    masked += text.slice(last, link.index) + literal(text.slice(link.index, pos + 1));
+    last = pos + 1;
+    linkStart.lastIndex = last;
+  }
+  return (masked + text.slice(last)).replace(/^[ \t]*:::注釈[ \t]*\r?\n[\s\S]*?^[ \t]*:::[ \t]*(?=\r?$)|^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[ \t]*$|(?![\s\S]))|<!--(?:[\s\S]*?-->|[\s\S]*$)|<(?:code|pre)\b(?:[^>"']|"[^"]*"|'[^']*')*>[\s\S]*?<\/(?:code|pre)>|<\/?[A-Za-z](?:[^>"']|"[^"]*"|'[^']*')*>|(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\2(?!`)/gmi,
+    // Whichever construct starts first owns its complete content. In particular,
+    // a backtick/fence inside a free note cannot hide its closing delimiter.
+    value => /^[ \t]*:::注釈[ \t]*\r?\n/.test(value) ? value : literal(value))
+    .replace(/##([^:#]+)::([^#]+)##|(?:https?:\/\/|ftp:\/\/|mailto:|www\.)[^\s<>"`]+/gi,
+      value => value.startsWith("##") ? value : literal(value));
+}
+
+const NOTE_CALL = /^[ \t]*##->([A-Za-z0-9_-]{1,64}(?:[ \t]*,[ \t]*[A-Za-z0-9_-]{1,64})*)##[ \t]*\r?$/gm;
+function annotationSyntax(text: string) {
+  let masked = maskNotationLiterals(text);
+  const blocks: Array<{ start: number; end: number }> = [];
+  const unclosed: number[] = [];
+  const open = /^[ \t]*:::注釈[ \t]*\r?$/gm;
+  let match: RegExpExecArray | null;
+  while ((match = open.exec(masked))) {
+    const close = /^[ \t]*:::[ \t]*\r?$/gm;
+    close.lastIndex = match.index + match[0].length;
+    const end = close.exec(masked);
+    if (!end) { unclosed.push(match.index); continue; }
+    const stop = end.index + end[0].length;
+    blocks.push({ start: match.index, end: stop });
+    masked = masked.slice(0, match.index) + blankNotation(masked.slice(match.index, stop)) + masked.slice(stop);
+    open.lastIndex = stop;
+  }
+  return { text: masked, blocks, unclosed };
+}
+
+function removeAnnotationText(text: string) {
+  const scan = annotationSyntax(text);
+  const ranges = scan.blocks.concat(Array.from(scan.text.matchAll(NOTE_CALL), match => ({ start: match.index!, end: match.index! + match[0].length })));
+  // All ranges are offsets in the original source and are non-overlapping.
+  for (const range of ranges.sort((a, b) => b.start - a.start)) {
+    text = text.slice(0, range.start) + blankNotation(text.slice(range.start, range.end)) + text.slice(range.end);
+  }
+  return text;
+}
+
+function markedSectionRange(text: string, marker: string) {
+  const scan = annotationSyntax(text).text;
+  const heading = `{{${marker}}}`;
+  const start = scan.search(new RegExp("(?<!\\{)" + heading.replace(/[{}]/g, "\\$&") + "(?!})"));
+  if (start < 0) return null;
+  const contentStart = start + heading.length;
+  // Horizontal whitespace only: masked note blocks must stay part of their
+  // containing section, not become whitespace swallowed before the next header.
+  const next = scan.slice(contentStart).search(/\r?\n[ \t]*\{\{[^{}\r\n]+\}\}[ \t]*(?=\r?\n|$)/);
+  return { start: contentStart, end: next < 0 ? text.length : contentStart + next };
+}
+
 function extractMarkedSection(value: unknown, marker: string) {
   const text = String(value ?? "");
-  const heading = `{{${marker}}}`;
-  const start = text.search(new RegExp("(?<!\\{)" + heading.replace(/[{}]/g, "\\$&") + "(?!})"));
-  if (start < 0) return "";
-
-  const remainder = text.slice(start + heading.length);
-  const nextHeading = remainder.search(/\n\s*\{\{[^{}\n]+\}\}\s*(?:\n|$)/);
-  return (nextHeading >= 0 ? remainder.slice(0, nextHeading) : remainder).trim();
+  const range = markedSectionRange(text, marker);
+  return range ? text.slice(range.start, range.end).trim() : "";
 }
 
 function extractDelimitedSections(value: unknown, delimiter: string) {
   const text = String(value ?? "");
+  const scan = annotationSyntax(text).text;
   const sections: string[] = [];
   let position = 0;
 
   while (position < text.length) {
-    const start = text.indexOf(delimiter, position);
+    const start = scan.indexOf(delimiter, position);
     if (start < 0) break;
-    const end = text.indexOf(delimiter, start + delimiter.length);
+    const end = scan.indexOf(delimiter, start + delimiter.length);
     if (end < 0) break;
 
     const section = text.slice(start + delimiter.length, end).trim();
@@ -242,11 +314,11 @@ function optionalNonNegativeInteger(value: unknown, name: string) {
 }
 
 export function cleanPassageText(value: unknown) {
-  return String(value ?? "")
+  return removeAnnotationText(String(value ?? ""))
     .replace(/!\[[^\]]*\]\([^)\s]+\)(?:\{[^}\n]*\})?/g, " ")
     .replace(/(?<!\{)(?:\{\{\{\{[^{}\n]*\}\}\}\}|\{\{\{[^{}\n]*\}\}\}|\{\{[^{}\n]*\}\})(?!})/g, " ")
     .replace(/^\s*\[[^\[\]]+\]\s?/gm, "")
-    .replace(/##([^:#]+)::[^#]+##/g, (_match, word: string) => word.split("|")[0].replace(/\^/g, ""))
+    .replace(/##([^:#]+)::[^#]+##/g, (_match, word: string) => word.replace(/^[A-Za-z0-9_-]{1,64}@(?=.)/, "").split("|")[0].replace(/\^/g, ""))
     .replace(/!!!![\s\S]*?!!!!/g, " ")
     .replace(/\|\|\|\|([\s\S]+?)\|\|\|\|/g, "$1")
     .replace(/^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/gm, " ")
@@ -966,6 +1038,67 @@ type ValidationIssue = {
   message: string;
 };
 
+function annotationIssues(text: string, field = ""): ValidationIssue[] {
+  const scan = annotationSyntax(text);
+  const issues: ValidationIssue[] = [];
+  const add = (code: string, message: string) => issues.push({ code, severity: "warning", message: (field ? field + ": " : "") + message } as ValidationIssue);
+  scan.unclosed.forEach(() => issues.push({ code: "unclosed_annotation", severity: "error", message: (field ? field + ": " : "") + "注釈ブロック:::注釈に閉じる:::がありません。" }));
+  const headings = Array.from(scan.text.matchAll(/^[ \t]*\{\{([^0-9A-Za-z}\r\n]+)\}\}[ \t]*\r?$/gm));
+  type SectionRange = { start: number; end: number; type: string };
+  const sections: SectionRange[] = [];
+  let start = 0, type = "問題";
+  for (const heading of headings) {
+    if (text.slice(start, heading.index).trim()) sections.push({ start, end: heading.index!, type });
+    start = heading.index! + heading[0].length; type = heading[1];
+  }
+  if (text.slice(start).trim()) sections.push({ start, end: text.length, type });
+  // The viewer merges consecutive lead sections into the next render scope.
+  // Keep original ranges so comparisons and diagnostics still use source text.
+  const scopes: SectionRange[][] = [];
+  let lead: SectionRange[] = [];
+  for (const section of sections) {
+    if (section.type === "リード文") lead.push(section);
+    else { scopes.push([...lead, section]); lead = []; }
+  }
+  if (lead.length) scopes.push(lead);
+  for (const ranges of scopes) {
+    const definitions = new Map<string, { word: string; translation: string }>();
+    const references: string[] = [];
+    for (const range of ranges) {
+      const offset = range.start, scope = scan.text.slice(offset, range.end);
+      for (const match of scope.matchAll(/##([^:#]+)::([^#]+)##/g)) {
+        const named = match[1].match(/^([A-Za-z0-9_-]{1,64})@(.+)$/);
+        if (!named) continue;
+        // Recover literal content at the original offsets rather than comparing
+        // blanked HTML/tag examples, which could hide a meaningful conflict.
+        const start = offset + match.index! + 2;
+        const rawWord = text.slice(start + named[1].length + 1, start + match[1].length);
+        const parts = named[2].split("|");
+        const pipe = named[2].indexOf("|");
+        const headword = parts.length === 2 && parts[1] ? rawWord.slice(pipe + 1) : pipe < 0 ? rawWord : rawWord.slice(0, pipe);
+        const headwordMask = parts.length === 2 && parts[1] ? parts[1] : parts[0];
+        // Carets inside protected code/tags are literal, just as in the renderer.
+        let word = "";
+        for (let index = 0; index < headword.length; index++) {
+          if (headwordMask[index] !== "^") word += headwordMask[index + 1] === "^" ? headword[index].toLowerCase() : headword[index];
+        }
+        const translation = text.slice(start + match[1].length + 2, start + match[1].length + 2 + match[2].length);
+        const previous = definitions.get(named[1]);
+        if (previous && (previous.word !== word || previous.translation !== translation)) {
+          add("duplicate_note_id", `注釈ID「${named[1]}」に異なる見出し語または訳が定義されています。`);
+        } else if (!previous) definitions.set(named[1], { word, translation });
+      }
+      for (const match of scope.matchAll(NOTE_CALL)) {
+        references.push(...new Set(match[1].split(",").map(id => id.trim())));
+      }
+    }
+    for (const id of references) {
+      if (!definitions.has(id)) add("undefined_note_id", `注釈ID「${id}」が同じセクションに定義されていません。`);
+    }
+  }
+  return issues;
+}
+
 function markerCount(text: string, marker: string) {
   return text.split(marker).length - 1;
 }
@@ -984,6 +1117,8 @@ function validateQuestionRecord(row: Record<string, unknown>) {
   const problemText = String(row.problem_text ?? "");
   const answerText = String(row.answer_text ?? "");
   const commentaryText = String(row.commentary_text ?? "");
+  const problemSyntax = annotationSyntax(problemText).text;
+  const answerSyntax = annotationSyntax(answerText).text;
   const category = String(row.category ?? "");
   const isPassage = category.includes("長文");
   const issues: ValidationIssue[] = [];
@@ -994,20 +1129,21 @@ function validateQuestionRecord(row: Record<string, unknown>) {
   if (!problemText.trim()) add("missing_problem_text", "error", "問題本文が空です。");
   if (!answerText.trim()) add("missing_answer", "error", "解答が登録されていません。");
   if (!commentaryText.trim()) add("missing_commentary", "warning", "解説が登録されていません。");
+  issues.push(...annotationIssues(problemText, "問題"), ...annotationIssues(answerText, "解答"), ...annotationIssues(commentaryText, "解説"));
 
   if (isPassage) {
-    if (!problemText.includes("{{本文}}")) add("missing_body", "error", "長文問題ですが{{本文}}セクションがありません。");
-    if (!problemText.includes("{{設問}}")) add("missing_questions", "warning", "長文問題ですが{{設問}}セクションがありません。");
+    if (!problemSyntax.includes("{{本文}}")) add("missing_body", "error", "長文問題ですが{{本文}}セクションがありません。");
+    if (!problemSyntax.includes("{{設問}}")) add("missing_questions", "warning", "長文問題ですが{{設問}}セクションがありません。");
     if (!extractMarkedSection(problemText, "全訳")) add("missing_translation", "warning", "全訳が登録されていません。");
-    if (!problemText.includes("!!!!")) add("missing_source", "warning", "出典が登録されていません。");
+    if (!problemSyntax.includes("!!!!")) add("missing_source", "warning", "出典が登録されていません。");
   }
 
-  if (markerCount(problemText, "##") % 2 !== 0) add("unclosed_glossary", "error", "語注マーカー##が閉じていません。");
-  if (markerCount(problemText, "!!!!") % 2 !== 0) add("unclosed_source", "error", "出典マーカー!!!!が閉じていません。");
-  if (markerCount(problemText, "[[") !== markerCount(problemText, "]]")) add("unbalanced_blank", "error", "空所マーカー[[ ]]の左右が一致しません。");
-  if (hasUnbalancedChoiceMarkers(problemText)) add("unbalanced_choice", "error", "選択肢マーカー(( ))の左右が一致しません。");
+  if (markerCount(problemSyntax, "##") % 2 !== 0) add("unclosed_glossary", "error", "語注マーカー##が閉じていません。");
+  if (markerCount(problemSyntax, "!!!!") % 2 !== 0) add("unclosed_source", "error", "出典マーカー!!!!が閉じていません。");
+  if (markerCount(problemSyntax, "[[") !== markerCount(problemSyntax, "]]")) add("unbalanced_blank", "error", "空所マーカー[[ ]]の左右が一致しません。");
+  if (hasUnbalancedChoiceMarkers(problemSyntax)) add("unbalanced_choice", "error", "選択肢マーカー(( ))の左右が一致しません。");
 
-  const problemOnly = normalizeChoiceMarkers(problemText).split(/\n\s*\{\{解答\}\}/)[0];
+  const problemOnly = normalizeChoiceMarkers(problemSyntax).split(/\n\s*\{\{解答\}\}/)[0];
   // Only scan choice rows, not prose references such as ((1))〜((5)).
   // A row may start with a blank label and contain several horizontal choices.
   const choiceNumbers = problemOnly.split(/\r?\n/).flatMap((line) => {
@@ -1036,7 +1172,7 @@ function validateQuestionRecord(row: Record<string, unknown>) {
     if (discontinuous) add("non_contiguous_choices", "warning", "数字の選択肢番号に欠落または不自然な並びがあります。");
 
     const maxChoice = Math.max(...choiceNumbers);
-    const answerNumbers = Array.from(normalizeChoiceMarkers(answerText.replace(/\[\[[^\]\r\n]*\]\]/g, " ")).matchAll(/\(\((\d+)\)\)/g), (match) => Number(match[1]));
+    const answerNumbers = Array.from(normalizeChoiceMarkers(answerSyntax.replace(/\[\[[^\]\r\n]*\]\]/g, " ")).matchAll(/\(\((\d+)\)\)/g), (match) => Number(match[1]));
     if (answerNumbers.some((number) => number > maxChoice)) add("answer_out_of_range", "error", "解答番号が問題内の選択肢番号の範囲を超えています。");
   }
 
@@ -1065,13 +1201,9 @@ function correctionTargetText(row: Record<string, unknown>, targetField: Correct
 function replaceMarkedSection(value: unknown, marker: string, replacement: string) {
   const text = String(value ?? "");
   const heading = `{{${marker}}}`;
-  const headingStart = text.search(new RegExp("(?<!\\{)" + heading.replace(/[{}]/g, "\\$&") + "(?!})"));
-  if (headingStart < 0) return `${text.trimEnd()}${text.trim() ? "\n\n" : ""}${heading}\n${replacement.trim()}`;
-
-  const contentStart = headingStart + heading.length;
-  const remainder = text.slice(contentStart);
-  const nextHeading = remainder.search(/\n\s*\{\{[^{}\n]+\}\}\s*(?:\n|$)/);
-  const contentEnd = nextHeading >= 0 ? contentStart + nextHeading : text.length;
+  const range = markedSectionRange(text, marker);
+  if (!range) return `${text.trimEnd()}${text.trim() ? "\n\n" : ""}${heading}\n${replacement.trim()}`;
+  const contentStart = range.start, contentEnd = range.end;
   const currentSection = text.slice(contentStart, contentEnd);
   const leadingWhitespace = currentSection.match(/^\s*/)?.[0] || "";
   const trailingWhitespace = currentSection.match(/\s*$/)?.[0] || "";
@@ -1080,15 +1212,17 @@ function replaceMarkedSection(value: unknown, marker: string, replacement: strin
 
 function detectCorrectionAuditIssues(text: string, targetField: CorrectionTargetField): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
+  const syntax = annotationSyntax(text).text;
   const add = (code: string, severity: ValidationIssue["severity"], message: string) => issues.push({ code, severity, message });
   if (/�|Ã|Â|â€™|â€œ|â€|ï¬/u.test(text)) add("ocr_mojibake", "error", "文字化けの可能性がある文字列を検出しました。");
   if (/[ﬁﬂﬀﬃﬄ]/u.test(text)) add("ocr_ligature", "warning", "OCR由来の可能性がある合字を検出しました。");
   if (/[A-Za-z]{2,}-\s*\n\s*[a-z]{2,}/u.test(text)) add("ocr_split_hyphenated_word", "warning", "改行をまたいで分断されたハイフン語を検出しました。");
   if (/\b(?:[A-Za-z]\s+){5,}[A-Za-z]\b/u.test(text)) add("ocr_split_letters", "warning", "文字単位に不自然に分離された英語を検出しました。");
-  if (markerCount(text, "[[") !== markerCount(text, "]]")) add("unbalanced_blank", "error", "空所マーカー[[ ]]の左右が一致しません。");
-  if (hasUnbalancedChoiceMarkers(text)) add("unbalanced_choice", "error", "選択肢マーカー(( ))の左右が一致しません。");
-  if (markerCount(text, "##") % 2 !== 0) add("unclosed_glossary", "error", "語注マーカー##が閉じていません。");
-  if (markerCount(text, "!!!!") % 2 !== 0) add("unclosed_source", "error", "出典マーカー!!!!が閉じていません。");
+  if (markerCount(syntax, "[[") !== markerCount(syntax, "]]")) add("unbalanced_blank", "error", "空所マーカー[[ ]]の左右が一致しません。");
+  if (hasUnbalancedChoiceMarkers(syntax)) add("unbalanced_choice", "error", "選択肢マーカー(( ))の左右が一致しません。");
+  if (markerCount(syntax, "##") % 2 !== 0) add("unclosed_glossary", "error", "語注マーカー##が閉じていません。");
+  if (markerCount(syntax, "!!!!") % 2 !== 0) add("unclosed_source", "error", "出典マーカー!!!!が閉じていません。");
+  issues.push(...annotationIssues(text));
   if (!text.trim()) add(`empty_${targetField}`, "warning", "監査対象のテキストが空です。");
   return issues;
 }
@@ -2035,7 +2169,7 @@ const TOOLS = [
   { name: "apply_audited_correction", title: "監査済み修正適用", description: "監査と差分確認が完了し、原文が監査時点から変わっていない場合だけ修正を一度適用します。audit_id、proposal_hash、明示的なconfirm=trueが必要で、変更履歴を保存します。", inputSchema: { type: "object", properties: { audit_id: { type: "string" }, proposal_hash: { type: "string" }, confirm: { type: "boolean", description: "準備された差分を確認して修正を実行する場合のみtrue" } }, required: ["audit_id", "proposal_hash", "confirm"], additionalProperties: false } },
   { name: "add_question_image", title: "問題画像を追加", description: "audit_question_for_correctionで対象フィールドを監査し、画像・挿入位置・対象問題についてユーザーの確認を得た後に使います。PNG・JPEG・GIF・WebP（10MB以下）をR2へ保存し、監査時点から問題が変わっていない場合だけMarkdown画像を挿入して変更履歴を残します。画像は公開HTTPS URLまたはbase64のどちらか一方で指定し、confirm=trueが必要です。", inputSchema: { type: "object", properties: { audit_id: { type: "string", description: "audit_question_for_correctionで発行された未使用の監査ID" }, image_url: { type: "string", format: "uri", maxLength: 2048, description: "取得可能な公開HTTPS画像URL。image_base64とは同時指定不可" }, image_base64: { type: "string", maxLength: 14100000, description: "画像のbase64またはdata URL。image_urlとは同時指定不可" }, media_type: { type: "string", enum: ["image/png", "image/jpeg", "image/gif", "image/webp"], description: "image_base64がdata URLでない場合に必須" }, alt_text: { type: "string", maxLength: 200, default: "図", description: "Markdown画像の代替テキスト" }, placement: { type: "string", enum: ["append", "prepend", "before_anchor", "after_anchor"], description: "監査対象フィールド内の挿入位置" }, anchor_text: { type: "string", maxLength: 2000, description: "before_anchor/after_anchorの場合に必須。監査対象内で一度だけ出現する完全一致文字列" }, confirm: { type: "boolean", description: "対象問題・画像・挿入位置を確認して追加する場合のみtrue" } }, required: ["audit_id", "placement", "confirm"], additionalProperties: false } },
   { name: "get_question_correction_history", title: "問題修正履歴", description: "指定した大問について、監査済み修正の変更ID・対象フィールド・理由・修正前後ハッシュ・実行日時を取得します。原文の過去版は返しません。", inputSchema: { type: "object", properties: { exam_id: { type: "integer", minimum: 1 }, question_number: { type: "integer", minimum: 1 }, limit: { type: "integer", minimum: 1, maximum: 100, default: 20 } }, required: ["exam_id", "question_number"], additionalProperties: false } },
-  { name: "validate_questions", title: "問題データ検査", description: "登録済み問題を読み取り専用で検査し、問題・解答・全訳・解説・出典の欠落、マークアップの閉じ忘れ、選択肢番号や解答番号の不整合を一覧化します。データは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, issue_code: { type: "string", enum: ["missing_problem_text", "missing_body", "missing_questions", "missing_answer", "missing_translation", "missing_commentary", "missing_source", "unclosed_glossary", "unclosed_source", "unbalanced_blank", "unbalanced_choice", "non_contiguous_choices", "answer_out_of_range"] }, severity: { type: "string", enum: ["error", "warning"] }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
+  { name: "validate_questions", title: "問題データ検査", description: "登録済み問題を読み取り専用で検査し、問題・解答・全訳・解説・出典の欠落、マークアップの閉じ忘れ、選択肢番号や解答番号の不整合を一覧化します。データは変更しません。", inputSchema: { type: "object", properties: { university_name: { type: "string" }, year_from: { type: "integer", minimum: 0 }, year_to: { type: "integer", minimum: 0 }, schedule: { type: "string" }, category: { type: "string" }, issue_code: { type: "string", enum: ["missing_problem_text", "missing_body", "missing_questions", "missing_answer", "missing_translation", "missing_commentary", "missing_source", "undefined_note_id", "duplicate_note_id", "unclosed_annotation", "unclosed_glossary", "unclosed_source", "unbalanced_blank", "unbalanced_choice", "non_contiguous_choices", "answer_out_of_range"] }, severity: { type: "string", enum: ["error", "warning"] }, limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
   { name: "get_exam", title: "試験詳細", description: "exam_idを指定し、試験内の全大問・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" } }, required: ["exam_id"], additionalProperties: false } },
   { name: "get_question", title: "大問詳細", description: "exam_idと大問番号を指定し、問題・解答・全訳・解説を取得します。返却テキストはデータベース原文です。原文を求められた場合は要約や言い換えをせず、そのまま表示してください。", inputSchema: { type: "object", properties: { exam_id: { type: "integer" }, question_number: { type: "integer" } }, required: ["exam_id", "question_number"], additionalProperties: false } },
 ];
