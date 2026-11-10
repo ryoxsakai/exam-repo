@@ -933,6 +933,19 @@
   }
 
   function setImageBase(b) { imageBase = String(b || ""); }
+  function fitMarker(label) {
+    var inner = label.firstElementChild;
+    if (!inner) return;
+    var view = label.ownerDocument.defaultView;
+    var width = parseFloat(view.getComputedStyle(label).width);
+    var natural = parseFloat(view.getComputedStyle(inner).width);
+    if (width > 0 && natural > 0) inner.style.setProperty("--marker-fit-scale", String(width / natural));
+  }
+  // Explicitly fit isolated booklet documents, which have a separate registry.
+  function fitMarkerLabels(root) {
+    if (root && root.querySelectorAll) root.querySelectorAll(".marker-parentheses-fit").forEach(fitMarker);
+  }
+
   // Autonomous custom elements connect for every renderer, including cloned
   // print/measurement documents. Observing intrinsic text width also catches
   // delayed font loads and fallback changes without altering stored text.
@@ -956,22 +969,16 @@
         if (this.fitObserver) this.fitObserver.disconnect();
         this.fitObserver = null;
       }
-      fit() {
-        var inner = this.firstElementChild;
-        if (!inner) return;
-        var width = parseFloat(global.getComputedStyle(this).width);
-        var natural = parseFloat(global.getComputedStyle(inner).width);
-        if (width > 0 && natural > 0) inner.style.setProperty("--marker-fit-scale", String(width / natural));
-      }
+      fit() { fitMarker(this); }
     }
     global.customElements.define("exam-marker-fit", ExamMarkerFit);
     global.addEventListener("beforeprint", function () {
-      global.document.querySelectorAll("exam-marker-fit").forEach(function (label) { label.fit(); });
+      fitMarkerLabels(global.document);
     });
   }
   global.Markup = {
     render: render, strip: strip, escape: esc, parseSections: parseSections,
     mergeLeadSections: mergeLeadSections, extractZenyakuTitle: extractZenyakuTitle,
-    setImageBase: setImageBase
+    setImageBase: setImageBase, fitMarkerLabels: fitMarkerLabels
   };
 })(window);
