@@ -95,7 +95,7 @@ let html = buildPrintHtml(fixture.folder, {cover: true, nameField: true, renumbe
 assert.match(html, /医学部演習 &lt;A&amp;B&gt;/);
 assert.match(html, /pc-extra pc-title-edit pc-title-size-3 pc-title-color-4/);
 assert.ok(html.indexOf('second synthetic passage') < html.indexOf('first synthetic passage'), 'Favorite order is retained');
-assert.equal((html.match(/question-badge">問1<\/span>/g) || []).length, 4, 'Question and answer numbering restarts for each favorite');
+assert.equal((html.match(/question-badge">問１<\/span>/g) || []).length, 4, 'Question and answer numbering restarts for each favorite');
 assert.doesNotMatch(html, /blank-badge">(?:66|88)<\/span>/);
 state.printTitleDrafts = {'55': ['Draft top', 'UNSAVED TITLE', '', 'Draft extra']};
 assert.match(buildPrintHtml(fixture.folder, {cover: true, nameField: true}, true), /UNSAVED TITLE/);

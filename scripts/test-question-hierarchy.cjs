@@ -10,8 +10,8 @@ const text='{{問7}} Parent instruction\n{{{(4)}}} Child instruction\n((1)) Firs
 const result=M.render(text);
 assert.equal((result.html.match(/class="question-subgroup question-subgroup-level-2"/g)||[]).length,2);
 assert.equal((result.html.match(/class="question-subgroup question-subgroup-level-3"/g)||[]).length,1);
-assert.match(result.html, /<\/div><\/div><div class="question-block-header"><span class="question-badge">問8/);
-assert.match(result.html,/question-badge question-level-2">\(4\)/);
+assert.match(result.html, /<\/div><\/div><div class="question-block-header"><span class="question-badge">問８/);
+assert.match(result.html,/question-badge question-level-2">\(４\)/);
 assert.match(result.html,/question-badge question-level-3">\(a\)/);
 assert.equal(M.render(text).html,result.html);
 assert.equal(M.strip('{{問1}} Parent {{{(1)}}} Child {{{{a}}}} Grand').trim(),'Parent   Child   Grand');

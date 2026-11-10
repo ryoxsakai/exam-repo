@@ -47,7 +47,7 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
     const d=document.createElement('div');d.innerHTML=__answersTest.printField('解答',text,{optimizeAnswers:true});
     return {labels:[...d.querySelectorAll('.print-answer-item > .question-badge')].map(e=>e.textContent),groups:[...d.querySelectorAll('.print-answer-group')].map(e=>e.children.length),long:d.querySelectorAll('.print-answer-long').length};
   });
-  assert.deepEqual(mixed,{labels:['1','2','3','4','5','6'],groups:[3,1,2],long:1});
+  assert.deepEqual(mixed,{labels:['１','２','３','４','５','６'],groups:[3,1,2],long:1});
   const edgeCases=await page.evaluate(()=>{
    const t=__answersTest;
    const fallback=['{{1}}\n\n{{2}} B','{{見出し}}\nA paragraph.','{{1}} A\n{{補足}} More text'];
@@ -87,10 +87,10 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   const plainLabels=async root=>{
     const labels=await page.locator(root+' .question-badge').evaluateAll(nodes=>nodes.map(b=>{
       const style=getComputedStyle(b);return {width:b.style.width,border:style.borderTopWidth,bg:style.backgroundImage,
-        gap:parseFloat(style.marginRight),font:parseFloat(style.fontSize),weight:style.fontWeight};
+        gap:parseFloat(style.marginRight),font:parseFloat(style.fontSize),weight:style.fontWeight,leading:b.matches('.question-block-header > .question-badge,.print-answer-item > .question-badge')};
     }));
     assert.ok(labels.length>1);
-    labels.forEach(label=>{assert.equal(label.width,'');assert.equal(label.border,'0px');assert.equal(label.bg,'none');assert.equal(label.weight,'700');assert.ok(Math.abs(label.gap-label.font)<.1);});
+    labels.forEach(label=>{assert.equal(label.width,'');assert.equal(label.border,'0px');assert.equal(label.bg,'none');assert.equal(label.weight,'700');assert.ok(Math.abs(label.gap-(label.leading?label.font:0))<.1);});
   };
   const scopeCheck=await page.evaluate(()=>{
     const root=document.createElement('div');root.className='print-doc';
@@ -119,7 +119,7 @@ const hook='window.__answersTest={state,loadPrintPreview,renderPrintPreview,runP
   await page.locator('#pr-compact-commentary').check();const compact=await commentary(page).innerHTML();
   assert.equal(compact,beforeCommentary.replace(/<div style="height:\.6em"><\/div>/g,''));assert.equal(await commentary(page).locator('table').count(),1);
   await page.locator('#pr-renumber').check();await page.locator('#pr-linenum').check();await page.locator('#pr-optimize-choices').check();
-  const labels=await page.locator('#print-preview .print-answer-group').first().locator('.print-answer-item > .question-badge').allTextContents();assert.deepEqual(labels,['1','2','3','4']);
+  const labels=await page.locator('#print-preview .print-answer-group').first().locator('.print-answer-item > .question-badge').allTextContents();assert.deepEqual(labels,['１','２','３','４']);
   assert.equal(await page.locator('#print-preview .print-choice-group').getAttribute('data-columns'),width===1280?'3':await page.locator('#print-preview .print-choice-group').getAttribute('data-columns'));
   assert.equal(await page.evaluate(()=>Store.getPrintOptimizeAnswers()&&Store.getPrintCompactCommentary()),true);
   await page.locator('#pr-optimize-answers').uncheck();await page.locator('#pr-compact-commentary').uncheck();await page.locator('#pr-renumber').uncheck();await page.locator('#pr-linenum').uncheck();await page.locator('#pr-optimize-choices').uncheck();

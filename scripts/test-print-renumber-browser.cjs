@@ -64,7 +64,7 @@ const hook='window.__renumberTest={state,runPrint,renderPrintPreview,isPreparing
     await settings();await page.locator('#pr-renumber').setChecked(on);await close();
     const actual=await page.locator('#print-preview .print-part-q .print-q').evaluateAll(rows=>rows.map(row=>{
      const fields=[...row.querySelectorAll('.print-field')];const primary=fields.filter(f=>/^(設問|問題)$/.test(f.querySelector('.print-field-label')?.textContent));
-     return (primary.length?primary:fields).flatMap(f=>[...f.querySelectorAll('.question-block-header > .question-badge')].map(n=>n.textContent).filter(t=>/^問\d+$/.test(t)));
+     return (primary.length?primary:fields).flatMap(f=>[...f.querySelectorAll('.question-block-header > .question-badge')].map(n=>n.textContent.normalize("NFKC")).filter(t=>/^問\d+$/.test(t)));
     }));
     const expected=await page.evaluate(({order,on})=>order.map(q=>{
      const sections=Markup.parseSections(q.problem_text).filter(s=>!/解答|解説|和訳|訳|答|講評/.test(s.type)&&s.type!=='リード文');
@@ -76,18 +76,18 @@ const hook='window.__renumberTest={state,runPrint,renderPrintPreview,isPreparing
      return {questions:numbers.map(resolve),answers};
     }),{order,on});
     assert.deepEqual(actual,expected.map(e=>e.questions),`${width}px ${label} renumber ${on}`);
-    const answers=await page.locator('#print-preview .print-part-a .print-q').evaluateAll(rows=>rows.map(row=>[...row.querySelectorAll('.print-field')].filter(f=>f.querySelector('.print-field-label')?.textContent==='解答').flatMap(f=>[...f.querySelectorAll('.question-badge')].map(n=>n.textContent).filter(t=>/^問\d+$/.test(t)))));
+    const answers=await page.locator('#print-preview .print-part-a .print-q').evaluateAll(rows=>rows.map(row=>[...row.querySelectorAll('.print-field')].filter(f=>f.querySelector('.print-field-label')?.textContent==='解答').flatMap(f=>[...f.querySelectorAll('.question-badge')].map(n=>n.textContent.normalize("NFKC")).filter(t=>/^問\d+$/.test(t)))));
     assert.deepEqual(answers,expected.map(e=>e.answers),'Answer labels use the same per-question correspondence');
     for(let i=0;i<order.length;i++)if(order[i]._testBlankOrder) {
      const blankExpected=await page.evaluate(({q,on})=>{
       const resolve=t=>on&&q._testBlankOrder.includes(Number(t))?String(q._testBlankOrder.indexOf(Number(t))+1):t;
-      const extract=(text,selector)=>{const node=document.createElement('div');node.innerHTML=Markup.render(text).html;return [...node.querySelectorAll(selector)].map(n=>n.textContent).filter(t=>/^\d+$/.test(t)).map(resolve);};
+      const extract=(text,selector)=>{const node=document.createElement('div');node.innerHTML=Markup.render(text).html;return [...node.querySelectorAll(selector)].map(n=>n.textContent.normalize("NFKC")).filter(t=>/^\d+$/.test(t)).map(resolve);};
       const secs=Markup.parseSections(q.problem_text),questionSide=Markup.mergeLeadSections(secs.filter(s=>!/解答|解説|和訳|訳|答|講評/.test(s.type)));
       return {blanks:questionSide.flatMap(s=>extract(s.text,'.blank-badge')),answers:extract(secs.find(s=>s.type==='解答')?.text||q.answer_text||'','.question-badge')};
      },{q:order[i],on});
      const blankActual=await page.locator('#print-preview .print-part-q .print-q').nth(i).locator('.blank-badge').allTextContents();
      assert.deepEqual(blankActual.filter(t=>/^\d+$/.test(t)),blankExpected.blanks,'Partial passage and question-side blank correspondence');
-     const numericAnswers=await page.locator('#print-preview .print-part-a .print-q').nth(i).locator('.print-field').filter({has:page.locator('.print-field-label',{hasText:/^解答$/})}).locator('.question-badge').allTextContents();
+     const numericAnswers=await page.locator('#print-preview .print-part-a .print-q').nth(i).locator('.print-field').filter({has:page.locator('.print-field-label',{hasText:/^解答$/})}).locator('.question-badge').allTextContents().then(labels=>labels.map(label=>label.normalize('NFKC')));
      assert.deepEqual(numericAnswers.filter(t=>/^\d+$/.test(t)),blankExpected.answers,'Bare answer labels use the blank correspondence');
     }
     if(!on)assert.equal(await page.locator('#print-preview').innerText(),before,'OFF restores the original print content');
@@ -106,7 +106,7 @@ const hook='window.__renumberTest={state,runPrint,renderPrintPreview,isPreparing
     const color=await page.locator('#print-area .question-badge').first().evaluate(n=>getComputedStyle(n).color);
     const blanks=await page.locator('#print-area .blank-badge').evaluateAll(nodes=>nodes.filter(n=>/^\d+$/.test(n.textContent)).map(n=>({text:n.textContent,size:parseFloat(getComputedStyle(n).fontSize)*.75})));
     const pdf=path.join(evidence,`${width}-${label}-${on?'on':'off'}.pdf`),json=pdf.replace(/\.pdf$/,'.json');
-    fs.writeFileSync(json,JSON.stringify({badges:badges.filter(t=>/^問\d+$/.test(t)),color,blanks}));
+    fs.writeFileSync(json,JSON.stringify({badges:badges.filter(t=>/^問[0-9０-９]+$/.test(t)),color,blanks}));
     fs.writeFileSync(pdf.replace(/\.pdf$/,'.html'),await page.locator('#print-area').innerHTML());
     await page.pdf({path:pdf,format:'A4',printBackground:true});await page.emulateMedia({media:'screen'});
     execFileSync('python3',[path.join(__dirname,'verify-print-renumber-pdf.py'),pdf,json],{stdio:'inherit'});

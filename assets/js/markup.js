@@ -35,8 +35,19 @@
     return { raw: match[0], label: match[2], level: match[1].length - 1 };
   }
   function questionLevelClass(level) { return level > 1 ? " question-level-" + level : ""; }
+  // Display only: retain source labels and numbering identities. Decimal/grouped
+  // numbers are ambiguous labels, so leave those complete sequences untouched.
+  function questionLabel(label) {
+    return String(label).replace(/[0-9０-９]+(?:[.．,，][0-9０-９]+)+|[0-9０-９]+/g, function (run) {
+      if (/[.．,，]/.test(run)) return run;
+      var digits = run.replace(/[０-９]/g, function (digit) {
+        return String.fromCharCode(digit.charCodeAt(0) - 0xFEE0);
+      });
+      return digits.length === 1 ? String.fromCharCode(digits.charCodeAt(0) + 0xFEE0) : digits;
+    });
+  }
   function questionBadge(tag) {
-    return '<span class="question-badge' + questionLevelClass(tag.level) + '">' + esc(tag.label) + '</span>';
+    return '<span class="question-badge' + questionLevelClass(tag.level) + '\">' + esc(questionLabel(tag.label)) + '</span>';
   }
 
   // Shared by underline markers, question numbers and references in every section.
@@ -1009,6 +1020,7 @@
   }
   global.Markup = {
     render: render, strip: strip, escape: esc, parseSections: parseSections,
+    questionBadge: questionBadge,
     mergeLeadSections: mergeLeadSections, extractZenyakuTitle: extractZenyakuTitle,
     setImageBase: setImageBase, fitMarkerLabels: fitMarkerLabels
   };

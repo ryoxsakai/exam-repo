@@ -41,7 +41,7 @@ assert(partialHtml.includes('Only <span class="blank-badge">2</span>'));
 for(const type of ['本文','設問','問題','リード文'])ctx.Store.setPrintSection(type,false);
 const partialAnswers=ctx.testPrint.buildPrintHtml(partialBlankExam,{renumber:true});
 assert(!partialAnswers.includes('print-part-q'));
-assert(partialAnswers.includes('question-badge">2</span><span class="qtext">B'));
+assert(partialAnswers.includes('question-badge">２</span><span class="qtext">B'));
 for(const type of ['本文','設問','問題','リード文'])ctx.Store.setPrintSection(type,true);
 assert.equal(ctx.testPrint.buildPrintHtml(partialBlankExam,{renumber:true}),partialHtml);
 assert(ctx.testPrint.buildPrintHtml(partialBlankExam,{renumber:false}).includes('blank-badge">68</span>'));
@@ -259,7 +259,7 @@ const rangedFolderBefore=JSON.stringify(rangedFolder),rangedFolderHtml=ctx.testP
 assert.equal((rangedFolderHtml.match(/print-section-head">Range group one/g)||[]).length,2);
 assert.equal((rangedFolderHtml.match(/print-section-head">Range group two/g)||[]).length,2);
 assert(/Fill <span class="blank-badge">1<\/span>\s*〜\s*<span class="blank-badge">3<\/span>/.test(rangedFolderHtml));
-assert(rangedFolderHtml.includes('question-badge">1</span><span class="qtext">A <span class="question-badge">2</span> B <span class="question-badge">3</span> C'));
+assert(rangedFolderHtml.includes('question-badge">１</span><span class="qtext">A <span class="question-badge">２</span> B <span class="question-badge">３</span> C'));
 assert.equal(JSON.stringify(rangedFolder),rangedFolderBefore);
 const trailingLegacy={questions:[{question_number:1,problem_text:'{{本文}}\nBody [[66]].\n{{リード文}}\nTrailing [[66]] instructions.',answer_text:'{{66}} A',commentary_text:'{{66}} Explanation.'}]};
 for(const on of [false,true]) {
@@ -267,11 +267,11 @@ for(const on of [false,true]) {
   const [questionSide,answerSide]=output.split('<div class="print-part print-part-a">');
   assert(questionSide.includes('Trailing'),'A trailing stored lead stays on the question side');
   assert(!answerSide.includes('Trailing'),'Legacy answer columns must not absorb a stored trailing lead');
-  assert(answerSide.includes('question-badge">'+(on?1:66)+'</span>'));
+  assert(answerSide.includes('question-badge">'+(on?'１':66)+'</span>'));
 }
 
 const ex={kind:'favFolder',questions:[{exam_id:10,question_number:1,problem_text:'{{設問}}\n{{問7}} A\n{{解答}}\n問7：B'},{exam_id:20,question_number:1,problem_text:'{{設問}}\n{{問66}} C\n{{解答}}\n問66：D'}]};
-const before=JSON.stringify(ex);let html=ctx.testPrint.buildPrintHtml(ex,{renumber:true});assert.equal((html.match(/question-badge">問1</g)||[]).length,2);assert(html.includes('問1：B'));assert(html.includes('問1：D'));assert.equal(JSON.stringify(ex),before);
+const before=JSON.stringify(ex);let html=ctx.testPrint.buildPrintHtml(ex,{renumber:true});assert.equal((html.match(/question-badge">問１</g)||[]).length,2);assert(html.includes('問1：B'));assert(html.includes('問1：D'));assert.equal(JSON.stringify(ex),before);
 html=ctx.testPrint.buildPrintHtml(ex,{renumber:false});assert(html.includes('問7'));assert(html.includes('問66'));
 ctx.Store.setPrintSection('設問',false);html=ctx.testPrint.buildPrintHtml(ex,{renumber:true});assert(html.includes('問1：B'));assert(!html.includes('question-badge'));
 ctx.Store.setPrintSection('設問',true);
@@ -285,19 +285,19 @@ const folderBefore = JSON.stringify(folder);
 html=ctx.testPrint.buildPrintHtml(folder,{renumber:true});
 assert.equal((html.match(/print-section-head">First group/g)||[]).length,2);
 assert.equal((html.match(/print-section-head">Second group/g)||[]).length,2);
-assert(html.includes('question-badge">1</span><span class="qtext"><span class="choice-inline choice-label-unicode"><span class="choice-label-text">④</span>'));
-assert(html.includes('question-badge">2</span><span class="choice-inline choice-label-compact"><span class="choice-label-text">66</span>'));
-assert(html.includes('question-badge">問1</span><span class="qtext"><span class="question-badge">1</span><span class="choice-inline choice-label-compact"><span class="choice-label-text">68</span>'));
+assert(html.includes('question-badge">１</span><span class="qtext"><span class="choice-inline choice-label-unicode"><span class="choice-label-text">④</span>'));
+assert(html.includes('question-badge">２</span><span class="choice-inline choice-label-compact"><span class="choice-label-text">66</span>'));
+assert(html.includes('question-badge">問１</span><span class="qtext"><span class="question-badge">１</span><span class="choice-inline choice-label-compact"><span class="choice-label-text">68</span>'));
 assert(!html.includes('Legacy duplicate must not appear'));
 const enabledHtml = html;
 html=ctx.testPrint.buildPrintHtml(folder,{renumber:false});
 assert(html.includes('question-badge">66</span>'));
-assert(html.includes('question-badge">問7</span>'));
+assert(html.includes('question-badge">問７</span>'));
 assert.equal(ctx.testPrint.buildPrintHtml(folder,{renumber:true}),enabledHtml,'Repeated OFF/ON must not renumber previous output');
 ctx.Store.setPrintSection('問題',false);ctx.Store.setPrintSection('設問',false);
 html=ctx.testPrint.buildPrintHtml(folder,{renumber:true});
 assert(!html.includes('print-part-q'));
-assert(html.includes('question-badge">1</span><span class="qtext"><span class="choice-inline choice-label-unicode"><span class="choice-label-text">④</span>'));
+assert(html.includes('question-badge">１</span><span class="qtext"><span class="choice-inline choice-label-unicode"><span class="choice-label-text">④</span>'));
 ctx.testPrint.state.printQSel['30:1']=false;
 html=ctx.testPrint.buildPrintHtml(folder,{renumber:true});
 assert(!html.includes('First group'));
