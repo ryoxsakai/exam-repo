@@ -17,6 +17,7 @@ jobs:
         with: {node-version: 24}
       - run: npm ci --prefix panel
       - run: cd panel && npx playwright install --with-deps chromium
+      - run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk poppler-utils
       - run: npm run build --prefix panel && npm test --prefix panel
       - run: curl -fLsS 'https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf' -o /tmp/exam-noto-serif-jp.ttf
       - run: node scripts/test-parentheses-font.cjs --browser
