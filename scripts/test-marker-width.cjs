@@ -49,6 +49,8 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
     baseline:(()=>{const n=document.querySelector('#baseline .marker-parentheses-fit'),text=n.querySelector('text'),point=text.getStartPositionOfChar(0),position=new DOMPoint(point.x,point.y).matrixTransform(text.getScreenCTM());return {actual:position.y,expected:document.querySelector('#baseline-probe').getBoundingClientRect().top};})(),
     overflow:document.documentElement.scrollWidth>innerWidth
    }));
+   if(!font)await page.screenshot({path:path.join(evidence,`candidate-${width}-${media}.png`),fullPage:true});
+   fs.writeFileSync(path.join(evidence,'latest-geometry.json'),JSON.stringify({width,media,font,geometry},null,2));
    geometry.markers.forEach(n=>{assert.ok(Math.abs(n.width-n.font)<.05,JSON.stringify(n));assert.ok(Math.abs(n.svgWidth-n.font)<.05);assert.ok(n.glyphWidth<=n.font+1,JSON.stringify(n));assert.ok(Math.abs(n.glyphHeight-n.naturalHeight)<.05,'Fitting never shrinks glyph height');assert.equal(n.label,n.text);assert.equal(n.selected,n.text,'Selection preserves original text');});
    assert.ok(Math.abs(geometry.baseline.actual-geometry.baseline.expected)<.1,'SVG alphabetic baseline stays at the normal text baseline');
    if(media==='screen')assert.equal(geometry.overflow,false);

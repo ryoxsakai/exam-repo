@@ -60,6 +60,7 @@ const rows = markers.flatMap(marker => styles.map(style => ({marker, style, html
      layout.decoration.forEach((n,i)=>{assert.equal(n.line,'underline'); assert.equal(n.style,['solid','double','wavy'][i%3]);});
     }
     assert.ok(layout.following.every(n=>n==='none'), 'marker preceding underlined text remains undecorated');
+    const paintedStyles=[];
     for (let i=0;i<rows.length;i++) {
      const locator = page.locator('#c'+i);
      const decorated=await locator.screenshot({animations:'disabled'});
@@ -70,6 +71,8 @@ const rows = markers.flatMap(marker => styles.map(style => ({marker, style, html
      if (!visible) missing++;
      report.push({surface,width,media,...rows[i],visible});
      if (!baseline) assert.ok(visible, `${surface} ${width} ${media} ${rows[i].style}${rows[i].marker} decoration is painted`);
+     paintedStyles.push(decorated);
+     if(!baseline&&i%3===2){assert.ok(!paintedStyles[i].equals(paintedStyles[i-1]));assert.ok(!paintedStyles[i].equals(paintedStyles[i-2]));assert.ok(!paintedStyles[i-1].equals(paintedStyles[i-2]), 'Single, double and wavy decorations have distinct raster output');}
     }
    }
    await page.emulateMedia({media:'screen'});
