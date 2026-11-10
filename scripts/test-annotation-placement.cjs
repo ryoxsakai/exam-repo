@@ -571,7 +571,9 @@ async function browserTest() {
           document.body.appendChild(safety);
           window.__annotationFixture = { fixture, sectionFixture };
         }, { fixture, sectionFixture, unsafeTags, literalFixtures });
-        assert.equal(await page.locator('#safety script, #safety img, #safety svg, #safety iframe, #safety a, #safety br').count(), 0, 'Unsafe tags and code br must stay text');
+        assert.equal(await page.locator('#safety script, #safety img, #safety svg, #safety iframe, #safety a').count(), 0, 'Unsafe tags must stay text');
+        assert.equal(await page.locator('#safety br').count(), unsafeTags.length - 1, 'Only the free-note source newlines become breaks; unsafe/code tags remain text');
+        assert.ok(await page.locator('#safety br').evaluateAll(nodes => nodes.every(node => node.attributes.length === 0)), 'Generated line breaks must have no attributes');
         assert.equal(await page.evaluate(() => window.__annotationInjected), 0);
 
         for (const media of ['screen', 'print']) {
