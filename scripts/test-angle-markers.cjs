@@ -18,7 +18,7 @@ for (const label of ['<1>', '<12>', '<<1>>', '〈1〉', '《1》']) {
     const html = M.render(label + style + 'word' + style + ' reference ' + label + ' and (1).').html;
     assert.equal((html.match(/class="marker-angle"/g) || []).length, 2);
     assert.equal((html.match(/class="underline-marker"/g) || []).length, 1);
-    assert.equal((html.match(/class="marker-parentheses"/g) || []).length, 1);
+    assert.equal((html.match(/class="marker-parentheses(?: marker-parentheses-fit)?"/g) || []).length, 1);
     assert.ok(html.includes('marker-angle-glyph'));
   }
 }

@@ -49,6 +49,14 @@
     }
     var m = String(marker || "").match(/^([（(])([A-Za-z0-9ぁ-ゖァ-ヺ]{1,2})([）)])$/);
     if (!m) return esc(marker || "");
+    if (m[2].length === 1) {
+      // A single-character round label occupies one local em, parentheses included.
+      // SVG fits the complete text run using the actual fallback fonts, without
+      // shrinking its height or depending on a guessed horizontal CSS scale.
+      return '<span class="marker-parentheses marker-parentheses-fit"><svg class="marker-fit-svg" width="1em" height="1.2em" role="img" aria-label="' + esc(marker) + '" focusable="false">' +
+        '<text class="marker-fit-text" x="0" y=".9em" textLength="1em" lengthAdjust="spacingAndGlyphs"><tspan>' + esc(m[1]) +
+        '</tspan><tspan class="marker-label">' + esc(m[2]) + '</tspan><tspan>' + esc(m[3]) + '</tspan></text></svg></span>';
+    }
     return '<span class="marker-parentheses">' + esc(m[1]) +
       '<span class="marker-label">' + esc(m[2]) + '</span>' + esc(m[3]) + '</span>';
   }
