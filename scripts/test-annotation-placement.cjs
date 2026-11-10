@@ -17,7 +17,7 @@ const M = sandbox.window.Markup;
 const plain = value => JSON.parse(JSON.stringify(value));
 const viewerSandbox = { Markup: M, Store: { getFavCollapsed: () => ({}) }, Difficulty: { BAND_LABEL: {} }, UI: { el: () => null, escapeHtml: M.escape }, document: { addEventListener() {} } };
 viewerSandbox.window = viewerSandbox;
-vm.runInNewContext(read('assets/js/viewer.js').replace('document.addEventListener("DOMContentLoaded", init);', 'window.annotationPrintTest={renderOptimizedAnswers,renumberPrintSections};'), viewerSandbox);
+vm.runInNewContext(read('assets/js/viewer.js').replace('document.addEventListener("DOMContentLoaded", init);', 'window.annotationPrintTest={renderOptimizedAnswers,renumberPrintSections,renderDisplayContent,printField};'), viewerSandbox);
 const failures = [];
 let cases = 0;
 
@@ -304,6 +304,27 @@ test('print renumbering preserves free notes without consuming question or blank
   assert.equal(renumbered[1].text, '(1) A\n(2) B\n' + note);
   assert.equal(JSON.stringify(sections), before);
 });
+test('choice optimization preserves literal free-note lines and still splits real choices', () => {
+  for (const newline of ['\n', '\r\n']) {
+    const note = [':::注釈', '((1)) First explanation ((2)) Second explanation', ':::'].join(newline);
+    const real = '((1)) First choice ((2)) Second choice';
+    const text = real + newline + note + newline + real + newline + note;
+    const html = viewerSandbox.annotationPrintTest.renderDisplayContent('設問', text, { optimizeChoices: true });
+    const notes = blocks(html).filter(block => block.free);
+    assert.equal(notes.length, 2);
+    assert.equal(notes[0].html, blocks(M.render(note).html)[0].html);
+    assert.equal(notes[1].html, notes[0].html);
+    assert.equal((html.match(/class="answer-choice"/g) || []).length, 4);
+  }
+});
+test('print line references preserve free-note text and still transform real references', () => {
+  const note = ':::注釈\n"literal phrase" in line 99\n((1)) First explanation ((2)) Second explanation\n:::';
+  const input = '"real phrase" in line 7\n' + note + '\n"next phrase" on lines 8-9';
+  const html = viewerSandbox.annotationPrintTest.printField('設問', input, { lineReferences: true, optimizeChoices: true });
+  assert.equal(blocks(html).filter(block => block.free)[0].html, blocks(M.render(note).html)[0].html);
+  assert.equal((html.match(/class="print-line-ref"/g) || []).length, 2);
+  assert.doesNotMatch(html, /data-phrase="literal phrase"|EXAMLINEREF\d+TOKEN/);
+});
 
 const unsafeTags = [
   '<br class="x">', '<BR onclick="window.__annotationInjected=1">',
@@ -329,7 +350,7 @@ const sectionFixture = [
   '{{本文}}', 'BODY ##1@bodyword::本文語注##', '##->1##',
   ':::注釈', '**Body note', '{{設問}}', '##->1##', ':::', 'BODY TAIL',
   '{{設問}}', '{{問2}} QUESTION<br>SECOND QUESTION LINE ##1@questionword::設問語注##',
-  ':::注釈', '**Question note', ':::', '##->1##', 'QUESTION TAIL',
+  ':::注釈', '**Question note', '((1)) First explanation ((2)) Second explanation', '"literal phrase" in line 99', ':::', '##->1##', 'QUESTION TAIL',
   '{{全訳}}', 'TRANSLATION ##1@translationword::全訳語注##', '##->1##',
   ':::注釈', '**Translation note', ':::', 'TRANSLATION TAIL',
 ].join('\n');
@@ -588,7 +609,7 @@ async function browserTest() {
           preview.innerHTML = '<section id="table-preview" class="exam-doc">' + Markup.render(fixture, { paraNum: true }).html + '</section>' +
             sections.map(section => __annotationTest.renderField(section.type, '', section.text)).join('');
           printed.innerHTML = '<section id="table-print" class="exam-doc">' + Markup.render(fixture, { paraNum: true }).html + '</section>' +
-            sections.map(section => __annotationTest.printField(section.type, section.text, { optimizeFootnotes: true })).join('');
+            sections.map(section => __annotationTest.printField(section.type, section.text, { optimizeFootnotes: true, optimizeChoices: true, lineReferences: true })).join('');
           const safety = document.createElement('section'); safety.id = 'safety'; safety.hidden = true;
           safety.innerHTML = Markup.render(unsafeTags.join('\n') + '\n:::注釈\n**' + unsafeTags.join('\n') + '\n:::\n' + literalFixtures.join('\n')).html;
           document.body.appendChild(safety);
@@ -605,6 +626,13 @@ async function browserTest() {
         assert.equal(await page.locator('#safety br').count(), unsafeTags.length - 1, 'Only the free-note source newlines become breaks; unsafe/code tags remain text');
         assert.ok(await page.locator('#safety br').evaluateAll(nodes => nodes.every(node => node.attributes.length === 0)), 'Generated line breaks must have no attributes');
         assert.equal(await page.evaluate(() => window.__annotationInjected), 0);
+        for (const id of ['#preview', '#print-area']) {
+          const note = page.locator(id + ' .free-note').filter({ hasText: '**Question note' });
+          assert.equal(await note.locator('br').count(), 2, 'Literal choices must not gain extra line breaks');
+          assert.equal(await note.locator('.print-line-ref, .answer-choice').count(), 0, 'Literal note text must not become dynamic references or choices');
+          assert.ok((await note.textContent()).includes('((1)) First explanation ((2)) Second explanation'));
+          assert.ok((await note.textContent()).includes('"literal phrase" in line 99'));
+        }
 
         for (const media of ['screen', 'print']) {
           await page.emulateMedia({ media });

@@ -36,7 +36,9 @@
   }
   function isFreeNote(source) { return /^[ \t]*:::注釈[ \t]*\r?\n/.test(source); }
   function maskedNotation(source) {
-    return source.replace(literalPattern(true), function (literal) { return literal.replace(/[^\r\n]/g, " "); });
+    // Preserve source offsets and line endings without making an adjacent label
+    // or note call standalone when its literal prefix/suffix is hidden.
+    return source.replace(literalPattern(true), function (literal) { return literal.replace(/[^\r\n]/g, "\uFFFC"); });
   }
   function withoutAnnotationText(source) {
     var ranges = [], pattern = literalPattern(true), match;

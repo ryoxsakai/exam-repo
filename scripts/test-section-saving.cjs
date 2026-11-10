@@ -51,6 +51,27 @@ const fixtures = [
 ];
 fixtures.push([sec('設問', '{{問7}} Parent\n{{{(1)}}} Child\n{{{{a}}}} Grandchild\n((1)) First'), sec('解答','{{問7}}\n{{{(1)}}}\n{{{{a}}}} ((1))'), sec('解説','{{問7}}\n{{{(1)}}} Reason')]);
 fixtures.push([sec('本文', 'First.\n\n[[=A=]]\n\nNext.'), sec('設問', '{{問1}} 空所 [[=A=]] を選ぶ。'), sec('解答', '[[=A=]] ((1))')]);
+// Literal text beside a section-looking label must not disappear during editing.
+// Cover repeated saves through both serializers, with real section boundaries
+// after multiline literals and free notes retained inside their owning section.
+for (const newline of ['\n', '\r\n']) {
+  fixtures.push([
+    sec('リード文', 'Read the literal examples.'),
+    sec('本文', [
+      'Alpha.', '{{全訳}}<!--literal example-->', '`code`{{解答}}',
+      '{{解説}}<br>', '<span title="example">{{設問}}</span>',
+      '<!--', '{{全訳}}', '-->{{解答}}', 'Omega.',
+      ':::注釈', '{{全訳}}', 'A literal note.', ':::', 'Body tail.'
+    ].join(newline)),
+    sec('設問', '{{問1}} Choose.'), sec('全訳', '《題》\n実際の全訳。')
+  ]);
+  const rawBody = fixtures.at(-1)[1].text;
+  assert.deepEqual(sections(['{{本文}}', rawBody, '{{全訳}}', 'Actual translation.'].join(newline)),
+    [sec('本文', rawBody), sec('全訳', 'Actual translation.')],
+    'Literal masking must not create section headers or discard their original lines');
+  assert.match(browser.Markup.strip('##->missing##<!--example-->'), /##->missing##/,
+    'Masking an adjacent literal must not create a standalone annotation directive');
+}
 let rounds = 0;
 for (const [fixtureIndex, original] of fixtures.entries()) {
   let current = plain(original), previous = null;
