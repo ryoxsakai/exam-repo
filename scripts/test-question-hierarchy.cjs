@@ -12,7 +12,7 @@ assert.equal((result.html.match(/class="question-subgroup question-subgroup-leve
 assert.equal((result.html.match(/class="question-subgroup question-subgroup-level-3"/g)||[]).length,1);
 assert.match(result.html, /<\/div><\/div><div class="question-block-header"><span class="question-badge">問８/);
 assert.match(result.html,/question-badge question-level-2">\(４\)/);
-assert.match(result.html,/question-badge question-level-3">\(a\)/);
+assert.match(result.html,/question-badge question-level-3">\(ａ\)/);
 assert.equal(M.render(text).html,result.html);
 assert.equal(M.strip('{{問1}} Parent {{{(1)}}} Child {{{{a}}}} Grand').trim(),'Parent   Child   Grand');
 for(const bad of ['{{{a}}','{{a}}}','{{{{{a}}}}}','{{a{b}}','{{{a}}}}']) assert.doesNotMatch(M.render(bad).html,/question-badge/,bad);

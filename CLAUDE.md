@@ -364,3 +364,5 @@ PDF行番号回帰: `PANEL_CHROMIUM=/usr/bin/chromium node scripts/test-print-li
 公式配布元は `https://raw.githubusercontent.com/google/fonts/main/ofl/` 以下の `bizudgothic/BIZUDGothic-Bold.ttf`、`notosansjp/NotoSansJP[wght].ttf`、`mplus1code/MPLUS1Code[wght].ttf`。BIZ Boldの確認済みSHA-256は `98a528b6b638463041968783cc0f63adaf4cdc26f5398afed68bab712d1113f3`。フォントファイルをリポジトリに同梱しない。
 
 回帰: `node scripts/test-question-gothic.cjs`、`node scripts/test-question-gothic.cjs --browser`（公式フォントの取得、PC/mobile・画面/印刷、1桁/2桁の同幅、3桁1.5倍幅、フォールバック、スクリーンショットとPDF）。`QUESTION_GOTHIC_FONT` で検証用フォントファイルを指定できる。採番回帰は数字の表示幅と識別子を区別して確認する。
+
+設問タグ内の英字は大文字・小文字とも全角へ表示変換する（`A→Ａ`、`b→ｂ`、`A1→Ａ１`）。既存の全角英字は維持する。親・子・孫、行中の参照、解答最適化、会話パネルと印刷で共通。変換は `questionLabel` 内だけで行い、原文・意味上のラベル・採番・空所・選択肢・通常の丸括弧内の英字は変更しない。公開JSは `markup-20261110tagletters.js`。`test-question-gothic.cjs --browser` は英字52種と既存全角の冪等性、1em幅、PDF抽出文字も検証する。
