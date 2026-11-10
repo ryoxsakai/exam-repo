@@ -16,7 +16,7 @@ if(!process.argv.includes('--browser'))process.exit(0);
  try{for(const width of [1280,390]){
   const page=await browser.newPage({viewport:{width,height:900}});
   for(const media of ['screen','print'])for(const kind of ['web','panel']){
-   await page.emulateMedia({media});await page.setContent('<style>'+face+(kind==='web'?css:panel.match(/<style[^>]*>([\s\S]*?)<\/style>/)[1])+'</style><div class="exam-doc" id="fixture" style="font-size:16px"></div>');
+   await page.emulateMedia({media});await page.setContent('<style>'+face+(kind==='web'?css:panel.match(/<style[^>]*>([\s\S]*?)<\/style>/)[1])+'</style><main id="print-area" class="print-out" style="display:block"><div class="exam-doc" id="fixture" style="font-size:16px"></div></main>');
    await page.addScriptTag({content:read('assets/js/markup.js')});
    await page.evaluate(()=>document.querySelector('#fixture').innerHTML=Markup.render('(A) (a) (W) (1) （A） (ア) (12) (AB) <1>\n\n**(A)**\n\n(A)__underlined__\n\n{{A}} heading [[A]] ((A))').html);
    await page.evaluate(async()=>{await document.fonts.load('16px "Noto Serif JP"','AaW1ア12AB');await document.fonts.ready;Markup.fitMarkerLabels(document);});
@@ -29,7 +29,7 @@ if(!process.argv.includes('--browser'))process.exit(0);
    const unrelated=await page.locator('.question-badge,.blank-badge,.choice-inline,.marker-angle .marker-label').evaluateAll(ns=>ns.map(n=>getComputedStyle(n).fontFamily));
    assert.ok(unrelated.every(f=>f!=='"Noto Serif JP", serif'));
    report.push({width,media,kind,markers:result});
-   if(width===1280&&kind==='web'){await page.screenshot({path:'/tmp/exam-noto-'+media+'.png'});if(media==='print')await page.pdf({path:'/tmp/exam-noto.pdf',format:'A4'});}
+   if(width===1280&&kind==='web'){await page.screenshot({path:'/tmp/exam-noto-'+media+'.png'});if(media==='print')await page.pdf({path:'/tmp/exam-noto-output.pdf',format:'A4'});}
   }
   await page.close();
  }
