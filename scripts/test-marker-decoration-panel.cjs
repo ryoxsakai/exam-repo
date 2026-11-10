@@ -57,7 +57,7 @@ const rows = markers.flatMap(marker => styles.map(style => ({marker, style, html
     else assert.equal(missingStyles,false,`${surface} includes complete marker layout and font faces`);
     if (!baseline) {
      assert.ok(layout.angleFonts.every(n=>n.startsWith('"Exam Angle Brackets"')));
-     assert.ok(layout.markerFont.startsWith('"Exam Parentheses"'));
+     assert.equal(layout.markerFont, '"Noto Serif JP", serif');
      layout.decoration.forEach((n,i)=>{assert.equal(n.line,'underline'); assert.equal(n.style,['solid','double','wavy'][i%3]);});
     }
     assert.ok(layout.following.every(n=>n==='none'), 'marker preceding underlined text remains undecorated');
