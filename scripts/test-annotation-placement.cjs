@@ -15,6 +15,9 @@ const sandbox = { window: {} };
 vm.runInNewContext(source, sandbox, { filename: 'markup.js' });
 const M = sandbox.window.Markup;
 const plain = value => JSON.parse(JSON.stringify(value));
+const viewerSandbox = { Markup: M, Store: { getFavCollapsed: () => ({}) }, Difficulty: { BAND_LABEL: {} }, UI: { el: () => null, escapeHtml: M.escape }, document: { addEventListener() {} } };
+viewerSandbox.window = viewerSandbox;
+vm.runInNewContext(read('assets/js/viewer.js').replace('document.addEventListener("DOMContentLoaded", init);', 'window.annotationPrintTest={renderOptimizedAnswers,renumberPrintSections};'), viewerSandbox);
 const failures = [];
 let cases = 0;
 
@@ -282,6 +285,26 @@ test('markers and br inside code, comments and HTML attributes stay escaped and 
   }
 });
 
+test('answer optimization preserves section-wide named references and literal free notes', () => {
+  const input = '{{1}} ##a@alpha::A##\n{{2}} ##b@beta::B##\n##->a,b##';
+  const html = viewerSandbox.annotationPrintTest.renderOptimizedAnswers(input, {});
+  assert.equal(html, M.render(input).html);
+  assert.doesNotMatch(html, /##-&gt;/);
+  assert.deepEqual(automaticGroups(html), [[1, 2]]);
+  const free = '{{1}} Answer.\n:::注釈\n{{99}} Literal question marker\n(99) A numbered explanation\n[[99]] Literal blank\n:::\n{{2}} Next answer.';
+  assert.equal(viewerSandbox.annotationPrintTest.renderOptimizedAnswers(free, {}), M.render(free).html);
+  assert.equal(blocks(M.render(free).html).filter(block => block.free).length, 1);
+});
+test('print renumbering preserves free notes without consuming question or blank numbers', () => {
+  const note = ':::注釈\n(99) A literal numbered explanation\n{{99}} A literal question\n[[99]] A literal blank\n:::';
+  const sections = [{ type: '設問', text: note + '\n(7) Real question [[7]]\n(8) Next question [[8]]' }, { type: '解答', text: '(7) A\n(8) B\n' + note }];
+  const before = JSON.stringify(sections);
+  const renumbered = plain(viewerSandbox.annotationPrintTest.renumberPrintSections(sections));
+  assert.equal(renumbered[0].text, note + '\n(1) Real question [[1]]\n(2) Next question [[2]]');
+  assert.equal(renumbered[1].text, '(1) A\n(2) B\n' + note);
+  assert.equal(JSON.stringify(sections), before);
+});
+
 const unsafeTags = [
   '<br class="x">', '<BR onclick="window.__annotationInjected=1">',
   '<br style="display:none"/>', '<br data-x="<br>">',
@@ -508,7 +531,7 @@ async function browserTest() {
   const viewerInit = 'document.addEventListener("DOMContentLoaded", init);';
   const viewer = read('assets/js/viewer.js');
   assert.ok(viewer.includes(viewerInit), 'Viewer hook must replace actual initialization');
-  const viewerHook = 'window.__annotationTest={renderField,printField,countableTextNodes,lineStartPositions,insertLineNumbers,positionLineNumbers};';
+  const viewerHook = 'window.__annotationTest={renderField,printField,countableTextNodes,lineStartPositions,insertLineNumbers,positionLineNumbers,renderOptimizedAnswers,renumberPrintSections};';
   const cssAssets = [...read('index.html').matchAll(/<link\b[^>]*href="(assets\/css\/[^"?]+\.css)(?:\?[^"]*)?"/g)].map(match => match[1]);
   assert.ok(cssAssets.some(asset => /\/main[^/]*\.css$/.test(asset)), 'Use the actual published main stylesheet');
   const fixture = [
@@ -569,6 +592,13 @@ async function browserTest() {
           const safety = document.createElement('section'); safety.id = 'safety'; safety.hidden = true;
           safety.innerHTML = Markup.render(unsafeTags.join('\n') + '\n:::注釈\n**' + unsafeTags.join('\n') + '\n:::\n' + literalFixtures.join('\n')).html;
           document.body.appendChild(safety);
+          const answers = '{{1}} ##a@alpha::A##\n{{2}} ##b@beta::B##\n##->a,b##\n:::注釈\n{{99}} Literal question marker\n(99) Literal number\n:::';
+          for (const container of [preview, printed]) {
+            const answerDoc = document.createElement('section');
+            answerDoc.className = 'exam-doc annotation-answer-fixture';
+            answerDoc.innerHTML = __annotationTest.renderOptimizedAnswers(answers, {});
+            container.appendChild(answerDoc);
+          }
           window.__annotationFixture = { fixture, sectionFixture };
         }, { fixture, sectionFixture, unsafeTags, literalFixtures });
         assert.equal(await page.locator('#safety script, #safety img, #safety svg, #safety iframe, #safety a').count(), 0, 'Unsafe tags must stay text');
@@ -614,6 +644,11 @@ async function browserTest() {
             assert.equal(await section.locator('.free-note').count(), 1);
             assert.deepEqual(await section.locator('li .footnote-number').allTextContents(), ['*1']);
           }
+          const answers = page.locator(container + ' .annotation-answer-fixture');
+          assert.deepEqual(await answers.locator('li .footnote-number').allTextContents(), ['*1', '*2']);
+          assert.equal(await answers.locator('.free-note').count(), 1);
+          assert.match(await answers.locator('.free-note').innerText(), /\{\{99\}\}/);
+          assert.doesNotMatch(await answers.innerText(), /##->|:::注釈/);
           await page.screenshot({ path: path.join(evidence, `${width}-${media}.png`), fullPage: true });
         }
 

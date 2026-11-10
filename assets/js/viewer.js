@@ -2168,6 +2168,11 @@
   var LABEL_HIDABLE = ["問題", "本文", "設問"];
 
   function renderOptimizedAnswers(text, options) {
+    // Named notes share one render scope, and free notes may contain literal
+    // question-looking lines. Splitting either into answer cards changes meaning.
+    if (/##[A-Za-z0-9_-]{1,64}@[^:#]+::|^[ \t]*##->|^[ \t]*:::注釈[ \t]*\r?$/m.test(String(text || ""))) {
+      return Markup.render(text, options).html;
+    }
     var lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
     var entries = [], preamble = [], current = null;
     var labelPattern = "((?:問)?[0-9０-９]+(?:[-－.．][0-9０-９]+|[A-Za-z])?|[A-Za-z]|[IVXivx]+)";
@@ -2335,7 +2340,7 @@
     var namedCount = 0, questionCount = 0, blankCount = 0;
     function protectedText(text, transform) {
       var saved = [];
-      var safe = String(text || "").replace(/(?<!\{)(?:\{\{\{\{[^{}\n]+\}\}\}\}|\{\{\{[^{}\n]+\}\}\})(?!})|!\[[^\]]*\]\([^\n]*?\)|https?:\/\/[^\s<>]+|##[\s\S]*?##|!!!![\s\S]*?!!!!|`[^`\n]*`/g, function (m) {
+      var safe = String(text || "").replace(/^[ \t]*:::注釈[ \t]*\r?\n[\s\S]*?^[ \t]*:::[ \t]*(?=\r?$)|(?<!\{)(?:\{\{\{\{[^{}\n]+\}\}\}\}|\{\{\{[^{}\n]+\}\}\})(?!})|!\[[^\]]*\]\([^\n]*?\)|https?:\/\/[^\s<>]+|##[\s\S]*?##|!!!![\s\S]*?!!!!|`[^`\n]*`/gm, function (m) {
         saved.push(m); return "\u0001" + (saved.length - 1) + "\u0002";
       });
       return transform(safe).replace(/\u0001(\d+)\u0002/g, function (_, i) { return saved[Number(i)]; });
