@@ -32,7 +32,7 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
  const reports=[];
  try{for(const width of [1280,390]){
   const page=await browser.newPage({viewport:{width,height:1000}});await page.route('**/*',r=>r.abort());
-  const content=(sheet,markup)=>`<style id="sheet">${sheet}</style><div id="print-area" class="exam-doc print-out" style="display:block;width:calc(100% - 40px);max-width:660px;margin:20px"><div id="labels">${markup.render(source).html}</div><div id="unrelated">${markup.render(unaffected).html}</div><div id="baseline">${markup.render('(A)').html}<span id="baseline-probe" style="display:inline-block;width:0;height:0;vertical-align:baseline"></span></div></div>`;
+  const content=(sheet,markup)=>`<style id="sheet">${sheet}</style><div id="print-area" class="exam-doc print-out" style="display:block;width:calc(100% - 40px);max-width:660px;margin:20px"><div id="labels">${markup.render(source).html}</div><div id="unrelated">${markup.render(unaffected).html}</div><div id="baseline" style="white-space:nowrap"><style>#baseline > .blk{display:inline}</style>${markup.render('(A)').html}<span id="baseline-probe" style="display:inline-block;width:0;height:0;vertical-align:baseline"></span></div></div>`;
   for(const media of ['screen','print'])for(const font of ['', 'serif', 'sans-serif']){
    await page.emulateMedia({media});await page.setContent(content(oldCss,oldM));if(font)await page.locator('#print-area').evaluate((n,f)=>n.style.fontFamily=f,font);
    const old=await page.locator('#unrelated').evaluate(n=>({html:n.innerHTML,boxes:[...n.querySelectorAll('.question-badge,.blank-badge,.para-badge,.choice-inline,.marker-angle,.marker-parentheses')].map(x=>({text:x.textContent,width:x.getBoundingClientRect().width,height:x.getBoundingClientRect().height,font:getComputedStyle(x).fontFamily,size:getComputedStyle(x).fontSize}))}));
@@ -57,6 +57,21 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
      const file=path.join(evidence,`after-${width}.pdf`);await page.pdf({path:file,format:'A4',printBackground:true});const extracted=execFileSync('pdftotext',['-layout',file,'-'],{encoding:'utf8'}).replace(/\s/g,'');for(const token of ['(A)','(a)','(あ)','(ア)','（A）','（ア）'])assert.ok(extracted.includes(token),'PDF retains '+token);
     }}
   }
+  // A line beginning with an SVG label must get its number outside the SVG.
+  await page.setContent('<style>'+css+'</style><main id="print-area" class="print-out fs-md lh-3" style="display:block;margin:30px"><div id="line-fixture" class="exam-doc linenum-target">'+M.render('First line.\nSecond line.\nThird line.\nFourth line.\n(A) Fifth line.\nSixth line.\nSeventh line.\nEighth line.\nNinth line.\n(ア)\nEleventh line.\nTwelfth line.').html+'</div></main>');
+  await page.addScriptTag({content:read('assets/js/ui.js')});
+  await page.addScriptTag({content:'window.Store={getFavCollapsed:()=>({}),getPrintFontSize:()=>"md",getPrintLineHeight:()=>"3"};window.Difficulty={BAND_LABEL:{}};'});
+  await page.addScriptTag({content:read('assets/js/viewer.js').replace('document.addEventListener("DOMContentLoaded", init);','window.widthLineTest={applyPrintLineNumbers,lineStartPositions,referenceTextMap,referenceLines};')});
+  for(const forPrint of [false,true,false,true]){
+   await page.emulateMedia({media:forPrint?'print':'screen'});
+   const result=await page.evaluate(forPrint=>{
+    const doc=document.querySelector('#line-fixture'),api=window.widthLineTest;api.applyPrintLineNumbers(document.querySelector('#print-area'),forPrint);
+    const measured=api.lineStartPositions(doc),map=api.referenceTextMap(doc);
+    return {count:measured.starts.length,ref:api.referenceLines(map,'(A) Fifth line.',measured.starts),text:map.text,inside:doc.querySelectorAll('.marker-fit-svg .print-linenum').length,markers:[...doc.querySelectorAll('.marker-parentheses-fit')].map(n=>n.textContent),numbers:[...doc.querySelectorAll('.print-linenum')].map(n=>({text:n.textContent,width:n.querySelector('text').getBoundingClientRect().width,parent:n.parentElement.className,left:n.querySelector('text').getBoundingClientRect().left,bodyLeft:doc.getBoundingClientRect().left}))};
+   },forPrint);
+   assert.equal(result.count,12);assert.equal(result.ref,'line 5');assert.equal(result.inside,0);assert.deepEqual(result.markers,['(A)','(ア)']);assert.deepEqual(result.numbers.map(n=>n.text),['5','10']);result.numbers.forEach(n=>{assert.ok(n.width>0);assert.ok(n.left<n.bodyLeft);assert.equal(n.parent,'blk');});
+  }
+  await page.pdf({path:path.join(evidence,`line-labels-${width}.pdf`),format:'A4',printBackground:true});
   await page.close();
  }
  assert.equal(JSON.stringify({source,unaffected}),original);fs.writeFileSync(path.join(evidence,'geometry.json'),JSON.stringify(reports,null,2));
