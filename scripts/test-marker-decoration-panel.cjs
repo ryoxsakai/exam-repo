@@ -65,8 +65,16 @@ const rows = markers.flatMap(marker => styles.map(style => ({marker, style, html
     for (let i=0;i<rows.length;i++) {
      const locator = page.locator('#c'+i);
      const decorated=await locator.screenshot({animations:'disabled'});
+     const outside=await locator.evaluate(n=>{
+      const marker=n.querySelector('.marker-parentheses-fit');if(!marker)return [];
+      const box=marker.getBoundingClientRect(),row=n.getBoundingClientRect();
+      return [{x:Math.floor(box.left)-10,y:row.top+1,width:9,height:row.height-2},{x:Math.ceil(box.right)+1,y:row.top+1,width:10,height:row.height-2}];
+     });
+     const outsideDecorated=await Promise.all(outside.map(clip=>page.screenshot({clip,animations:'disabled'})));
      await locator.evaluate(n=>n.classList.add('off'));
      const plain=await locator.screenshot({animations:'disabled'});
+     const outsidePlain=await Promise.all(outside.map(clip=>page.screenshot({clip,animations:'disabled'})));
+     if(!baseline)outsideDecorated.forEach((raster,j)=>assert.ok(raster.equals(outsidePlain[j]),'Decorations stay inside the one-em marker: '+rows[i].marker));
      await locator.evaluate(n=>n.classList.remove('off'));
      const visible=!decorated.equals(plain);
      if (!visible) missing++;

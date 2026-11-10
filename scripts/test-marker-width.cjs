@@ -14,7 +14,7 @@ for(const file of ['index.html','setting/index.html']){
 }
 const labels=['1','i','a','A','W','あ','ア'];
 const markers=labels.flatMap(label=>['('+label+')','（'+label+'）']);
-const source=markers.map(marker=>marker+' ordinary reference').join('\n\n')+'\n\n'+['__','==','~~'].map(style=>'(A)'+style+'Underlined text'+style+' and '+style+'(a)'+style).join('\n\n')+'\n\n**(A)** bold\n\n| Label | Text |\n| --- | --- |\n| (ア) | Table |';
+const source=markers.map(marker=>marker+' ordinary reference').join('\n\n')+'\n\n'+['__','==','~~'].map(style=>'(A)'+style+'Underlined text'+style+' and '+style+'(a)'+style+' / '+style+'（A）'+style).join('\n\n')+'\n\n**(A)** bold\n\n| Label | Text |\n| --- | --- |\n| (ア) | Table |';
 const unaffected='{{(A)}} Question\n{{{(a)}}} Child\n{{{{(1)}}}} Grand\n[[(A)]] [[((A))]] [A] ((A))\n\n(12) (WW) （アイ） <1> <<12>> 〈1〉 《12》\n\n(word) (123) `code (A)` https://example.test/(A)';
 assert.equal(M.render(unaffected).html,oldM.render(unaffected).html,'Question/blank/paragraph/choice tags, longer labels, angles and literals are untouched');
 assert.equal(M.strip(source),oldM.strip(source),'Plain-text extraction is unchanged');
@@ -23,7 +23,7 @@ for(const type of ['リード文','本文','設問','解答','全訳','解説'])
  const section=M.parseSections('{{'+type+'}}\n(A)')[0];assert.match(M.render(section.text).html,/marker-parentheses-fit/);
 }
 assert.doesNotMatch(M.render(unaffected).html,/marker-parentheses-fit/);
-assert.equal((M.render(source).html.match(/marker-parentheses-fit/g)||[]).length,markers.length+8);
+assert.equal((M.render(source).html.match(/marker-parentheses-fit/g)||[]).length,markers.length+11);
 console.log('PASS: only single-character round labels fit; all sections, source extraction and independent notation preserved');
 if(process.argv.includes('--unit'))process.exit(0);
 const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSync(evidence,{recursive:true});
@@ -45,7 +45,7 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
      const text=n.querySelector('.marker-fit-inner'),box=n.getBoundingClientRect(),glyph=text.getBoundingClientRect(),font=parseFloat(getComputedStyle(n).fontSize);
      const transform=text.style.transform;text.style.transform='none';const natural=text.getBoundingClientRect();text.style.transform=transform;
      const range=document.createRange();range.selectNodeContents(n);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);const selected=selection.toString();selection.removeAllRanges();
-     return {text:n.textContent,selected,width:box.width,font,glyphWidth:glyph.width,glyphHeight:glyph.height,naturalHeight:natural.height};
+     return {text:n.textContent,selected,width:box.width,font,glyphWidth:glyph.width,glyphHeight:glyph.height,naturalHeight:natural.height,labelWidth:n.querySelector('.marker-label').getBoundingClientRect().width};
     }),
     baseline:(()=>{const n=document.querySelector('#baseline .marker-fit-inner'),probe=document.createElement('span');probe.style.cssText='display:inline-block;width:0;height:0;vertical-align:baseline';n.appendChild(probe);const actual=probe.getBoundingClientRect().top;probe.remove();return {actual,expected:document.querySelector('#baseline-probe').getBoundingClientRect().top};})(),
     overflow:document.documentElement.scrollWidth>innerWidth
@@ -53,6 +53,10 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
    if(!font)await page.screenshot({path:path.join(evidence,`candidate-${width}-${media}.png`),fullPage:true});
    fs.writeFileSync(path.join(evidence,'latest-geometry.json'),JSON.stringify({width,media,font,geometry},null,2));
    geometry.markers.forEach(n=>{assert.ok(Math.abs(n.width-n.font)<.05,JSON.stringify(n));assert.ok(Math.abs(n.glyphWidth-n.width)<.1,JSON.stringify(n));assert.ok(Math.abs(n.glyphHeight-n.naturalHeight)<.05,'Fitting never shrinks glyph height');assert.equal(n.selected,n.text,'Selection preserves original text');});
+   for(let i=0;i<markers.length;i+=2){
+    const ascii=geometry.markers[i],wide=geometry.markers[i+1];
+    assert.ok(wide.labelWidth>=ascii.labelWidth*.75,'Fullwidth sidebearings must not squeeze the label: '+JSON.stringify({ascii,wide}));
+   }
    assert.ok(Math.abs(geometry.baseline.actual-geometry.baseline.expected)<.1,'Fitted text keeps the normal alphabetic baseline');
    if(media==='screen')assert.equal(geometry.overflow,false);
    reports.push({width,media,font,geometry});
@@ -60,6 +64,15 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
      const file=path.join(evidence,`after-${width}.pdf`);await page.pdf({path:file,format:'A4',printBackground:true});const extracted=execFileSync('pdftotext',['-layout',file,'-'],{encoding:'utf8'}).replace(/\s/g,'');for(const token of ['(A)','(a)','(あ)','(ア)','（A）','（ア）'])assert.ok(extracted.includes(token),'PDF retains '+token);
     }}
   }
+  // Same-advance font replacement still requires recomputing glyph ink bounds.
+  const fontRefit=await page.evaluate(()=>{
+   const marker=[...document.querySelectorAll('#labels .marker-parentheses-fit')].find(n=>n.textContent==='（A）');
+   const bracket=marker.querySelector('.marker-fit-open'),before=bracket.style.getPropertyValue('--marker-outside-trim');
+   bracket.style.setProperty('--marker-outside-trim','0px');
+   document.fonts.dispatchEvent(new Event('loadingdone'));
+   return {before,after:bracket.style.getPropertyValue('--marker-outside-trim')};
+  });
+  assert.equal(fontRefit.after,fontRefit.before);
   // Refit existing elements after font changes and hidden-to-visible transitions.
   await page.emulateMedia({media:'screen'});
   for(const style of ['font-family:monospace;font-size:25px','font-family:serif;font-size:13px']){

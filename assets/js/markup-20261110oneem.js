@@ -52,8 +52,8 @@
     if (m[2].length === 1) {
       // Keep real HTML text for selection, accessibility and PDF extraction.
       // The component fits its intrinsic text width after the actual fonts load.
-      return '<exam-marker-fit class="marker-parentheses marker-parentheses-fit"><span class="marker-fit-inner">' + esc(m[1]) +
-        '<span class="marker-label">' + esc(m[2]) + '</span>' + esc(m[3]) + '</span></exam-marker-fit>';
+      return '<exam-marker-fit class="marker-parentheses marker-parentheses-fit"><span class="marker-fit-inner"><span class="marker-fit-open">' + esc(m[1]) +
+        '</span><span class="marker-label">' + esc(m[2]) + '</span><span class="marker-fit-close">' + esc(m[3]) + '</span></span></exam-marker-fit>';
     }
     return '<span class="marker-parentheses">' + esc(m[1]) +
       '<span class="marker-label">' + esc(m[2]) + '</span>' + esc(m[3]) + '</span>';
@@ -933,10 +933,36 @@
   }
 
   function setImageBase(b) { imageBase = String(b || ""); }
+  var markerMeasureContexts = new WeakMap();
   function fitMarker(label) {
     var inner = label.firstElementChild;
     if (!inner) return;
     var view = label.ownerDocument.defaultView;
+    // Fullwidth parentheses have large outside sidebearings. Remove only that
+    // invisible space before fitting, so it cannot squeeze the central label.
+    // Keep the real characters in the DOM for selection and PDF extraction.
+    ["open", "close"].forEach(function (side) {
+      var bracket = inner.querySelector(".marker-fit-" + side);
+      if (!bracket) return;
+      var trim = 0;
+      if (/[（）]/.test(bracket.textContent)) {
+        var style = view.getComputedStyle(bracket);
+        var context = markerMeasureContexts.get(label.ownerDocument);
+        if (!context) {
+          context = label.ownerDocument.createElement("canvas").getContext("2d");
+          if (context) markerMeasureContexts.set(label.ownerDocument, context);
+        }
+        if (context) {
+          context.font = style.fontStyle + " " + style.fontWeight + " " + style.fontSize + " " + style.fontFamily;
+          var metrics = context.measureText(bracket.textContent);
+          if (metrics.actualBoundingBoxRight > 0 && metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight > 0) {
+            trim = side === "open" ? -metrics.actualBoundingBoxLeft : metrics.width - metrics.actualBoundingBoxRight;
+            trim = Math.max(0, Math.min(trim, metrics.width * .75));
+          }
+        }
+      }
+      bracket.style.setProperty("--marker-outside-trim", trim + "px");
+    });
     var width = parseFloat(view.getComputedStyle(label).width);
     var natural = parseFloat(view.getComputedStyle(inner).width);
     if (width > 0 && natural > 0) inner.style.setProperty("--marker-fit-scale", String(width / natural));
@@ -975,6 +1001,11 @@
     global.addEventListener("beforeprint", function () {
       fitMarkerLabels(global.document);
     });
+    // Ink bounds can change even when a newly loaded font has the same advance.
+    if (global.document.fonts) {
+      global.document.fonts.ready.then(function () { fitMarkerLabels(global.document); });
+      global.document.fonts.addEventListener("loadingdone", function () { fitMarkerLabels(global.document); });
+    }
   }
   global.Markup = {
     render: render, strip: strip, escape: esc, parseSections: parseSections,
