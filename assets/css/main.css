@@ -1470,6 +1470,6 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
    Only horizontal scale changes; fonts, glyph height and baseline are retained.
    Two-character round labels and numeric angle labels retain their wider cells. */
 .exam-doc .marker-parentheses-fit { width: 1em; text-decoration: none; }
-.exam-doc .marker-fit-inner { font-feature-settings: "palt"; display: inline-block; width: max-content; white-space: nowrap; transform: scaleX(var(--marker-fit-scale, .5)); transform-origin: left center; text-decoration: var(--marker-decoration, none); text-underline-offset: var(--marker-offset, auto); }
+.exam-doc .marker-fit-inner { font-variant-east-asian: proportional-width; font-feature-settings: "palt"; display: inline-block; width: max-content; white-space: nowrap; transform: scaleX(var(--marker-fit-scale, .5)); transform-origin: left center; text-decoration: var(--marker-decoration, none); text-underline-offset: var(--marker-offset, auto); }
 .exam-doc .marker-parentheses-fit .marker-label { display: inline; min-width: 0; text-decoration: none; }
 /* exam-shared:markers:end */
