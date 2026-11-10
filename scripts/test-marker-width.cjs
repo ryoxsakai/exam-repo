@@ -87,6 +87,7 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
    assert.equal(result.count,12);assert.equal(result.ref,'line 5');assert.equal(result.inside,0);assert.deepEqual(result.markers,['(A)','(ア)']);assert.deepEqual(result.numbers.map(n=>n.text),['5','10']);result.numbers.forEach(n=>{assert.ok(n.width>0);assert.ok(n.left<n.bodyLeft);assert.equal(n.parent,'blk');});
   }
   await page.pdf({path:path.join(evidence,`line-labels-${width}.pdf`),format:'A4',printBackground:true});
+  await page.emulateMedia({media:'screen'});
   // Booklet pages are reparsed in an iframe with no custom-element registry.
   // Simulate a different resolved print font at the final pagination stage.
   await page.route('https://marker-fit.test/fixture.css',r=>r.fulfill({contentType:'text/css',body:css}));
