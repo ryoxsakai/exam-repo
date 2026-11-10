@@ -17,6 +17,7 @@ on:
       - 'scripts/test-fullwidth-choices.cjs'
       - 'scripts/test-glossary-lemma.cjs'
       - 'scripts/test-glossary-table-boundary.cjs'
+      - 'scripts/test-annotation-placement.cjs'
       - 'scripts/test-marker-width.cjs'
       - 'scripts/test-parentheses-labels.cjs'
       - 'scripts/test-angle-markers.cjs'
@@ -47,6 +48,7 @@ jobs:
       - run: node scripts/test-fullwidth-choices.cjs --browser
       - run: node scripts/test-glossary-lemma.cjs
       - run: node scripts/test-glossary-table-boundary.cjs --browser
+      - run: node scripts/test-annotation-placement.cjs --browser
       - run: node scripts/test-marker-decoration-panel.cjs
       - run: NODE_PATH=./panel/node_modules node scripts/test-exam-panel.cjs --browser
       - run: node scripts/test-markup-double.cjs --browser
@@ -70,6 +72,7 @@ jobs:
             /tmp/exam-marker-width/
             /tmp/exam-marker-decoration-panel/
             /tmp/exam-glossary-table-boundary/
+            /tmp/exam-annotation-placement/
             /tmp/exam-double-*
             /tmp/exam-dash-*
             /tmp/exam-angles-*

@@ -2168,6 +2168,11 @@
   var LABEL_HIDABLE = ["問題", "本文", "設問"];
 
   function renderOptimizedAnswers(text, options) {
+    // Named notes share one render scope, and free notes may contain literal
+    // question-looking lines. Splitting either into answer cards changes meaning.
+    if (/##[A-Za-z0-9_-]{1,64}@[^:#]+::|^[ \t]*##->|^[ \t]*:::注釈[ \t]*\r?$/m.test(String(text || ""))) {
+      return Markup.render(text, options).html;
+    }
     var lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
     var entries = [], preamble = [], current = null;
     var labelPattern = "((?:問)?[0-9０-９]+(?:[-－.．][0-9０-９]+|[A-Za-z])?|[A-Za-z]|[IVXivx]+)";
@@ -2232,13 +2237,26 @@
     return html + (groupOpen ? "</div>" : "");
   }
 
+  // Literal source notes must not be rewritten by display-only conveniences.
+  function mapOutsideFreeNotes(text, transform) {
+    var source = String(text || ""), result = "", last = 0, match;
+    var notes = /^[ \t]*:::注釈[ \t]*\r?\n[\s\S]*?^[ \t]*:::[ \t]*(?=\r?$)/gm;
+    while ((match = notes.exec(source))) {
+      result += transform(source.slice(last, match.index)) + match[0];
+      last = notes.lastIndex;
+    }
+    return result + transform(source.slice(last));
+  }
+
   // Shared display-only transformations for the viewer and optional print settings.
   function renderDisplayContent(label, text, opts, dialogueSource) {
     if (opts && opts.optimizeChoices && ["問題", "設問"].indexOf(label) >= 0) {
-      text = text.split("\n").map(function (line) {
-        if (!/^\s*[（(]{2}[^()（）]+[）)]{2}\s+\S/.test(line)) return line;
-        return line.replace(/([^\s])([ \t　]+)(?=[（(]{2}[^()（）]+[）)]{2}\s+\S)/g, "$1\n");
-      }).join("\n");
+      text = mapOutsideFreeNotes(text, function (part) {
+        return part.split("\n").map(function (line) {
+          if (!/^\s*[（(]{2}[^()（）]+[）)]{2}\s+\S/.test(line)) return line;
+          return line.replace(/([^\s])([ \t　]+)(?=[（(]{2}[^()（）]+[）)]{2}\s+\S)/g, "$1\n");
+        }).join("\n");
+      });
     }
     var rendered = opts && opts.optimizeAnswers && label === "解答"
       ? renderOptimizedAnswers(text, markupOpts(label, dialogueSource))
@@ -2259,10 +2277,12 @@
     var lineNum = opts && opts.lineNumbers && label === "本文";
     var refs = [];
     if (opts && opts.lineReferences && label === "設問") {
-      text = text.replace(/(["“”‘’])([^"“”‘’\n]+)(["“”‘’])(\s+(?:in|on)\s+)(lines?)(\s+)(\d+(?:\s*(?:[\/–—-]|to|and)\s*\d+)?)/gi, function (_, quote, phrase, closeQuote, prep, line, space, number) {
-        var token = "EXAMLINEREF" + refs.length + "TOKEN";
-        refs.push({ token: token, phrase: phrase, original: line + space + number });
-        return quote + phrase + closeQuote + prep + token;
+      text = mapOutsideFreeNotes(text, function (part) {
+        return part.replace(/(["“”‘’])([^"“”‘’\n]+)(["“”‘’])(\s+(?:in|on)\s+)(lines?)(\s+)(\d+(?:\s*(?:[\/–—-]|to|and)\s*\d+)?)/gi, function (_, quote, phrase, closeQuote, prep, line, space, number) {
+          var token = "EXAMLINEREF" + refs.length + "TOKEN";
+          refs.push({ token: token, phrase: phrase, original: line + space + number });
+          return quote + phrase + closeQuote + prep + token;
+        });
       });
     }
     var rendered = renderDisplayContent(label, text, opts, dialogueSource);
@@ -2335,7 +2355,7 @@
     var namedCount = 0, questionCount = 0, blankCount = 0;
     function protectedText(text, transform) {
       var saved = [];
-      var safe = String(text || "").replace(/(?<!\{)(?:\{\{\{\{[^{}\n]+\}\}\}\}|\{\{\{[^{}\n]+\}\}\})(?!})|!\[[^\]]*\]\([^\n]*?\)|https?:\/\/[^\s<>]+|##[\s\S]*?##|!!!![\s\S]*?!!!!|`[^`\n]*`/g, function (m) {
+      var safe = String(text || "").replace(/^[ \t]*:::注釈[ \t]*\r?\n[\s\S]*?^[ \t]*:::[ \t]*(?=\r?$)|(?<!\{)(?:\{\{\{\{[^{}\n]+\}\}\}\}|\{\{\{[^{}\n]+\}\}\})(?!})|!\[[^\]]*\]\([^\n]*?\)|https?:\/\/[^\s<>]+|##[\s\S]*?##|!!!![\s\S]*?!!!!|`[^`\n]*`/gm, function (m) {
         saved.push(m); return "\u0001" + (saved.length - 1) + "\u0002";
       });
       return transform(safe).replace(/\u0001(\d+)\u0002/g, function (_, i) { return saved[Number(i)]; });

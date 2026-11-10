@@ -27,6 +27,33 @@
       .replace(/"/g, "&quot;");
   }
 
+  // Scan whichever literal construct starts first. A free note is atomic, so
+  // unmatched code/HTML inside its body cannot hide its closing delimiter.
+  var FREE_NOTE = /^[ \t]*:::注釈[ \t]*\r?\n[\s\S]*?^[ \t]*:::[ \t]*(?=\r?$)/gm;
+  var LITERAL_SOURCE = /^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[ \t]*$|(?![\s\S]))|<!--(?:[\s\S]*?-->|[\s\S]*$)|<(?:code|pre)\b(?:[^>"']|"[^"]*"|'[^']*')*>[\s\S]*?<\/(?:code|pre)>|<\/?[A-Za-z](?:[^>"']|"[^"]*"|'[^']*')*>|(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\2(?!`)|\\--/gmi;
+  function literalPattern(withNotes) {
+    return new RegExp((withNotes ? FREE_NOTE.source + "|" : "") + LITERAL_SOURCE.source, "gmi");
+  }
+  function isFreeNote(source) { return /^[ \t]*:::注釈[ \t]*\r?\n/.test(source); }
+  function maskedNotation(source) {
+    // Preserve source offsets and line endings without making an adjacent label
+    // or note call standalone when its literal prefix/suffix is hidden.
+    return source.replace(literalPattern(true), function (literal) { return literal.replace(/[^\r\n]/g, "\uFFFC"); });
+  }
+  function withoutAnnotationText(source) {
+    var ranges = [], pattern = literalPattern(true), match;
+    while ((match = pattern.exec(source))) {
+      if (isFreeNote(match[0])) ranges.push({ start: match.index, end: pattern.lastIndex });
+    }
+    var scan = maskedNotation(source);
+    var call = /^[ \t]*##->[A-Za-z0-9_-]{1,64}(?:[ \t]*,[ \t]*[A-Za-z0-9_-]{1,64})*##[ \t]*(?=\r?$)/gm;
+    while ((match = call.exec(scan))) ranges.push({ start: match.index, end: call.lastIndex });
+    ranges.sort(function (a, b) { return b.start - a.start; }).forEach(function (range) {
+      source = source.slice(0, range.start) + source.slice(range.start, range.end).replace(/[^\r\n]/g, " ") + source.slice(range.end);
+    });
+    return source;
+  }
+
   // Braces encode hierarchy, not the numbering convention inside the label.
   // Match a complete balanced token before the legacy double-brace form.
   function questionTag(text) {
@@ -225,7 +252,7 @@
       if (footnotes.literalPrefix && rem.indexOf(footnotes.literalPrefix) === 0) {
         var literalEnd = rem.indexOf("\uE001", footnotes.literalPrefix.length);
         var literalIndex = Number(rem.slice(footnotes.literalPrefix.length, literalEnd));
-        out += esc(footnotes.literals[literalIndex]);
+        out += footnotes.lineBreaks[literalIndex] ? "<br>" : esc(footnotes.literals[literalIndex]);
         rem = rem.slice(literalEnd + 1); continue;
       }
       if ((m = rem.match(/^(?:https?:\/\/|ftp:\/\/|mailto:|www\.)[^\s<>"`]+/i))) {
@@ -295,11 +322,28 @@
       // 語中の ^ は「本文では除去（大小はそのまま）、注では ^ の直前の文字を小文字化」する
       // マーカー。例: ##M^isdiagnosis::誤診## → 本文「Misdiagnosis」/ 注「misdiagnosis」
       if ((m = rem.match(/^##([^:#]+)::([^#]+)##/))) {
-        var idx = footnotes.length + 1;
-        var parts = m[1].split("|");
+        var named = m[1].match(/^([A-Za-z0-9_-]{1,64})@(.+)$/);
+        var name = named ? named[1] : "";
+        var parts = (named ? named[2] : m[1]).split("|");
         var dispWord = parts[0].replace(/\^/g, "");
         var footWord = (parts.length === 2 && parts[1] ? parts[1] : parts[0]).replace(/(.)\^/g, function (_, ch) { return ch.toLowerCase(); }).replace(/\^/g, "");
-        footnotes.push({ index: idx, word: footWord, translation: m[2] });
+        var previous = name && footnotes.namedNotes[name];
+        function originalLiteral(value) {
+          footnotes.literals.forEach(function (literal, index) {
+            value = value.split(footnotes.literalPrefix + index + "\uE001").join(literal);
+          });
+          return value;
+        }
+        if (previous && (originalLiteral(previous.word) !== originalLiteral(footWord) || originalLiteral(previous.translation) !== originalLiteral(m[2]))) {
+          footnotes.warnings.push({ code: "duplicate_note_id", id: name });
+          out += esc(m[0]); rem = rem.slice(m[0].length); continue;
+        }
+        var idx = previous ? previous.index : footnotes.length + 1;
+        if (!previous) {
+          var note = { index: idx, word: footWord, translation: m[2] };
+          footnotes.push(note);
+          if (name) footnotes.namedNotes[name] = note;
+        }
         out += '<span title="' + esc(footWord + ": " + m[2]) + '">' + esc(dispWord) +
                '<sup class="footnote-number">*' + idx + "</sup></span>";
         rem = rem.slice(m[0].length); continue;
@@ -605,6 +649,8 @@
   function render(text, opts) {
     var paraNum = opts && opts.paraNum;
     var footnotes = [];
+    footnotes.namedNotes = Object.create(null);
+    footnotes.warnings = [];
     var source = String(text == null ? "" : text);
     // 発音問題の単語は t__oe__ のように語末まで下線が続く。
     // 通常の裸小文字ラベルと区別するため、明示オプションか原本の指示文で判定する。
@@ -612,6 +658,8 @@
     footnotes.literalPrefix = "\uE000";
     while (source.indexOf(footnotes.literalPrefix) >= 0) footnotes.literalPrefix += "\uE000";
     footnotes.literals = [];
+    footnotes.lineBreaks = {};
+    footnotes.freeNotes = {};
     function protectLiteral(literal) {
       footnotes.literals.forEach(function (previous, index) {
         literal = literal.split(footnotes.literalPrefix + index + "\uE001").join(previous);
@@ -620,32 +668,42 @@
     }
     // Link destinations can contain balanced/escaped parentheses. Mask complete
     // links before tokenizing HTML/code so nested literals cannot leak tokens.
+    function protectLinks(input) {
     var linkStart = /(?<!!)\[[^\]\n]*\]\(/g, link, lastLink = 0, linked = "";
-    while ((link = linkStart.exec(source))) {
+    while ((link = linkStart.exec(input))) {
       var depth = 1, pos = link.index + link[0].length, quote = "", angle = false;
-      for (; pos < source.length && source[pos] !== "\n"; pos++) {
-        if (source[pos] === "\\") { pos++; continue; }
-        if (quote) { if (source[pos] === quote) quote = ""; continue; }
-        if (angle) { if (source[pos] === ">") angle = false; continue; }
-        if ((source[pos] === '"' || source[pos] === "'") && /\s/.test(source[pos - 1])) {
-          quote = source[pos]; continue;
+      for (; pos < input.length && input[pos] !== "\n"; pos++) {
+        if (input[pos] === "\\") { pos++; continue; }
+        if (quote) { if (input[pos] === quote) quote = ""; continue; }
+        if (angle) { if (input[pos] === ">") angle = false; continue; }
+        if ((input[pos] === '"' || input[pos] === "'") && /\s/.test(input[pos - 1])) {
+          quote = input[pos]; continue;
         }
-        if (source[pos] === "<" && (pos === link.index + link[0].length || /\s/.test(source[pos - 1]))) {
+        if (input[pos] === "<" && (pos === link.index + link[0].length || /\s/.test(input[pos - 1]))) {
           angle = true; continue;
         }
-        if (source[pos] === "(") depth++;
-        if (source[pos] === ")" && --depth === 0) break;
+        if (input[pos] === "(") depth++;
+        if (input[pos] === ")" && --depth === 0) break;
       }
       if (depth !== 0) continue;
-      linked += source.slice(lastLink, link.index) + protectLiteral(source.slice(link.index, pos + 1));
+      linked += input.slice(lastLink, link.index) + protectLiteral(input.slice(link.index, pos + 1));
       lastLink = pos + 1;
       linkStart.lastIndex = lastLink;
     }
-    source = linked + source.slice(lastLink);
+    return linked + input.slice(lastLink);
+    }
+    source = protectLinks(source);
     // Preserve comments, HTML, fenced/inline code and escaped hyphens verbatim.
     // Quoted attributes may contain > without terminating an HTML tag.
     // Tokens are local to this render; saved source and strip() remain unchanged.
-    source = source.replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[ \t]*$|(?![\s\S]))|<!--(?:[\s\S]*?-->|[\s\S]*$)|<(?:code|pre)\b(?:[^>"']|"[^"]*"|'[^']*')*>[\s\S]*?<\/(?:code|pre)>|<\/?[A-Za-z](?:[^>"']|"[^"]*"|'[^']*')*>|(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\2(?!`)|\\--/gmi, protectLiteral);
+    function protectSourceLiteral(literal) {
+      if (/^<br[ \t]*\/?>$/i.test(literal)) footnotes.lineBreaks[footnotes.literals.length] = true;
+      return protectLiteral(literal);
+    }
+    source = source.replace(literalPattern(true), function (literal) {
+      if (isFreeNote(literal)) footnotes.freeNotes[footnotes.literals.length] = true;
+      return protectSourceLiteral(literal);
+    });
     var lines = source.split("\n");
     var interviewAliases = interviewSpeakers(lines);
     var translationLabels = opts && opts.zenyaku ? sourceDialogueLabels(opts.dialogueSource) : {};
@@ -654,6 +712,30 @@
       while (questionGroups.length && questionGroups[questionGroups.length - 1] >= level) {
         html += "</div>"; questionGroups.pop();
       }
+    }
+    var placements = [];
+    function noteList(notes) {
+      if (!notes.length) return "";
+      var result = '<div class="footnote-section"><ol>';
+      notes.forEach(function (fn) {
+        result += '<li><span class="footnote-number">*' + fn.index + "</span><span><strong>" +
+                  esc(fn.word) + "</strong>: " + esc(fn.translation) + "</span></li>";
+      });
+      return result + "</ol></div>";
+    }
+    function freeNote(body) {
+      body = protectLinks(body).replace(literalPattern(false), protectSourceLiteral);
+      // This block is deliberately literal: original asterisks, labels and
+      // note text must not become bold, questions, glossary or section markup.
+      var result = "", last = 0;
+      var tokens = new RegExp(footnotes.literalPrefix + "(\\d+)\\uE001", "g"), token;
+      function plain(s) { return esc(s).replace(/\r?\n/g, "<br>"); }
+      while ((token = tokens.exec(body))) {
+        result += plain(body.slice(last, token.index));
+        result += footnotes.lineBreaks[+token[1]] ? "<br>" : plain(footnotes.literals[+token[1]]);
+        last = token.index + token[0].length;
+      }
+      return '<div class="footnote-section free-note" role="note">' + result + plain(body.slice(last)) + "</div>";
     }
     var paraStart = true; // 段落先頭か（空行・見出し・選択肢・区切りの直後）
 
@@ -674,6 +756,22 @@
         html += '<span class="blk blank-line">' +
           (paragraphBlank[1] ? '<span class="para-badge">' + esc(paragraphBlank[1]) + '</span>' : '') +
           '<span class="blank-badge blank-badge-line">' + blankLabelHtml(paragraphBlank[2]) + '</span></span>';
+        paraStart = true;
+        continue;
+      }
+
+      var placement = trimmed.match(/^##->([A-Za-z0-9_-]{1,64}(?:[ \t]*,[ \t]*[A-Za-z0-9_-]{1,64})*)##$/);
+      if (placement) {
+        var placementToken = footnotes.literalPrefix + "note:" + placements.length + "\uE001";
+        placements.push({ token: placementToken, ids: placement[1].split(/[ \t]*,[ \t]*/), source: line });
+        html += placementToken;
+        paraStart = true;
+        continue;
+      }
+      var freeToken = trimmed.match(new RegExp("^" + footnotes.literalPrefix + "(\\d+)\\uE001$"));
+      if (freeToken && footnotes.freeNotes[+freeToken[1]]) {
+        var noteBody = footnotes.literals[+freeToken[1]].replace(/^[ \t]*:::注釈[ \t]*\r?\n/, "").replace(/(?:\r?\n)?[ \t]*:::[ \t]*$/, "");
+        if (noteBody.trim()) html += freeNote(noteBody);
         paraStart = true;
         continue;
       }
@@ -828,14 +926,31 @@
     }
 
     closeQuestionGroups(1);
-    if (footnotes.length) {
-      html += '<div class="footnote-section"><ol>';
-      footnotes.forEach(function (fn) {
-        html += '<li><span class="footnote-number">*' + fn.index + "</span><span><strong>" +
-                esc(fn.word) + "</strong>: " + esc(fn.translation) + "</span></li>";
-      });
-      html += "</ol></div>";
-    }
+    // Resolve after parsing so a same-section reference may precede its
+    // definition. A failed group stays visible and does not consume any notes.
+    var calledNotes = {};
+    placements.forEach(function (placement) {
+      var missing = placement.ids.filter(function (id) { return !footnotes.namedNotes[id]; });
+      var replacement;
+      if (missing.length) {
+        missing.forEach(function (id) { footnotes.warnings.push({ code: "undefined_note_id", id: id }); });
+        replacement = '<span class="blk">' + esc(placement.source) + '</span>';
+      } else {
+        var seen = Object.create(null);
+        var notes = placement.ids.filter(function (id) {
+          if (seen[id]) return false;
+          seen[id] = true;
+          return true;
+        }).map(function (id) {
+          var note = footnotes.namedNotes[id];
+          calledNotes[note.index] = true;
+          return note;
+        });
+        replacement = noteList(notes);
+      }
+      html = html.split(placement.token).join(replacement);
+    });
+    html += noteList(footnotes.filter(function (note) { return !calledNotes[note.index]; }));
     // Some notation payloads (image captions, badge labels, note attributes) are
     // escaped directly rather than passed through inline(). Restore those too.
     footnotes.literals.forEach(function (literal, index) {
@@ -848,16 +963,21 @@
     });
     delete footnotes.literalPrefix;
     delete footnotes.literals;
-    return { html: html, footnotes: footnotes };
+    delete footnotes.lineBreaks;
+    delete footnotes.freeNotes;
+    var warnings = footnotes.warnings;
+    delete footnotes.warnings;
+    delete footnotes.namedNotes;
+    return { html: html, footnotes: footnotes, warnings: warnings };
   }
 
   // 英文抽出用: 記法を取り除いてプレーン英文テキストにする（コーパス分析の前処理）
   function strip(text) {
-    var t = String(text == null ? "" : text);
+    var t = withoutAnnotationText(String(text == null ? "" : text));
     t = t.replace(/(?<!\{)(?:\{\{\{\{[^{}\n]*\}\}\}\}|\{\{\{[^{}\n]*\}\}\}|\{\{[^{}\n]*\}\})(?!})/g, " ");           // 問見出し
     t = t.replace(/\[\[[^\]]*\]\]/g, " ");          // 空所
     t = t.replace(/^\s*\[[^\[\]]+\]\s?/gm, "");     // 段落番号 [1]（行頭・単角括弧）
-    t = t.replace(/##([^:#]+)::[^#]+##/g, function (_, w) { return w.split("|")[0].replace(/\^/g, ""); }); // 本文の語のみ残す
+    t = t.replace(/##([^:#]+)::[^#]+##/g, function (_, w) { return w.replace(/^[A-Za-z0-9_-]{1,64}@(?=.)/, "").split("|")[0].replace(/\^/g, ""); }); // 本文の語のみ残す
     t = t.replace(/!\[[^\]]*\]\([^)\s]+\)(?:\{[^}\n]*\})?/g, " "); // 画像と表示オプション → 除去
     t = t.replace(/!!!!([\s\S]+?)!!!!/g, " ");      // 出典 → 除去
     t = t.replace(/\|\|\|\|([\s\S]+?)\|\|\|\|/g, "$1"); // 斜字 → テキスト残す
@@ -884,9 +1004,10 @@
   function parseSections(text) {
     var sections = [];
     var lines = (text || "").split("\n");
+    var structural = maskedNotation(text || "").split("\n");
     var curType = "問題", curLines = [];
     for (var i = 0; i < lines.length; i++) {
-      var m = lines[i].trim().match(/^\{\{([^0-9A-Za-z{}]+)\}\}$/);
+      var m = structural[i].trim().match(/^\{\{([^0-9A-Za-z{}]+)\}\}$/);
       if (m) {
         var t = curLines.join("\n").trim();
         if (t) sections.push({ type: curType, text: t });
@@ -915,8 +1036,15 @@
       }
       if (pendingLead.length) {
         var leadBlock = pendingLead.map(function (block) {
-          return block.split("\n").map(function (line) {
+          var blockLines = block.split("\n"), freeUntil = -1;
+          return blockLines.map(function (line, index) {
             var l = line.trim();
+            if (l === ":::注釈") {
+              for (var end = index + 1; end < blockLines.length; end++) {
+                if (blockLines[end].trim() === ":::") { freeUntil = end; break; }
+              }
+            }
+            if (index <= freeUntil || /^##->[A-Za-z0-9_-]{1,64}(?:[ \t]*,[ \t]*[A-Za-z0-9_-]{1,64})*##$/.test(l)) return line;
             return l ? "@@**" + l + "**" : "";
           }).join("\n");
         }).join("\n\n");

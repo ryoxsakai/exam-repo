@@ -1,0 +1,1157 @@
+/* =====================================================================
+   markup.js — 入試問題記法 → HTML
+   既存 parser.tsx と同じ記法を踏襲:
+     {{問N}}        … 大問見出しバッジ
+     [[N]] [[A]]    … 空所バッジ
+     [[-- --]] [[--A--]] … 3倍幅の空欄（ダッシュで囲む。中身はラベル表示・空白保持）
+     [[=A=]]       … 単独行なら本文幅いっぱいの段落空所。行中は通常幅の参照
+     ##語::訳##     … 脚注（語注）。語中の ^ は注のみ直前文字を小文字化（M^isdiagnosis → 本文Misdiagnosis/注misdiagnosis）
+     ==語==         … 二重下線
+     ::語:: :色     … ハイライト（色: yellow/blue/red/purple/pink/green/aqua）。旧 ==語==:色 も互換表示
+     __語__         … 下線
+     ~~語~~         … 波線（直前の (1) / ((1)) は下付き）
+     **語**         … 太字
+     ^^x^^          … 上付き
+     ((A)) 本文      … 選択肢（行頭）
+     !!!!出典!!!!    … 出典表記（右寄せ・グレー・小）
+     ||||斜字||||    … 斜字（イタリック）
+     ----           … 区切り線
+     [1] [2]（行頭） … 段落先頭に置く段落番号バッジ（全セクションで有効。字下げは opts.paraNum=true のみ）
+   ===================================================================== */
+(function (global) {
+  "use strict";
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // Scan whichever literal construct starts first. A free note is atomic, so
+  // unmatched code/HTML inside its body cannot hide its closing delimiter.
+  var FREE_NOTE = /^[ \t]*:::注釈[ \t]*\r?\n[\s\S]*?^[ \t]*:::[ \t]*(?=\r?$)/gm;
+  var LITERAL_SOURCE = /^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[ \t]*$|(?![\s\S]))|<!--(?:[\s\S]*?-->|[\s\S]*$)|<(?:code|pre)\b(?:[^>"']|"[^"]*"|'[^']*')*>[\s\S]*?<\/(?:code|pre)>|<\/?[A-Za-z](?:[^>"']|"[^"]*"|'[^']*')*>|(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\2(?!`)|\\--/gmi;
+  function literalPattern(withNotes) {
+    return new RegExp((withNotes ? FREE_NOTE.source + "|" : "") + LITERAL_SOURCE.source, "gmi");
+  }
+  function isFreeNote(source) { return /^[ \t]*:::注釈[ \t]*\r?\n/.test(source); }
+  function maskedNotation(source) {
+    // Preserve source offsets and line endings without making an adjacent label
+    // or note call standalone when its literal prefix/suffix is hidden.
+    return source.replace(literalPattern(true), function (literal) { return literal.replace(/[^\r\n]/g, "\uFFFC"); });
+  }
+  function withoutAnnotationText(source) {
+    var ranges = [], pattern = literalPattern(true), match;
+    while ((match = pattern.exec(source))) {
+      if (isFreeNote(match[0])) ranges.push({ start: match.index, end: pattern.lastIndex });
+    }
+    var scan = maskedNotation(source);
+    var call = /^[ \t]*##->[A-Za-z0-9_-]{1,64}(?:[ \t]*,[ \t]*[A-Za-z0-9_-]{1,64})*##[ \t]*(?=\r?$)/gm;
+    while ((match = call.exec(scan))) ranges.push({ start: match.index, end: call.lastIndex });
+    ranges.sort(function (a, b) { return b.start - a.start; }).forEach(function (range) {
+      source = source.slice(0, range.start) + source.slice(range.start, range.end).replace(/[^\r\n]/g, " ") + source.slice(range.end);
+    });
+    return source;
+  }
+
+  // Braces encode hierarchy, not the numbering convention inside the label.
+  // Match a complete balanced token before the legacy double-brace form.
+  function questionTag(text) {
+    var match = String(text).match(/^(\{{2,4})([^{}\n]+)(\}{2,4})(?!})/);
+    if (!match || match[1].length !== match[3].length) return null;
+    return { raw: match[0], label: match[2], level: match[1].length - 1 };
+  }
+  function questionLevelClass(level) { return level > 1 ? " question-level-" + level : ""; }
+  // Display only: retain source labels and numbering identities. Decimal/grouped
+  // numbers are ambiguous labels, so leave those complete sequences untouched.
+  function questionLabel(label) {
+    return String(label).replace(/[A-Za-z]/g, function (letter) {
+      return String.fromCharCode(letter.charCodeAt(0) + 0xFEE0);
+    }).replace(/[0-9０-９]+(?:[.．,，][0-9０-９]+)+|[0-9０-９]+/g, function (run) {
+      if (/[.．,，]/.test(run)) return run;
+      var digits = run.replace(/[０-９]/g, function (digit) {
+        return String.fromCharCode(digit.charCodeAt(0) - 0xFEE0);
+      });
+      return digits.length === 1 ? String.fromCharCode(digits.charCodeAt(0) + 0xFEE0) : digits;
+    });
+  }
+  function questionBadge(tag) {
+    return '<span class="question-badge' + questionLevelClass(tag.level) + '\">' + esc(questionLabel(tag.label)) + '</span>';
+  }
+
+  // Shared by underline markers, question numbers and references in every section.
+  function markerLabelHtml(marker) {
+    var angle = String(marker || "").match(/^(<<|<|〈|《)([0-9]{1,2})(>>|>|〉|》)$/);
+    if (angle && ({'<<': '>>', '<': '>', '〈': '〉', '《': '》'})[angle[1]] === angle[3]) {
+      return '<span class="marker-angle"><span class="marker-angle-glyph">' + esc(angle[1]) +
+        '</span><span class="marker-label">' + esc(angle[2]) +
+        '</span><span class="marker-angle-glyph">' + esc(angle[3]) + '</span></span>';
+    }
+    var m = String(marker || "").match(/^([（(])([A-Za-z0-9ぁ-ゖァ-ヺ]{1,2})([）)])$/);
+    if (!m) return esc(marker || "");
+    if (m[2].length === 1) {
+      // Keep real HTML text for selection, accessibility and PDF extraction.
+      // The component fits its intrinsic text width after the actual fonts load.
+      return '<exam-marker-fit class="marker-parentheses marker-parentheses-fit"><span class="marker-fit-inner"><span class="marker-fit-open">' + esc(m[1]) +
+        '</span><span class="marker-label">' + esc(m[2]) + '</span><span class="marker-fit-close">' + esc(m[3]) + '</span></span></exam-marker-fit>';
+    }
+    return '<span class="marker-parentheses">' + esc(m[1]) +
+      '<span class="marker-label">' + esc(m[2]) + '</span>' + esc(m[3]) + '</span>';
+  }
+
+  var VALID_COLORS = ["yellow", "blue", "red", "purple", "pink", "green", "aqua"];
+
+  // 選択肢ラベルの表示用丸囲み文字。データは常に ((1)) / ((a)) / ((ア)) の
+  // 記法を保持し、対応するUnicode文字がある場合だけ表示時に置き換える。
+  // 全角数字はラベル内だけ半角相当に解釈し、本文や通常の (1) は変換しない。
+  // ひらがな・51以上・拗音などはUnicodeにないため、従来のCSS丸枠へフォールバックする。
+  var CIRCLED_KATAKANA = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヰヱヲ";
+  function circledChoiceLabel(label) {
+    var s = String(label).replace(/[０-９]/g, function (digit) {
+      return String.fromCharCode(digit.charCodeAt(0) - 0xFEE0);
+    });
+    if (/^(?:[1-9]|[1-4]\d|50)$/.test(s)) {
+      var n = Number(s);
+      if (n <= 20) return String.fromCodePoint(0x2460 + n - 1); // ①〜⑳
+      if (n <= 35) return String.fromCodePoint(0x3251 + n - 21); // ㉑〜㉟
+      return String.fromCodePoint(0x32B1 + n - 36); // ㊱〜㊿
+    }
+    if (/^[a-z]$/.test(s)) return String.fromCodePoint(0x24D0 + s.charCodeAt(0) - 97); // ⓐ〜ⓩ
+    if (/^[A-Z]$/.test(s)) return String.fromCodePoint(0x24B6 + s.charCodeAt(0) - 65); // Ⓐ〜Ⓩ
+    var kanaIndex = CIRCLED_KATAKANA.indexOf(s);
+    return kanaIndex >= 0 ? String.fromCodePoint(0x32D0 + kanaIndex) : ""; // ㋐〜㋾
+  }
+  function choiceLabelHtml(label, baseClass) {
+    var unicode = circledChoiceLabel(label);
+    var classes = baseClass + (unicode ? " choice-label-unicode" : "") +
+      (!unicode && String(label).length >= 2 ? " choice-label-compact" : "");
+    return '<span class="' + classes + '"><span class="choice-label-text">' +
+      esc(unicode || label) + "</span></span>";
+  }
+
+  // Only an entire explicit ((choice)) label is interpreted inside a blank.
+  // Ordinary (e), prose and other markup stay literal; no recursive rendering.
+  function blankLabelHtml(label) {
+    var choice = String(label).match(/^[（(]{2}([^()（）]+)[）)]{2}$/);
+    return choice ? choiceLabelHtml(choice[1], "choice-inline") : esc(label);
+  }
+
+  // 画像URLの基準（Worker のベースURL）。![alt](/api/image/KEY) のような相対参照を解決する。
+  var imageBase = "";
+  function resolveImg(u) {
+    u = String(u || "").trim();
+    if (/^(https?:|data:)/i.test(u)) return u;           // 絶対URL・データURLはそのまま
+    var b = imageBase.replace(/\/+$/, "");
+    return b + (u.charAt(0) === "/" ? u : "/" + u);       // 相対は imageBase を前置
+  }
+
+
+  // Optional image attributes are stored verbatim with the image in the DB.
+  var IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)\s]+)\)(?:\{((?:size=(?:large|medium|small|full)|align=(?:left|right|center)|caption="(?:\\.|[^"\\\r\n])*")(?:\s+(?:size=(?:large|medium|small|full)|align=(?:left|right|center)|caption="(?:\\.|[^"\\\r\n])*"))*)\})?/;
+  var IMAGE_START_PATTERN = new RegExp("^" + IMAGE_PATTERN.source);
+  function imageAttributes(raw) {
+    var attrs = {}, token;
+    var re = /(size|align)=(\w+)|caption="((?:\\.|[^"\\\r\n])*)"/g;
+    while ((token = re.exec(raw || ""))) {
+      if (token[1]) attrs[token[1]] = token[2];
+      else attrs.caption = token[3].replace(/\\(["\\])/g, "$1");
+    }
+    return attrs;
+  }
+
+  // 「. 」の後を広げない略語（+ 単独の大文字イニシャル: J. K. Rowling など）
+  var ABBREV = /^(?:Mr|Mrs|Ms|Dr|Prof|St|Mt|Jr|Sr|vs|etc|No|Vol|Fig|cf|ca|pp|[A-Z])$/;
+
+  // out が「文末の . ? ! (+閉じ引用符等) + 半角スペース1つ」で終わっていて、続く文字が
+  // "(" や "[" （新しい区切りを示す開き括弧。(1) [1] など）なら、その末尾スペースを
+  // &nbsp;&nbsp; に広げる。"(" "[" は inline() 内で常にプレーンテキストの塊を区切る
+  // 文字のため、通常の1チャンク内正規表現では次のチャンクの先頭を先読みできない
+  // （例: "As follows. " と "(1) First point." が別チャンクに分かれる）。そのため
+  // チャンクをまたいで判定できるよう、次のチャンクへ進む直前にここで補う。
+  function maybeWidenTrailingSpace(out, nextCh) {
+    if (nextCh !== "(" && nextCh !== "[") return out;
+    var m = out.match(/([A-Za-z]*)([.?!])([”’"')\]）】」』]*) $/);
+    if (!m) return out;
+    if (m[2] === "." && !m[3] && ABBREV.test(m[1])) return out;
+    return out.slice(0, -1) + "&nbsp;&nbsp;";
+  }
+
+  // Sentence punctuation can be inside a formatting element (e.g. __Question?__).
+  // Preserve the element and widen the following space outside it.
+  function widenSpaceAfterFormattedSentence(out, rem) {
+    var end = out.match(/([A-Za-z]*)([.?!])([”’"')\]）】」』]*)(?:<\/(?:u|strong|em|span|mark)>)+([”’"')\]）】」』]*)$/);
+    var next = rem.match(/^[ \t]+(?=[A-Z“‘"'(\[])/);
+    if (!end || !next) return null;
+    if (end[2] === "." && !end[3] && !end[4] && ABBREV.test(end[1])) return null;
+    return next[0].length;
+  }
+
+  // ストレートクォート → スマートクォート変換
+  function smartQuotes(s) {
+    s = s.replace(/(^|[\s(\[{—])"/g, "$1“");  // opening "
+    s = s.replace(/"/g, "”");                       // closing "
+    s = s.replace(/(^|[\s(\[{—])'/g, "$1‘");  // opening '
+    s = s.replace(/'/g, "’");                       // closing ' / apostrophe
+    return s;
+  }
+
+  // Typography only: recognize common printed/OCR dash variants across style boundaries.
+  var DASH_GLYPHS = "\u002d\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u2e3a\u2e3b\ufe58\ufe63\uff0d";
+  var DASH_RUN = new RegExp("[ \t\u00a0\u2000-\u200a\u202f\u3000]*[" + DASH_GLYPHS + "]+(?:[ \t\u00a0\u2000-\u200a\u202f\u3000]+[" + DASH_GLYPHS + "]+)*[ \t\u00a0\u2000-\u200a\u202f\u3000]*", "g");
+  function dashContext(s) {
+    return s.replace(/(?:__|\*\*|~~|==|::|\^\^|!!!!)/g, "");
+  }
+  function dashPlainHtml(raw, before, after) {
+    var html = "", last = 0;
+    // Each recursive inline render has its own matcher; never share lastIndex.
+    var pattern = new RegExp(DASH_RUN.source, "g"), match;
+    while ((match = pattern.exec(raw))) {
+      var full = match[0], glyphs = full.replace(/[^\-‐‑‒–—―−⸺⸻﹘﹣－]/g, "");
+      var leftText = dashContext(before + raw.slice(0, match.index));
+      var rightText = dashContext(raw.slice(match.index + full.length) + after);
+      var left = leftText.match(/([\p{L}\p{N}_]+(?:[.’'][\p{L}\p{N}_]+)*)[.,;:!?。！？”’"')\]）】」』]*$/u);
+      var right = rightText.match(/^[“‘"'(\[（【「『]*([\p{L}\p{N}_]+(?:[.’'][\p{L}\p{N}_]+)*)/u);
+      var l = left ? left[1] : "", r = right ? right[1] : "";
+      var repeated = glyphs.length > 1;
+      var certain = /[—―⸺⸻﹘]/.test(glyphs);
+      var leftNumber = /\p{N}/u.test(l), rightNumber = /\p{N}/u.test(r);
+      var math = (leftNumber && rightNumber) || (!certain && (leftNumber || rightNumber)) || (!certain && !repeated && (
+        (/^[A-Za-zα-ωΑ-Ω]$/.test(l) && /^[A-Za-zα-ωΑ-Ω]$/.test(r)) ||
+        (/^[A-Za-zα-ωΑ-Ω]$/.test(l) && !/^[aAI]$/.test(l)) ||
+        (/^[A-Za-zα-ωΑ-Ω]$/.test(r) && !/^[aAI]$/.test(r)) ||
+        (/^[IVXLCDM]+$/.test(l) && /^[IVXLCDM]+$/.test(r))));
+      var strong = /[‒–—―−⸺⸻﹘﹣－]/.test(glyphs);
+      var spaced = /\s/.test(full);
+      // A lone hyphen is a compound joiner; spaces plus prose identify OCR punctuation.
+      var prose = !!l && !!r && !math;
+      var convert = !math && (strong || repeated || (spaced && prose));
+      // Keep standalone Markdown/decorative rules, negative signs and formulas.
+      if (!strong && !leftText.trim() && !rightText.trim() && glyphs.length >= 3) convert = false;
+      if (!strong && !repeated && (!l || !r)) convert = false;
+      html += esc(smartQuotes(raw.slice(last, match.index)));
+      html += convert ? ' <span class="em-dash">——</span> ' : esc(smartQuotes(full));
+      last = match.index + full.length;
+    }
+    return html + esc(smartQuotes(raw.slice(last)));
+  }
+
+  // インライン記法をHTMLへ。footnotes は配列で受け取り副作用で追加。
+  function inline(text, footnotes, leadLine) {
+    var out = "";
+    var rem = text;
+    while (rem.length > 0) {
+      var m;
+      var gap = widenSpaceAfterFormattedSentence(out, rem);
+      if (gap) {
+        out += "&nbsp;&nbsp;";
+        rem = rem.slice(gap);
+      }
+      out = maybeWidenTrailingSpace(out, rem[0]);
+
+      // Opaque source fragments never enter typography or the exam notation parser.
+      if (footnotes.literalPrefix && rem.indexOf(footnotes.literalPrefix) === 0) {
+        var literalEnd = rem.indexOf("\uE001", footnotes.literalPrefix.length);
+        var literalIndex = Number(rem.slice(footnotes.literalPrefix.length, literalEnd));
+        out += footnotes.lineBreaks[literalIndex] ? "<br>" : esc(footnotes.literals[literalIndex]);
+        rem = rem.slice(literalEnd + 1); continue;
+      }
+      if ((m = rem.match(/^(?:https?:\/\/|ftp:\/\/|mailto:|www\.)[^\s<>"`]+/i))) {
+        out += esc(m[0]); rem = rem.slice(m[0].length); continue;
+      }
+
+      // 括弧付き空所は1つのまとまりにし、前後の空白を均等なCSS余白へ置き換える。
+      // 行の両端揃えでも、空所と括弧の間だけが広がらないようにする。
+      if ((m = rem.match(/^([（(])[ \t\u3000]*(\[\[[^\]\r\n]*\]\])[ \t\u3000]*([）)])/))) {
+        out += '<span class="blank-parentheses">' + esc(m[1]) +
+               inline(m[2], footnotes, true) + esc(m[3]) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+
+      // [[N]] 空所
+      // 左右の間隔はどちらもスペース文字で確保（行頭・行末ではブラウザが
+      // スペースを消すため CSS マージンより自然に揃う）
+      if ((m = rem.match(/^\[\[([^\]]*)\]\]/))) {
+        // A sentence-insertion blank gets the same two-space gap on both sides.
+        var beforeBlank = out.replace(/<[^>]*>/g, "").replace(/(?:&nbsp;|[ \t\u3000])+$/, "");
+        var sentenceEnd = beforeBlank.match(/([A-Za-z]*)([.?!])([”’"')\]）】」』]*)$/);
+        var afterBlank = rem.slice(m[0].length).replace(/^[ \t\u3000]+/, "");
+        var sentenceBlank = !leadLine && sentenceEnd &&
+          !(sentenceEnd[2] === "." && !sentenceEnd[3] && ABBREV.test(sentenceEnd[1])) &&
+          afterBlank && !/^[\]）)」』】]/.test(afterBlank);
+        if (sentenceBlank) out = out.replace(/(?:&nbsp;|[ \t\u3000])+$/, "") + "&nbsp;&nbsp;";
+        else if (!leadLine && out && !/(?:[\s(\[{「『（【]|&nbsp;)$/.test(out)) out += " ";
+        // 先頭が -- のもの（[[--]] [[----]] [[-- --]] [[--A--]] 等）は3倍幅の空欄。
+        // 前後のダッシュのみ除いた中身をラベルとして表示する（空白は保持。
+        // [[-- --]]=半角スペース / [[--　--]]=全角スペース が中に入る）。
+        var paragraphLabel = m[1].match(/^=([^=\[\]\r\n]*)=$/);
+        if (paragraphLabel) {
+          // Inline references keep a compact badge; only a standalone source
+          // line becomes a full-width paragraph blank in render().
+          out += '<span class="blank-badge">' + blankLabelHtml(paragraphLabel[1]) + "</span>";
+        } else if (/^--/.test(m[1])) {
+          var label = m[1].replace(/^-+/, "").replace(/-+$/, "");
+          out += '<span class="blank-badge blank-badge-wide">' + blankLabelHtml(label) + "</span>";
+        } else {
+          out += '<span class="blank-badge">' + blankLabelHtml(m[1]) + "</span>";
+        }
+        rem = rem.slice(m[0].length);
+        // 括弧で囲んだ空所 ([[3]]) は閉じ括弧をバッジの直後へ寄せる。
+        if (sentenceBlank) {
+          out += "&nbsp;&nbsp;";
+          rem = rem.replace(/^[ \t\u3000]+/, "");
+        } else if (rem[0] === ")" || rem[0] === "）") {
+          out += '<span class="blank-close">' + rem[0] + "</span>";
+          rem = rem.slice(1);
+        } else if (!leadLine && rem.length && !/^[\s.,;:!?\]）」』】。、！？]/.test(rem)) out += " ";
+        continue;
+      }
+      // [N] 段落番号バッジ（行中。空所 [[ ]] とは別の単角括弧。[[ は上で処理済み）
+      // 中身が3文字以上のときはバッジ化せずリテラル [..] として出力
+      if ((m = rem.match(/^\[([^\[\]]+)\]/))) {
+        // [ ] は選択肢群を示す通常の角括弧として使うため、段落番号バッジにはしない。
+        // 選択肢群などの単一角括弧は記号そのものを残す。ただし中に ((a)) 等の
+        // インライン記法が含まれる場合は、角括弧内でも通常どおり表示変換する。
+        if (/^\s*$/.test(m[1]) || m[1].length >= 3) {
+          out += "[" + inline(m[1], footnotes, leadLine) + "]";
+          rem = rem.slice(m[0].length); continue;
+        }
+        out += '<span class="para-badge para-badge-inline">' + esc(m[1]) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ##本文|見出し語::訳## または従来の ##語::訳## 脚注
+      // 語中の ^ は「本文では除去（大小はそのまま）、注では ^ の直前の文字を小文字化」する
+      // マーカー。例: ##M^isdiagnosis::誤診## → 本文「Misdiagnosis」/ 注「misdiagnosis」
+      if ((m = rem.match(/^##([^:#]+)::([^#]+)##/))) {
+        var named = m[1].match(/^([A-Za-z0-9_-]{1,64})@(.+)$/);
+        var name = named ? named[1] : "";
+        var parts = (named ? named[2] : m[1]).split("|");
+        var dispWord = parts[0].replace(/\^/g, "");
+        var footWord = (parts.length === 2 && parts[1] ? parts[1] : parts[0]).replace(/(.)\^/g, function (_, ch) { return ch.toLowerCase(); }).replace(/\^/g, "");
+        var previous = name && footnotes.namedNotes[name];
+        function originalLiteral(value) {
+          footnotes.literals.forEach(function (literal, index) {
+            value = value.split(footnotes.literalPrefix + index + "\uE001").join(literal);
+          });
+          return value;
+        }
+        if (previous && (originalLiteral(previous.word) !== originalLiteral(footWord) || originalLiteral(previous.translation) !== originalLiteral(m[2]))) {
+          footnotes.warnings.push({ code: "duplicate_note_id", id: name });
+          out += esc(m[0]); rem = rem.slice(m[0].length); continue;
+        }
+        var idx = previous ? previous.index : footnotes.length + 1;
+        if (!previous) {
+          var note = { index: idx, word: footWord, translation: m[2] };
+          footnotes.push(note);
+          if (name) footnotes.namedNotes[name] = note;
+        }
+        out += '<span title="' + esc(footWord + ": " + m[2]) + '">' + esc(dispWord) +
+               '<sup class="footnote-number">*' + idx + "</sup></span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ![説明](URL){size=medium align=right caption="図1"}
+      if ((m = rem.match(IMAGE_START_PATTERN))) {
+        var attrs = imageAttributes(m[3]);
+        var img = '<img class="exam-img" src="' + esc(resolveImg(m[2])) + '" alt="' + esc(m[1]) +
+                  '"' + (m[1] ? ' title="' + esc(m[1]) + '"' : "") + ">";
+        if (m[3]) {
+          var size = attrs.size || (attrs.align === 'left' || attrs.align === 'right' ? 'medium' : 'auto');
+          out += '<span role="figure" class="exam-figure exam-figure-' + size + ' exam-figure-' +
+                 (attrs.align || 'center') + '">' + img +
+                 (attrs.caption ? '<span class="exam-caption">' + esc(attrs.caption) + '</span>' : '') + '</span>';
+        } else out += img;
+        rem = rem.slice(m[0].length); continue;
+      }
+      // !!!!出典!!!!（右寄せ・グレー・小）
+      if ((m = rem.match(/^!!!!([\s\S]+?)!!!!/))) {
+        out += '<span class="cite">' + inline(m[1], footnotes, leadLine) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ||||斜字||||
+      if ((m = rem.match(/^\|\|\|\|([\s\S]+?)\|\|\|\|/))) {
+        out += "<em>" + inline(m[1], footnotes, leadLine) + "</em>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ==語==:色
+      if ((m = rem.match(/^==([^=]+)==:(\w+)/))) {
+        var c = VALID_COLORS.indexOf(m[2]) >= 0 ? m[2] : "yellow";
+        out += '<mark class="hl hl-' + c + '">' + inline(m[1], footnotes, leadLine) + "</mark>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ::内容::[:色]。語注の区切り :: を閉じタグと取り違えない。
+      if (rem.slice(0, 2) === "::") {
+        var close = 2;
+        while (close < rem.length) {
+          if (rem.slice(close, close + 2) === "##") {
+            var note = rem.slice(close).match(/^##([^:#]+)::([^#]+)##/);
+            if (note) { close += note[0].length; continue; }
+          }
+          if (rem.slice(close, close + 2) === "::") break;
+          close++;
+        }
+        if (close > 2 && close < rem.length) {
+          var suffix = rem.slice(close + 2).match(/^:(\w+)/);
+          var color = suffix && VALID_COLORS.indexOf(suffix[1]) >= 0 ? suffix[1] : "yellow";
+          out += '<mark class="hl hl-' + color + '">' + inline(rem.slice(2, close), footnotes, leadLine) + "</mark>";
+          rem = rem.slice(close + 2 + (suffix ? suffix[0].length : 0)); continue;
+        }
+      }
+      // 色指定付きの旧ハイライトは上で処理し、二重下線へ変更しない。
+      if ((m = rem.match(/^==([^=]+)==(?!:\w)/))) {
+        out += '<span class="double-underline">' + inline(m[1], footnotes, leadLine) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // __下線__
+      if ((m = rem.match(/^__([^_]+)__/))) {
+        out += "<u>" + inline(m[1], footnotes, leadLine) + "</u>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // Angle-bracket labels stay distinct from (1); only underline-adjacent labels are subscript.
+      if ((m = rem.match(/^(?:<<[0-9]{1,2}>>|<[0-9]{1,2}>|〈[0-9]{1,2}〉|《[0-9]{1,2}》)/))) {
+        var angleRest = rem.slice(m[0].length);
+        var angleUnderline = /^[ \t]*(?===[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/.test(angleRest);
+        out += (angleUnderline ? '<sub class="underline-marker">' : '') + markerLabelHtml(m[0]) +
+          (angleUnderline ? '</sub>' : '');
+        rem = angleUnderline ? angleRest.replace(/^[ \t]+/, '') : angleRest; continue;
+      }
+      // 旧形式の ~~1~~__word__ は数字を波線にせず下線部の番号とする。
+      if ((m = rem.match(/^~~([0-9]{1,3})~~[ \t]*(?=__[^_]+__|==[^=]+==(?!:\w)|~~(?!~)[^~]+~~)/))) {
+        out += '<sub class="underline-marker">' + esc(m[1]) + '</sub>';
+        rem = rem.slice(m[0].length); continue;
+      }
+      // 下線・波線に隣接する番号・単独記号は下付き。旧 ~~(1)~~ 記法も解釈する。
+      // 語内下線 c__o__st の c や ((5)) __th__ough の選択肢は番号にしない。
+      if ((m = rem.match(/^(?:~~([（(][^~()（）]*[）)])~~|([（(][^()（）]*[）)])|[（(]{2}([^()（）]+)[）)]{2}|([0-9]{1,2}|[A-Za-zぁ-ゖァ-ヺ])(?=__|~~|==))[ \t]*(?===[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/)) &&
+          (!(m[3] || m[4]) || !/^(?:==[^=]+==|__[^_]+__|~~(?!~)[^~]+~~)[A-Za-z]/.test(rem.slice(m[0].length))) &&
+          !(footnotes.phoneticWords && (m[3] || (m[4] && /^[a-z]$/.test(m[4]))) && /^__[A-Za-z]+__/.test(rem.slice(m[0].length)))) {
+        var marker = m[1] || m[2];
+        out += '<sub class="underline-marker">' +
+          (m[3] ? choiceLabelHtml(m[3], "choice-inline") : markerLabelHtml(marker || m[4])) + "</sub>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ~~~ の旧波線も既存データの表示用に保持する。
+      if ((m = rem.match(/^~~~([^~]+)~~~/))) {
+        out += '<span class="wavy-underline">' + inline(m[1], footnotes, leadLine) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ~~波線~~
+      if ((m = rem.match(/^~~([^~]+)~~/))) {
+        out += '<span class="wavy-underline">' + inline(m[1], footnotes, leadLine) + "</span>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // ^^上付き^^
+      if ((m = rem.match(/^\^\^([^^]+)\^\^/))) {
+        out += "<sup>" + esc(m[1]) + "</sup>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // **太字**
+      if ((m = rem.match(/^\*\*([^*]+)\*\*/))) {
+        out += "<strong>" + inline(m[1], footnotes, leadLine) + "</strong>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // Parent/child/grandchild references also keep their level inline.
+      var question = questionTag(rem);
+      if (question) {
+        out += questionBadge(question);
+        rem = rem.slice(question.raw.length); continue;
+      }
+      // Do not reinterpret a suffix of malformed/unsupported brace runs.
+      if ((m = rem.match(/^\{{2,}/))) {
+        out += esc(m[0]); rem = rem.slice(m[0].length); continue;
+      }
+      // ((A)) / （（１）） 選択肢ラベル（半角・全角括弧の混在も許可）
+      if ((m = rem.match(/^[（(]{2}([^()（）]+)[）)]{2}/))) {
+        out += choiceLabelHtml(m[1], "choice-inline");
+        rem = rem.slice(m[0].length); continue;
+      }
+
+      // Short parenthesized labels use the same inner width outside underlines.
+      // Keep prose, empty answer spaces and special ((choice)) notation intact.
+      if ((m = rem.match(/^(?:\([A-Za-z0-9ぁ-ゖァ-ヺ]{1,2}\)|（[A-Za-z0-9ぁ-ゖァ-ヺ]{1,2}）)/))) {
+        out += markerLabelHtml(m[0]);
+        rem = rem.slice(m[0].length); continue;
+      }
+
+      // プレーンテキスト（次の記法開始まで）
+      var end = 1;
+      while (end < rem.length) {
+        var ch = rem[end];
+        if ((footnotes.literalPrefix && rem.indexOf(footnotes.literalPrefix, end) === end) ||
+            /^(?:https?:\/\/|ftp:\/\/|mailto:|www\.)/i.test(rem.slice(end))) break;
+        // 文中の A__語__ / 1__語__ / 12__語__ も番号の直前で区切る。
+        if (/[0-9]/.test(ch) && /[\s“‘"'(（【「『]/.test(rem[end - 1]) &&
+            /^[0-9]{2}(?=__|~~|==)/.test(rem.slice(end))) break;
+        if (/[A-Za-z0-9ぁ-ゖァ-ヺ]/.test(ch) && /[\s“‘"'(（【「『]/.test(rem[end - 1]) &&
+            (rem.slice(end + 1, end + 3) === "==" || rem.slice(end + 1, end + 3) === "__" || rem.slice(end + 1, end + 3) === "~~")) break;
+        if (ch === "[" || ch === "#" || ch === "=" || ch === "_" ||
+            ch === ":" || ch === "~" || ch === "^" || ch === "{" || ch === "(" || ch === "（" || ch === "*" ||
+            ch === "!" || ch === "|" || ch === "<" || ch === "〈" || ch === "《") break;
+        end++;
+      }
+      var plain = dashPlainHtml(rem.slice(0, end), text.slice(0, text.length - rem.length), rem.slice(end));
+      // 文末の . ? ! の後（閉じ引用符・閉じ括弧 ”’"')]）】」』 が続く場合も含む）に
+      // 大文字、または開き引用符（“‘"' 等。次の文が引用符から始まる場合）が来る場合、
+      // スペースを &nbsp;&nbsp; に広げる（例: ?” He / .) The / . “Quote”）
+      // （. のときのみ、かつ閉じ記号が無いときのみ Dr. / Mr. / Mt. などの略語・イニシャルを除外）
+      // "(" "[" で始まる場合（. (1) 等）はチャンクが分かれるためここでは扱えず、
+      // 次のチャンクへ進む直前の maybeWidenTrailingSpace で別途処理する。
+      plain = plain.replace(/([A-Za-z]*)([.?!])([”’"')\]）】」』]*)\s+(?=[A-Z“‘"'])/g, function (full, w, p, q) {
+        if (p === "." && !q && ABBREV.test(w)) return full;
+        return w + p + q + "&nbsp;&nbsp;";
+      });
+      out += plain;
+      rem = rem.slice(end);
+    }
+    return out;
+  }
+
+  // ---- Markdown 風テーブル ----
+  // 語注内とエスケープ済みのパイプは、splitRow と同様にセル区切りとみなさない。
+  function hasTableSeparator(line) {
+    return line.replace(/##([^:#]+)::([^#]+)##|\\\|/g, "").indexOf("|") >= 0;
+  }
+  // 区切り行か（パイプを含む `|---|:--:|` 等。本文の `----` と混同しないため
+  // 必ずパイプを1つ以上含むことを条件にする）
+  function isTableSep(line) {
+    var t = line.trim();
+    if (t.indexOf("|") < 0) return false;
+    t = t.replace(/^\|/, "").replace(/\|$/, "");
+    var cells = t.split("|");
+    if (!cells.length) return false;
+    return cells.every(function (c) { return /^\s*:?-+:?\s*$/.test(c); });
+  }
+  // 行をセル配列へ分割（`\|` はセル内のリテラルパイプとして扱う）
+  function splitRow(line) {
+    var t = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+    var cells = [], buf = "";
+    for (var i = 0; i < t.length; i++) {
+      if (t.slice(i, i + 2) === "##") {
+        var note = t.slice(i).match(/^##([^:#]+)::([^#]+)##/);
+        if (note) { buf += note[0]; i += note[0].length - 1; continue; }
+      }
+      if (t[i] === "\\" && t[i + 1] === "|") { buf += "|"; i++; continue; }
+      if (t[i] === "|") { cells.push(buf.trim()); buf = ""; continue; }
+      buf += t[i];
+    }
+    cells.push(buf.trim());
+    return cells;
+  }
+  // lines[start] をヘッダ、lines[start+1] を区切り行とする表を描画。
+  // 返り値 next は表の次に処理すべき行インデックス。
+  function renderTable(lines, start, footnotes) {
+    var headers = splitRow(lines[start]);
+    var aligns = splitRow(lines[start + 1]).map(function (c) {
+      var l = c.charAt(0) === ":", r = c.charAt(c.length - 1) === ":";
+      return l && r ? "center" : r ? "right" : l ? "left" : "";
+    });
+    var bodies = [], idx = start + 2;
+    for (; idx < lines.length; idx++) {
+      var lt = lines[idx].trim();
+      if (lt === "" || !hasTableSeparator(lt)) break;
+      bodies.push(splitRow(lines[idx]));
+    }
+    function cell(tag, txt, al) {
+      return "<" + tag + (al ? ' style="text-align:' + al + '"' : "") + ">" +
+             inline(txt || "", footnotes) + "</" + tag + ">";
+    }
+    var h = '<div class="exam-table-wrap"><table class="exam-table"><thead><tr>';
+    headers.forEach(function (c, ci) { h += cell("th", c, aligns[ci]); });
+    h += "</tr></thead><tbody>";
+    bodies.forEach(function (row) {
+      h += "<tr>";
+      for (var ci = 0; ci < headers.length; ci++) h += cell("td", row[ci] != null ? row[ci] : "", aligns[ci]);
+      h += "</tr>";
+    });
+    h += "</tbody></table></div>";
+    return { html: h, next: idx };
+  }
+
+  // 発話行の先頭にある話者ラベル。一般的な設問見出しは除外する。
+  // 名前のイニシャルと、Q (Full Name) の初出表記を受け付ける。
+  // 複数大文字の略称や Question/Answer は、明示されたインタビューの
+  // 複数の Q: 発話と、氏名から作られる略称（または A:）がある時だけ扱う。
+  var SPEAKER = /^(?!(?:Question|Answer|Note|Example|Source|Instructions|Directions|Explanation)[ \t]*[:：])((?:TV Anchor|[A-Z]|(?:Mr|Mrs|Ms|Dr|Prof)\.(?:\s+[A-Z][a-z]+)?|(?:[A-Z]\.\s+){1,3}[A-Z][a-z]+|[A-Z][a-z]+(?:\s+(?:[A-Z][a-z]+|[A-Z]|\d+)){0,3})(?:\s+\((?:[A-Z]\.\s+|[A-Z][a-z]+\s+){0,3}[A-Z][a-z]+\))?)([ \t]*[:：])/;
+
+  function interviewSpeakers(lines) {
+    var text = lines.join("\n");
+    var aliases = {};
+    if (!/(?:次の|以下の)(?:インタビュー|会話文)|\b(?:In this|the following) interview\b/i.test(text) ||
+        lines.filter(function (line) { return /^Q[ \t]*[:：]\s/.test(line.trim()); }).length < 2) return aliases;
+    lines.forEach(function (line) {
+      var name = line.trim().match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})[ \t]*[:：]\s/);
+      if (name) {
+        var alias = name[1].split(/\s+/).map(function (part) { return part[0]; }).join("");
+        if (lines.filter(function (candidate) { return new RegExp("^" + alias + "[ \t]*[:：]\\s").test(candidate.trim()); }).length >= 2) aliases[alias] = true;
+      }
+    });
+    if (aliases && (Object.keys(aliases).length || lines.filter(function (line) { return /^A[ \t]*[:：]\s/.test(line.trim()); }).length >= 2)) {
+      aliases.Question = true;
+      aliases.Answer = true;
+    }
+    return aliases;
+  }
+
+  // 全訳だけを単独で推測せず、同じ大問の本文・問題の話者を根拠にする。
+  function sourceDialogueLabels(source) {
+    var labels = Object.create(null);
+    mergeLeadSections(parseSections(source || "")).forEach(function (sec) {
+      if (sec.type !== "本文" && sec.type !== "問題" && !/^[ア-ン]$/.test(sec.type)) return;
+      var lines = sec.text.split("\n"), aliases = interviewSpeakers(lines);
+      lines.forEach(function (line) {
+        var trimmed = line.trim().replace(/^@@\s*/, "");
+        var bold = trimmed.match(/^\*\*([^*]+[:：])\*\*/);
+        if (bold) trimmed = bold[1];
+        var m = trimmed.match(SPEAKER);
+        if (m) labels[m[1]] = true;
+        else {
+          m = trimmed.match(/^([A-Z]{2,4}|Question|Answer)([ \t]*[:：])/);
+          if (m && (aliases[m[1]] || bold)) labels[m[1]] = true;
+        }
+      });
+    });
+    return Object.keys(labels).length >= 2 ? labels : {};
+  }
+
+  function translatedSpeaker(line, labels) {
+    if (Object.keys(labels).length < 2) return null;
+    var prefix = line.match(/^[（(][ア-ン][）)]\s*/);
+    var m = (prefix ? line.slice(prefix[0].length) : line).match(/^([^:：]{1,60})([:：])/);
+    if (m && prefix) { m[0] = prefix[0] + m[0]; m.prefix = prefix[0]; }
+    if (!m) return null;
+    var name = m[1].trim();
+    if (labels[name]) return m;
+    if (/^(?:注|注記|例|出典|問題|設問|解答|解説|ポイント|テーマ|タイトル|ヒント|まとめ)$/.test(name)) return null;
+    // カタカナ氏名（イニシャル・中点・姓の区切りも保持）。普通の文章は一致させない。
+    var roleSources = {
+      "女性": ["Woman", "Female"], "男性": ["Man", "Male"],
+      "医師": ["Doctor", "Dr."], "患者": ["Patient"], "先生": ["Teacher"],
+      "女性レポーター": ["Female Reporter"], "男性レポーター": ["Male Reporter"],
+      "テレビキャスター": ["TV Anchor", "Television Anchor", "Anchor", "Newscaster"]
+    };
+    if (Array.isArray(roleSources[name]) && roleSources[name].some(function (source) { return labels[source]; })) return m;
+    var named = name.match(/^((?:[A-Z]\.\s*){0,3}[ァ-ヶー]{2,}(?:[・＝=\s][ァ-ヶー]{2,})*)(教授|医師|博士|氏|先生)?(?:[（(]以下[A-Z]{1,4}[）)])?$/);
+    if (named) {
+      var titleSources = { "教授": /^(?:Prof\.|Professor)(?:\s|$)/, "医師": /^(?:Dr\.|Doctor)(?:\s|$)/,
+        "博士": /^(?:Dr\.|Doctor)(?:\s|$)/, "氏": /^(?:Mr\.|Mrs\.|Ms\.)(?:\s|$)/, "先生": /^(?:Prof\.|Professor|Teacher|Dr\.)(?:\s|$)/ };
+      if (!named[2] || Object.keys(labels).some(function (label) { return titleSources[named[2]].test(label); })) return m;
+    }
+    if (name === "教授" && (labels.Professor || labels["Prof."])) return m;
+    if (/^(?:学生|生徒)$/.test(name) && labels.Student) return m;
+    if (name === "司会者" && (labels.Host || labels.Moderator || labels.Interviewer)) return m;
+    if (/^(?:問|質問)$/.test(name) && (labels.Q || labels.Question)) return m;
+    if (/^(?:答|回答)$/.test(name) && (labels.A || labels.Answer)) return m;
+    return null;
+  }
+
+  // テキスト全体 → { html, footnotes }
+  // 段落先頭の [1] [2] は全セクションで段落番号バッジに変換する。
+  // opts.paraNum=true（本文・和訳セクション）のときは、さらにバッジの無い段落先頭に字下げを付ける。
+  // opts.zenyaku=true（全訳セクション）のとき、段落番号・《…》見出しの無い段落を字下げする。
+  function render(text, opts) {
+    var paraNum = opts && opts.paraNum;
+    var footnotes = [];
+    footnotes.namedNotes = Object.create(null);
+    footnotes.warnings = [];
+    var source = String(text == null ? "" : text);
+    // 発音問題の単語は t__oe__ のように語末まで下線が続く。
+    // 通常の裸小文字ラベルと区別するため、明示オプションか原本の指示文で判定する。
+    footnotes.phoneticWords = !!(opts && opts.phoneticWords) || /下線部の発音/.test(source);
+    footnotes.literalPrefix = "\uE000";
+    while (source.indexOf(footnotes.literalPrefix) >= 0) footnotes.literalPrefix += "\uE000";
+    footnotes.literals = [];
+    footnotes.lineBreaks = {};
+    footnotes.freeNotes = {};
+    function protectLiteral(literal) {
+      footnotes.literals.forEach(function (previous, index) {
+        literal = literal.split(footnotes.literalPrefix + index + "\uE001").join(previous);
+      });
+      return footnotes.literalPrefix + (footnotes.literals.push(literal) - 1) + "\uE001";
+    }
+    // Link destinations can contain balanced/escaped parentheses. Mask complete
+    // links before tokenizing HTML/code so nested literals cannot leak tokens.
+    function protectLinks(input) {
+    var linkStart = /(?<!!)\[[^\]\n]*\]\(/g, link, lastLink = 0, linked = "";
+    while ((link = linkStart.exec(input))) {
+      var depth = 1, pos = link.index + link[0].length, quote = "", angle = false;
+      for (; pos < input.length && input[pos] !== "\n"; pos++) {
+        if (input[pos] === "\\") { pos++; continue; }
+        if (quote) { if (input[pos] === quote) quote = ""; continue; }
+        if (angle) { if (input[pos] === ">") angle = false; continue; }
+        if ((input[pos] === '"' || input[pos] === "'") && /\s/.test(input[pos - 1])) {
+          quote = input[pos]; continue;
+        }
+        if (input[pos] === "<" && (pos === link.index + link[0].length || /\s/.test(input[pos - 1]))) {
+          angle = true; continue;
+        }
+        if (input[pos] === "(") depth++;
+        if (input[pos] === ")" && --depth === 0) break;
+      }
+      if (depth !== 0) continue;
+      linked += input.slice(lastLink, link.index) + protectLiteral(input.slice(link.index, pos + 1));
+      lastLink = pos + 1;
+      linkStart.lastIndex = lastLink;
+    }
+    return linked + input.slice(lastLink);
+    }
+    source = protectLinks(source);
+    // Preserve comments, HTML, fenced/inline code and escaped hyphens verbatim.
+    // Quoted attributes may contain > without terminating an HTML tag.
+    // Tokens are local to this render; saved source and strip() remain unchanged.
+    function protectSourceLiteral(literal) {
+      if (/^<br[ \t]*\/?>$/i.test(literal)) footnotes.lineBreaks[footnotes.literals.length] = true;
+      return protectLiteral(literal);
+    }
+    source = source.replace(literalPattern(true), function (literal) {
+      if (isFreeNote(literal)) footnotes.freeNotes[footnotes.literals.length] = true;
+      return protectSourceLiteral(literal);
+    });
+    var lines = source.split("\n");
+    var interviewAliases = interviewSpeakers(lines);
+    var translationLabels = opts && opts.zenyaku ? sourceDialogueLabels(opts.dialogueSource) : {};
+    var html = "", questionGroups = [];
+    function closeQuestionGroups(level) {
+      while (questionGroups.length && questionGroups[questionGroups.length - 1] >= level) {
+        html += "</div>"; questionGroups.pop();
+      }
+    }
+    var placements = [];
+    function noteList(notes) {
+      if (!notes.length) return "";
+      var result = '<div class="footnote-section"><ol>';
+      notes.forEach(function (fn) {
+        result += '<li><span class="footnote-number">*' + fn.index + "</span><span><strong>" +
+                  esc(fn.word) + "</strong>: " + esc(fn.translation) + "</span></li>";
+      });
+      return result + "</ol></div>";
+    }
+    function freeNote(body) {
+      body = protectLinks(body).replace(literalPattern(false), protectSourceLiteral);
+      // This block is deliberately literal: original asterisks, labels and
+      // note text must not become bold, questions, glossary or section markup.
+      var result = "", last = 0;
+      var tokens = new RegExp(footnotes.literalPrefix + "(\\d+)\\uE001", "g"), token;
+      function plain(s) { return esc(s).replace(/\r?\n/g, "<br>"); }
+      while ((token = tokens.exec(body))) {
+        result += plain(body.slice(last, token.index));
+        result += footnotes.lineBreaks[+token[1]] ? "<br>" : plain(footnotes.literals[+token[1]]);
+        last = token.index + token[0].length;
+      }
+      return '<div class="footnote-section free-note" role="note">' + result + plain(body.slice(last)) + "</div>";
+    }
+    var paraStart = true; // 段落先頭か（空行・見出し・選択肢・区切りの直後）
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var trimmed = line.trim();
+      // mergeLeadSections が生成するリード文（旧保存形式も同じ）を表示用に識別する。
+      var leadLine = /^@@\*\*[\s\S]+\*\*$/.test(trimmed);
+
+      if (trimmed === "") { html += '<div style="height:.6em"></div>'; paraStart = true; continue; }
+      if (trimmed === "----") { closeQuestionGroups(1); html += '<hr class="exam-hr">'; paraStart = true; continue; }
+
+      // A paragraph omission occupies one complete line of its current column,
+      // including nested questions. Keep the stored token and following paragraph
+      // intact; inline mentions are handled as ordinary-sized references above.
+      var paragraphBlank = trimmed.match(/^(?:@@\s*)?(?:\[([^\[\]\r\n]{1,2})\][ \t\u3000]*)?(?:@@\s*)?\[\[=([^=\[\]\r\n]*)=\]\]$/);
+      if (paragraphBlank && (!paragraphBlank[1] || paragraphBlank[1].trim())) {
+        html += '<span class="blk blank-line">' +
+          (paragraphBlank[1] ? '<span class="para-badge">' + esc(paragraphBlank[1]) + '</span>' : '') +
+          '<span class="blank-badge blank-badge-line">' + blankLabelHtml(paragraphBlank[2]) + '</span></span>';
+        paraStart = true;
+        continue;
+      }
+
+      var placement = trimmed.match(/^##->([A-Za-z0-9_-]{1,64}(?:[ \t]*,[ \t]*[A-Za-z0-9_-]{1,64})*)##$/);
+      if (placement) {
+        var placementToken = footnotes.literalPrefix + "note:" + placements.length + "\uE001";
+        placements.push({ token: placementToken, ids: placement[1].split(/[ \t]*,[ \t]*/), source: line });
+        html += placementToken;
+        paraStart = true;
+        continue;
+      }
+      var freeToken = trimmed.match(new RegExp("^" + footnotes.literalPrefix + "(\\d+)\\uE001$"));
+      if (freeToken && footnotes.freeNotes[+freeToken[1]]) {
+        var noteBody = footnotes.literals[+freeToken[1]].replace(/^[ \t]*:::注釈[ \t]*\r?\n/, "").replace(/(?:\r?\n)?[ \t]*:::[ \t]*$/, "");
+        if (noteBody.trim()) html += freeNote(noteBody);
+        paraStart = true;
+        continue;
+      }
+
+      // Convert prose list markers only; keep negative numbers and algebra intact.
+      var bulletLine = false;
+      var bullet = trimmed.match(/^-[ \t\u3000]+(.+)$/);
+      if (bullet) {
+        var bulletText = bullet[1].replace(/^(?:(?:\*\*|__|~~|::)|[“‘"'(\[])+/, "");
+        if (/^(?:[A-Za-z]{2,}(?![A-Za-z0-9_])|[aAI][ \t]+[A-Za-z]|[\u3040-\u30ff\u3400-\u9fff])/.test(bulletText)) {
+          line = "・ " + bullet[1]; trimmed = line; bulletLine = true;
+        }
+      }
+
+      // Markdown 風テーブル（ヘッダ行 + 区切り行 |---|---| が続く場合）
+      if (hasTableSeparator(trimmed) && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+        var tbl = renderTable(lines, i, footnotes);
+        html += tbl.html;
+        i = tbl.next - 1; // for ループの ++ で次行へ
+        paraStart = true;
+        continue;
+      }
+
+      // Explicit hierarchy applies to the heading and its following content.
+      var qm = questionTag(trimmed);
+      if (qm) {
+        closeQuestionGroups(qm.level);
+        if (qm.level > 1) {
+          html += '<div class="question-subgroup question-subgroup-level-' + qm.level + '">';
+          questionGroups.push(qm.level);
+        }
+        var levelClass = questionLevelClass(qm.level);
+        var rest = trimmed.slice(qm.raw.length).trim();
+        // Paired sentences share the badge's text column, like quoted exchanges.
+        // Require an (a)/(b) sequence so ordinary parenthesized prose stays intact.
+        var pairPattern = /^(@@)?(\([a-zA-Z]\)|[a-zA-Z]\))[ \t]*(.+)$/;
+        var pairStart = i, pairRest = rest;
+        if (!pairRest) {
+          pairStart++;
+          while (pairStart < lines.length && !lines[pairStart].trim()) pairStart++;
+          pairRest = (lines[pairStart] || "").trim();
+        }
+        var firstPair = pairRest.match(pairPattern);
+        if (firstPair && firstPair[2].replace(/[()]/g, "").toLowerCase() === "a") {
+          var pairRows = [{match: firstPair, index: pairStart}], pairNext = pairStart + 1;
+          while (pairNext < lines.length) {
+            while (pairNext < lines.length && !lines[pairNext].trim()) pairNext++;
+            var pairMatch = (lines[pairNext] || "").trim().match(pairPattern);
+            if (!pairMatch || pairMatch[2].replace(/[()]/g, "").toLowerCase() !== String.fromCharCode(97 + pairRows.length)) break;
+            pairRows.push({match: pairMatch, index: pairNext});
+            pairNext++;
+          }
+          if (pairRows.length >= 2) {
+            var pairedHtml = "";
+            pairRows.forEach(function (row, rowIndex) {
+              if (rowIndex) pairedHtml += '<div style="height:.6em"></div>';
+              pairedHtml += '<span class="blk sentence-pair-line"><span class="sentence-pair-label">' +
+                inline(row.match[2], footnotes) + '</span>' + inline(row.match[3], footnotes) + '</span>';
+            });
+            html += '<div class="question-block-header sentence-pair' + levelClass + '">' +
+              questionBadge(qm) + '<div class="qtext">' + pairedHtml + '</div></div>';
+            i = pairRows[pairRows.length - 1].index;
+            paraStart = true;
+            continue;
+          }
+        }
+        // Keep a quoted exchange in one badge/body layout, including soft wraps.
+        if (/^[“‘"']/.test(rest)) {
+          var quotedLines = '<span class="blk">' + inline(rest, footnotes) + '</span>';
+          var nextLine = i + 1;
+          while (nextLine < lines.length) {
+            var quoteLine = nextLine;
+            while (quoteLine < lines.length && !lines[quoteLine].trim()) quoteLine++;
+            if (quoteLine >= lines.length || !/^[“‘"']/.test(lines[quoteLine].trim())) break;
+            for (var gap = nextLine; gap < quoteLine; gap++) quotedLines += '<div style="height:.6em"></div>';
+            quotedLines += '<span class="blk">' + inline(lines[quoteLine], footnotes) + '</span>';
+            i = quoteLine;
+            nextLine = quoteLine + 1;
+          }
+          html += '<div class="question-block-header quoted-dialogue' + levelClass + '">' +
+            questionBadge(qm) + '<div class="qtext">' + quotedLines + '</div></div>';
+          paraStart = true;
+          continue;
+        }
+        html += '<div class="question-block-header' + levelClass + '">' +
+                questionBadge(qm) +
+                (rest ? '<span class="qtext">' + inline(rest, footnotes) + "</span>" : "") +
+                "</div>";
+        paraStart = true;
+        continue;
+      }
+
+      // ((A)) 本文 → 選択肢（行頭）。ただし 1行に (()) が複数ある場合は
+      // ブロック化せず通常行として描画し、先頭も含めて全てインライン丸ラベルにする。
+      var cm = line.match(/^\s*[（(]{2}([^()（）]+)[）)]{2}\s*([\s\S]*)/);
+      // A circled label inside a blank is not another answer choice in this row.
+      var choiceCount = (line.replace(/\[\[[^\]\r\n]*\]\]/g, "").match(/[（(]{2}[^()（）]+[）)]{2}/g) || []).length;
+      if (cm && choiceCount === 1 && !/^[（(]{2}[^()（）]+[）)]{2}(?:==[^=]+==(?!:\w)|__[^_]+__|~~(?!~)[^~]+~~)/.test(trimmed)) {
+        html += '<div class="answer-choice">' + choiceLabelHtml(cm[1], "answer-choice-label") +
+                '<span class="answer-choice-text">' +
+                (cm[2] ? inline(cm[2], footnotes) : "") + "</span></div>";
+        paraStart = true;
+        continue;
+      }
+
+      // 段落先頭の [1] [2]（単角括弧。空所 [[ ]] とは別）を段落番号バッジに（全セクションで有効）
+      // 中身が3文字以上のときはバッジ化しない（[図] [グラフ] などをそのまま表示）
+      var badgeNum = "";
+      if (paraStart) {
+        var pm = trimmed.match(/^\[([^\[\]]+)\]\s?/);
+        if (pm && pm[1].length < 3 && !/^\s*$/.test(pm[1])) {
+          badgeNum = pm[1];
+          line = line.replace(/^\s*\[[^\[\]]+\]\s?/, "");
+          trimmed = line.trim();
+        }
+      }
+      // @@ 行頭タグ → 強制字下げなし（indent 抑制）
+      var noIndent = bulletLine;
+      if (/^\s*@@/.test(line)) {
+        noIndent = true;
+        line = line.replace(/^\s*@@\s?/, "");
+        trimmed = line.trim();
+      }
+      // Numbered paragraph labels (P1:, P2:, ...) share the flush-left label layout.
+      var speaker = trimmed.match(/^(P[1-9]\d*)([ \t]*[:：])/) || trimmed.match(SPEAKER);
+      if (!speaker) {
+        var alias = trimmed.match(/^([A-Z]{2,4}|Question|Answer)([ \t]*[:：])(?=\s)/);
+        if (alias && interviewAliases[alias[1]]) speaker = alias;
+      }
+      if (!speaker && opts && opts.zenyaku) speaker = translatedSpeaker(trimmed, translationLabels);
+      if (speaker) noIndent = true;
+      // 字下げ：本文・和訳ではバッジの無い「英字始まり」の段落先頭のみ字下げ
+      // （日本語の指示文などは左寄せにする）。それ以外のセクションは英語大文字始まりのみ。
+      // 引用符（" ' " '）で始まる段落も、直後が英字なら英文段落とみなし字下げする。
+      // 全訳は段落番号付きの行と《…》見出しを除き、従来どおり字下げする。
+      var indent = !noIndent && ((opts && opts.zenyaku)
+        ? !badgeNum && !/^\[[^\[\]]{1,2}\]/.test(trimmed) && !/^《/.test(trimmed)
+        : (paraStart && (paraNum ? (!badgeNum && /^["'“‘]?[A-Za-z]/.test(trimmed)) : /^["'“‘]?[A-Z]/.test(trimmed))));
+      var prefix = badgeNum ? '<span class="para-badge">' + esc(badgeNum) + "</span>" : "";
+      // The lead wrapper can contain a literal note marker (*) or nested bold.
+      // Render its contents separately so those characters cannot break the wrapper.
+      var content = leadLine
+        ? '<strong>' + inline(line.trim().slice(2, -2), footnotes, true) + '</strong>'
+        : bulletLine
+        ? '<span class="bullet-marker">・ </span><span class="bullet-text">' + inline(bullet[1], footnotes, leadLine) + '</span>'
+        : speaker
+        ? esc(speaker.prefix || "") + '<strong class="dialogue-speaker">' + esc(speaker[1] + speaker[2]) + '</strong>' +
+          inline(trimmed.slice(speaker[0].length), footnotes)
+        : inline(line, footnotes, leadLine);
+      html += '<span class="blk' + (bulletLine ? " bullet-line" : "") + (indent ? " indent" : "") + (speaker ? " dialogue-line" : "") + (leadLine ? " lead-line" : "") + '">' + prefix + content + "</span>";
+      paraStart = false;
+    }
+
+    closeQuestionGroups(1);
+    // Resolve after parsing so a same-section reference may precede its
+    // definition. A failed group stays visible and does not consume any notes.
+    var calledNotes = {};
+    placements.forEach(function (placement) {
+      var missing = placement.ids.filter(function (id) { return !footnotes.namedNotes[id]; });
+      var replacement;
+      if (missing.length) {
+        missing.forEach(function (id) { footnotes.warnings.push({ code: "undefined_note_id", id: id }); });
+        replacement = '<span class="blk">' + esc(placement.source) + '</span>';
+      } else {
+        var seen = Object.create(null);
+        var notes = placement.ids.filter(function (id) {
+          if (seen[id]) return false;
+          seen[id] = true;
+          return true;
+        }).map(function (id) {
+          var note = footnotes.namedNotes[id];
+          calledNotes[note.index] = true;
+          return note;
+        });
+        replacement = noteList(notes);
+      }
+      html = html.split(placement.token).join(replacement);
+    });
+    html += noteList(footnotes.filter(function (note) { return !calledNotes[note.index]; }));
+    // Some notation payloads (image captions, badge labels, note attributes) are
+    // escaped directly rather than passed through inline(). Restore those too.
+    footnotes.literals.forEach(function (literal, index) {
+      var token = footnotes.literalPrefix + index + "\uE001";
+      html = html.split(token).join(esc(literal));
+      footnotes.forEach(function (note) {
+        note.word = note.word.split(token).join(literal);
+        note.translation = note.translation.split(token).join(literal);
+      });
+    });
+    delete footnotes.literalPrefix;
+    delete footnotes.literals;
+    delete footnotes.lineBreaks;
+    delete footnotes.freeNotes;
+    var warnings = footnotes.warnings;
+    delete footnotes.warnings;
+    delete footnotes.namedNotes;
+    return { html: html, footnotes: footnotes, warnings: warnings };
+  }
+
+  // 英文抽出用: 記法を取り除いてプレーン英文テキストにする（コーパス分析の前処理）
+  function strip(text) {
+    var t = withoutAnnotationText(String(text == null ? "" : text));
+    t = t.replace(/(?<!\{)(?:\{\{\{\{[^{}\n]*\}\}\}\}|\{\{\{[^{}\n]*\}\}\}|\{\{[^{}\n]*\}\})(?!})/g, " ");           // 問見出し
+    t = t.replace(/\[\[[^\]]*\]\]/g, " ");          // 空所
+    t = t.replace(/^\s*\[[^\[\]]+\]\s?/gm, "");     // 段落番号 [1]（行頭・単角括弧）
+    t = t.replace(/##([^:#]+)::[^#]+##/g, function (_, w) { return w.replace(/^[A-Za-z0-9_-]{1,64}@(?=.)/, "").split("|")[0].replace(/\^/g, ""); }); // 本文の語のみ残す
+    t = t.replace(/!\[[^\]]*\]\([^)\s]+\)(?:\{[^}\n]*\})?/g, " "); // 画像と表示オプション → 除去
+    t = t.replace(/!!!!([\s\S]+?)!!!!/g, " ");      // 出典 → 除去
+    t = t.replace(/\|\|\|\|([\s\S]+?)\|\|\|\|/g, "$1"); // 斜字 → テキスト残す
+    t = t.replace(/^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/gm, " "); // 表の区切り行
+    t = t.replace(/\|/g, " ");                          // 表のセル区切り → 空白
+    t = t.replace(/==([^=]+)==:\w+/g, "$1");        // 色ハイライト
+    t = t.replace(/::([\s\S]+?)::(?::\w+)?/g, "$1"); // ハイライト（語注は処理済み）
+    t = t.replace(/==([^=]+)==/g, "$1");            // ハイライト
+    t = t.replace(/__([^_]+)__/g, "$1");            // 下線
+    t = t.replace(/\*\*([^*]+)\*\*/g, "$1");       // 太字
+    t = t.replace(/~~~([^~]+)~~~/g, "$1");       // 旧波線
+    t = t.replace(/~~([^~]+)~~/g, "$1");            // 波線
+    t = t.replace(/\^\^([^^]+)\^\^/g, "$1");        // 上付き
+    t = t.replace(/[（(]{2}([^()（）]+)[）)]{2}/g, " ");         // 選択肢ラベル
+    t = t.replace(/<<[0-9]{1,2}>>|<[0-9]{1,2}>|〈[0-9]{1,2}〉|《[0-9]{1,2}》/g, " "); // 番号付き山括弧
+    t = t.replace(/<[^>]*>/g, " ");                 // HTML タグ
+    t = t.replace(/^@@\s?/gm, "");                  // @@ 字下げ抑制タグ
+    t = t.replace(/----/g, " ");
+    return t;
+  }
+
+  // problem_text を section 境界で分割。collectReg が追加した {{セクション名}} 行を検出。
+  // ASCII 英数字を含むバッジ（{{問1}} など）は問題番号として無視する。
+  function parseSections(text) {
+    var sections = [];
+    var lines = (text || "").split("\n");
+    var structural = maskedNotation(text || "").split("\n");
+    var curType = "問題", curLines = [];
+    for (var i = 0; i < lines.length; i++) {
+      var m = structural[i].trim().match(/^\{\{([^0-9A-Za-z{}]+)\}\}$/);
+      if (m) {
+        var t = curLines.join("\n").trim();
+        if (t) sections.push({ type: curType, text: t });
+        curType = m[1]; curLines = [];
+      } else {
+        curLines.push(lines[i]);
+      }
+    }
+    var last = curLines.join("\n").trim();
+    if (last || !sections.length) sections.push({ type: curType, text: last });
+    return sections;
+  }
+
+  // 「リード文」セクションは独立したセクションにせず、直後のセクションへ統合する
+  // （太字・字下げなし @@** ** で先頭に付け、空行を1つ挟んで元のセクション内容を続ける）。
+  // 連続する「リード文」はまとめて統合。直後にセクションが無いまま終わる場合はデータを失わないよう
+  // 「リード文」のまま残す。登録・取り込み保存時（settings.js）と表示・印刷・コーパス分析時
+  // （viewer.js）の両方で使う共通ロジック。
+  function mergeLeadSections(sections) {
+    var out = [], pendingLead = [];
+    (sections || []).forEach(function (sec) {
+      if (sec.type === "リード文") {
+        var t = (sec.text || "").trim();
+        if (t) pendingLead.push(t);
+        return;
+      }
+      if (pendingLead.length) {
+        var leadBlock = pendingLead.map(function (block) {
+          var blockLines = block.split("\n"), freeUntil = -1;
+          return blockLines.map(function (line, index) {
+            var l = line.trim();
+            if (l === ":::注釈") {
+              for (var end = index + 1; end < blockLines.length; end++) {
+                if (blockLines[end].trim() === ":::") { freeUntil = end; break; }
+              }
+            }
+            if (index <= freeUntil || /^##->[A-Za-z0-9_-]{1,64}(?:[ \t]*,[ \t]*[A-Za-z0-9_-]{1,64})*##$/.test(l)) return line;
+            return l ? "@@**" + l + "**" : "";
+          }).join("\n");
+        }).join("\n\n");
+        var body = sec.text || "";
+        out.push({ type: sec.type, text: body ? (leadBlock + "\n\n" + body) : leadBlock });
+        pendingLead = [];
+      } else {
+        out.push(sec);
+      }
+    });
+    if (pendingLead.length) out.push({ type: "リード文", text: pendingLead.join("\n\n") });
+    return out;
+  }
+
+  // 「全訳」セクション冒頭の《タイトル》を抽出（問題種別「長文」の一覧表示用。無ければ空文字）
+  function extractZenyakuTitle(text) {
+    var zenyaku = parseSections(text).filter(function (s) { return s.type === "全訳"; })[0];
+    if (!zenyaku) return "";
+    var lines = (zenyaku.text || "").split("\n");
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i].trim();
+      if (!l) continue;
+      var m = l.match(/^(?:@@\s*)?《([^》]+)》/);
+      return m ? m[1] : "";
+    }
+    return "";
+  }
+
+  function setImageBase(b) { imageBase = String(b || ""); }
+  var markerMeasureContexts = new WeakMap();
+  function fitMarker(label) {
+    var inner = label.firstElementChild;
+    if (!inner) return;
+    var view = label.ownerDocument.defaultView;
+    // Fullwidth parentheses have large outside sidebearings. Remove only that
+    // invisible space before fitting, so it cannot squeeze the central label.
+    // Keep the real characters in the DOM for selection and PDF extraction.
+    ["open", "close"].forEach(function (side) {
+      var bracket = inner.querySelector(".marker-fit-" + side);
+      if (!bracket) return;
+      var trim = 0;
+      if (/[（）]/.test(bracket.textContent)) {
+        var style = view.getComputedStyle(bracket);
+        var context = markerMeasureContexts.get(label.ownerDocument);
+        if (!context) {
+          context = label.ownerDocument.createElement("canvas").getContext("2d");
+          if (context) markerMeasureContexts.set(label.ownerDocument, context);
+        }
+        if (context) {
+          context.font = style.fontStyle + " " + style.fontWeight + " " + style.fontSize + " " + style.fontFamily;
+          var metrics = context.measureText(bracket.textContent);
+          if (metrics.actualBoundingBoxRight > 0 && metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight > 0) {
+            trim = side === "open" ? -metrics.actualBoundingBoxLeft : metrics.width - metrics.actualBoundingBoxRight;
+            trim = Math.max(0, Math.min(trim, metrics.width * .75));
+          }
+        }
+      }
+      bracket.style.setProperty("--marker-outside-trim", trim + "px");
+    });
+    var width = parseFloat(view.getComputedStyle(label).width);
+    var natural = parseFloat(view.getComputedStyle(inner).width);
+    if (width > 0 && natural > 0) inner.style.setProperty("--marker-fit-scale", String(width / natural));
+  }
+  // Explicitly fit isolated booklet documents, which have a separate registry.
+  function fitMarkerLabels(root) {
+    if (root && root.querySelectorAll) root.querySelectorAll(".marker-parentheses-fit").forEach(fitMarker);
+  }
+
+  // Autonomous custom elements connect for every renderer, including cloned
+  // print/measurement documents. Observing intrinsic text width also catches
+  // delayed font loads and fallback changes without altering stored text.
+  if (global.customElements && global.HTMLElement && !global.customElements.get("exam-marker-fit")) {
+    class ExamMarkerFit extends global.HTMLElement {
+      connectedCallback() {
+        var self = this;
+        function connect() {
+          if (!self.isConnected || !self.firstElementChild) return;
+          if (!self.fitObserver && global.ResizeObserver) {
+            self.fitObserver = new global.ResizeObserver(function () { self.fit(); });
+            self.fitObserver.observe(self);
+            self.fitObserver.observe(self.firstElementChild);
+          }
+          self.fit();
+        }
+        connect();
+        global.requestAnimationFrame(connect);
+      }
+      disconnectedCallback() {
+        if (this.fitObserver) this.fitObserver.disconnect();
+        this.fitObserver = null;
+      }
+      fit() { fitMarker(this); }
+    }
+    global.customElements.define("exam-marker-fit", ExamMarkerFit);
+    global.addEventListener("beforeprint", function () {
+      fitMarkerLabels(global.document);
+    });
+    // Ink bounds can change even when a newly loaded font has the same advance.
+    if (global.document.fonts) {
+      global.document.fonts.ready.then(function () { fitMarkerLabels(global.document); });
+      global.document.fonts.addEventListener("loadingdone", function () { fitMarkerLabels(global.document); });
+    }
+  }
+  global.Markup = {
+    render: render, strip: strip, escape: esc, parseSections: parseSections,
+    questionBadge: questionBadge,
+    mergeLeadSections: mergeLeadSections, extractZenyakuTitle: extractZenyakuTitle,
+    setImageBase: setImageBase, fitMarkerLabels: fitMarkerLabels
+  };
+})(window);
