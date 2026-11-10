@@ -61,7 +61,7 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
    }));
    if(!font)await page.screenshot({path:path.join(evidence,`candidate-${width}-${media}.png`),fullPage:true});
    fs.writeFileSync(path.join(evidence,'latest-geometry.json'),JSON.stringify({width,media,font,geometry},null,2));
-   geometry.markers.forEach(n=>{assert.ok(Math.abs(n.width-n.font)<.05,JSON.stringify(n));assert.ok(Math.abs(n.glyphWidth-n.width)<.1,JSON.stringify(n));assert.ok(Math.abs(n.glyphHeight-n.naturalHeight)<.05,'Fitting never shrinks glyph height');assert.equal(n.selected,n.text,'Selection preserves original text');});
+   geometry.markers.forEach(n=>{assert.ok(Math.abs(n.width-n.font*1.5)<.05,JSON.stringify(n));assert.ok(Math.abs(n.glyphWidth-n.width)<.1,JSON.stringify(n));assert.ok(Math.abs(n.glyphHeight-n.naturalHeight)<.05,'Fitting never shrinks glyph height');assert.equal(n.selected,n.text,'Selection preserves original text');});
    for(let i=0;i<markers.length;i+=2){
     const ascii=geometry.markers[i],wide=geometry.markers[i+1];
     assert.ok(wide.labelWidth>=ascii.labelWidth*.75,'Fullwidth sidebearings must not squeeze the label: '+JSON.stringify({ascii,wide}));
@@ -89,7 +89,7 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(r)));await page.locator('#labels').evaluate(n=>n.style.display='');
    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
    const fitted=await page.locator('#labels .marker-parentheses-fit').evaluateAll(nodes=>nodes.map(n=>({outer:n.getBoundingClientRect().width,inner:n.firstElementChild.getBoundingClientRect().width,font:parseFloat(getComputedStyle(n).fontSize)})));
-   fitted.forEach(n=>{assert.ok(Math.abs(n.outer-n.font)<.1);assert.ok(Math.abs(n.inner-n.outer)<.1);});
+   fitted.forEach(n=>{assert.ok(Math.abs(n.outer-n.font*1.5)<.1);assert.ok(Math.abs(n.inner-n.outer)<.1);});
   }
   // Line numbers must stay outside horizontally fitted text, including marker-only lines.
   await page.setContent('<style>'+css+'</style><main id="print-area" class="print-out fs-md lh-3" style="display:block;margin:30px"><div id="line-fixture" class="exam-doc linenum-target">'+M.render('First line.\nSecond line.\nThird line.\nFourth line.\n(A) Fifth line.\nSixth line.\nSeventh line.\nEighth line.\nNinth line.\n(ア)\nEleventh line.\nTwelfth line.').html+'</div></main>');
@@ -123,10 +123,10 @@ const evidence=process.env.MARKER_EVIDENCE||'/tmp/exam-marker-width';fs.mkdirSyn
     return {calls,registered:!!frame.contentWindow.customElements.get('exam-marker-fit'),pages:doc.querySelectorAll('.pagedjs_page').length,labels:[...doc.querySelectorAll('.pagedjs_page .marker-parentheses-fit')].map(n=>({outer:n.getBoundingClientRect().width,inner:n.firstElementChild.getBoundingClientRect().width,font:parseFloat(frame.contentWindow.getComputedStyle(n).fontSize)}))};
    }finally{Markup.fitMarkerLabels=original;}
   });
-  assert.equal(booklet.calls,2);assert.equal(booklet.registered,false);assert.ok(booklet.pages>=1);assert.equal(booklet.labels.length,3);booklet.labels.forEach(n=>{assert.ok(Math.abs(n.outer-n.font)<.1);assert.ok(Math.abs(n.inner-n.outer)<.1);});
+  assert.equal(booklet.calls,2);assert.equal(booklet.registered,false);assert.ok(booklet.pages>=1);assert.equal(booklet.labels.length,3);booklet.labels.forEach(n=>{assert.ok(Math.abs(n.outer-n.font*1.5)<.1);assert.ok(Math.abs(n.inner-n.outer)<.1);});
   await page.close();
  }
  assert.equal(JSON.stringify({source,unaffected}),original);fs.writeFileSync(path.join(evidence,'geometry.json'),JSON.stringify(reports,null,2));
- console.log('PASS: exact1em, normal glyph height/baseline, no overflow, original selection/PDF text, default/serif/sans, desktop/mobile screen/print');
+ console.log('PASS: exact1.5em, normal glyph height/baseline, no overflow, original selection/PDF text, default/serif/sans, desktop/mobile screen/print');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1});

@@ -1457,6 +1457,8 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
 /* Keep label glyphs unchanged; use 75% of the former 1.35em minimum inner width. */
 .exam-doc .marker-parentheses { display: inline-block; white-space: nowrap; text-indent: 0; }
 .exam-doc .marker-label { display: inline-block; min-width: 1.0125em; text-align: center; letter-spacing: 0; }
+/* Round-label contents use Google Fonts Noto Serif JP; bracket faces and fitting stay unchanged. */
+.exam-doc .marker-parentheses .marker-label { font-family: "Noto Serif JP", serif; }
 
 /* Numeric angle labels share the round-label spacing in screen and print. */
 .exam-doc .marker-angle { display: inline-block; white-space: nowrap; text-indent: 0; }
@@ -1472,10 +1474,10 @@ sup.footnote-number { font-size: .68em; vertical-align: super; }
   text-decoration: var(--marker-decoration, none);
   text-underline-offset: var(--marker-offset, auto);
 }
-/* Single-character round labels fit parentheses and text into one local em.
+/* Single-character round labels fit parentheses and text into 1.5 local em.
    Only horizontal scale changes; fonts, glyph height and baseline are retained.
    Two-character round labels and numeric angle labels retain their wider cells. */
-.exam-doc .marker-parentheses-fit { width: 1em; text-decoration: none; clip-path: inset(-1em 0 -1em 0); }
+.exam-doc .marker-parentheses-fit { width: 1.5em; text-decoration: none; clip-path: inset(-1em 0 -1em 0); }
 .exam-doc .marker-fit-inner { font-variant-east-asian: normal; font-feature-settings: normal; display: inline-block; width: max-content; white-space: nowrap; transform: scaleX(var(--marker-fit-scale, .5)); transform-origin: left center; text-decoration: var(--marker-decoration, none); text-underline-offset: var(--marker-offset, auto); }
 .exam-doc .marker-parentheses-fit .marker-label { display: inline; min-width: 0; text-decoration: none; }
 /* Trim only invisible outer sidebearings, measured in the resolved font. */

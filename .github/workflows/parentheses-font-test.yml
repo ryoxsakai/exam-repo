@@ -1,0 +1,34 @@
+name: Parentheses font and width
+on:
+  pull_request:
+    paths: ['assets/css/**', 'panel/**', 'scripts/test-parentheses-font.cjs', 'scripts/test-marker-width.cjs', '.github/workflows/parentheses-font-test.yml']
+  push:
+    branches: [main]
+    paths: ['assets/css/**', 'panel/**', 'scripts/test-parentheses-font.cjs', 'scripts/test-marker-width.cjs', '.github/workflows/parentheses-font-test.yml']
+permissions:
+  contents: read
+jobs:
+  typography:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24}
+      - run: npm ci --prefix panel
+      - run: cd panel && npx playwright install --with-deps chromium
+      - run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk poppler-utils
+      - run: npm run build --prefix panel && npm test --prefix panel
+      - run: curl -fLsS 'https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf' -o /tmp/exam-noto-serif-jp.ttf
+      - run: node scripts/test-parentheses-font.cjs --browser
+        env:
+          NOTOSERIF_FONT: /tmp/exam-noto-serif-jp.ttf
+      - run: node scripts/test-marker-decoration-panel.cjs
+      - run: node scripts/test-marker-width.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: parentheses-font-evidence
+          path: |
+            /tmp/exam-noto-*
+            /tmp/exam-marker-width

@@ -87,9 +87,9 @@ async function browserTest(html, initial) {
     assert.equal(await frame.locator('.footnote-section strong').filter({hasText:'capillary'}).count(),1);
     assert.equal(await frame.locator('.footnote-section strong').last().innerText(),'diet');
     assert.equal(await frame.locator('.blank-badge').count(),1);
-    const markerStyles = await frame.locator('#document .marker-label').evaluateAll(nodes=>nodes.map(n=>{const fit=n.closest('.marker-parentheses-fit'),paint=fit?fit.querySelector('.marker-fit-inner'):n;return {line:getComputedStyle(paint).textDecorationLine,style:getComputedStyle(paint).textDecorationStyle,minimum:getComputedStyle(n).minWidth,fit:!!fit,nowrap:getComputedStyle(n.closest('.marker-parentheses,.marker-angle')).whiteSpace,font:getComputedStyle(n).fontFamily}}));
+    const markerStyles = await frame.locator('#document .marker-label').evaluateAll(nodes=>nodes.map(n=>{const fit=n.closest('.marker-parentheses-fit'),paint=fit?fit.querySelector('.marker-fit-inner'):n;return {line:getComputedStyle(paint).textDecorationLine,style:getComputedStyle(paint).textDecorationStyle,minimum:getComputedStyle(n).minWidth,fit:!!fit,round:!!n.closest('.marker-parentheses'),nowrap:getComputedStyle(n.closest('.marker-parentheses,.marker-angle')).whiteSpace,font:getComputedStyle(n).fontFamily}}));
     assert.deepEqual(markerStyles.slice(0,3).map(n=>[n.line,n.style]),[['underline','solid'],['underline','double'],['underline','wavy']]);
-    assert.ok(markerStyles.every(n=>(n.fit?n.minimum==='0px':n.minimum!=='0px') && n.nowrap==='nowrap' && n.font.startsWith('"Exam Parentheses"')));
+    assert.ok(markerStyles.every(n=>(n.fit?n.minimum==='0px':n.minimum!=='0px') && n.nowrap==='nowrap' && n.font.startsWith(n.round?'"Noto Serif JP"':'"Exam Parentheses"')));
     assert.ok((await frame.locator('.marker-angle-glyph').first().evaluate(n=>getComputedStyle(n).fontFamily)).startsWith('"Exam Angle Brackets"'));
 
     assert.equal(await frame.locator('.footnote-section').count(),3,'Notes must not be duplicated');
