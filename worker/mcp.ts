@@ -276,7 +276,8 @@ function markedSectionRange(text: string, marker: string) {
   const contentStart = start + heading.length;
   // Horizontal whitespace only: masked note blocks must stay part of their
   // containing section, not become whitespace swallowed before the next header.
-  const next = scan.slice(contentStart).search(/\r?\n[ \t]*\{\{[^{}\r\n]+\}\}[ \t]*(?=\r?\n|$)/);
+  // Match parseSections: question/letter/number badges are section content.
+  const next = scan.slice(contentStart).search(/\r?\n[ \t]*\{\{[^0-9A-Za-z{}\r\n]+\}\}[ \t]*(?=\r?\n|$)/);
   return { start: contentStart, end: next < 0 ? text.length : contentStart + next };
 }
 
@@ -1198,6 +1199,18 @@ function correctionTargetText(row: Record<string, unknown>, targetField: Correct
     : String(row[targetField] ?? "");
 }
 
+// A deployment can change section extraction without changing stored bytes.
+// Reject older audits before preparing, applying, or uploading an image.
+function assertAuditTargetConsistent(audit: Record<string, any>) {
+  const targetField = parseCorrectionTargetField(audit.target_field);
+  const currentTarget = targetField === "translation_text"
+    ? extractMarkedSection(audit.original_storage_text, "全訳")
+    : String(audit.original_storage_text ?? "");
+  if (currentTarget !== String(audit.original_target_text ?? "")) {
+    throw new Error("Audit target extraction changed; run audit_question_for_correction again");
+  }
+}
+
 function replaceMarkedSection(value: unknown, marker: string, replacement: string) {
   const text = String(value ?? "");
   const heading = `{{${marker}}}`;
@@ -1917,6 +1930,7 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
       .bind(auditId, auth.client_id).first<Record<string, any>>();
     if (!audit) throw new Error("Audit not found for this connection");
     if (Number(audit.expires_at) < Date.now()) throw new Error("Audit has expired; run audit_question_for_correction again");
+    assertAuditTargetConsistent(audit);
     if (audit.used_at || audit.status === "applied") throw new Error("Audit has already been used");
 
     const targetField = parseCorrectionTargetField(audit.target_field);
@@ -1956,6 +1970,7 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
     if (audit.used_at) throw new Error("Audit has already been used");
     if (audit.status !== "prepared" || !audit.proposed_storage_text) throw new Error("Correction has not been prepared");
     if (Number(audit.expires_at) < Date.now()) throw new Error("Audit has expired; run audit_question_for_correction again");
+    assertAuditTargetConsistent(audit);
     if (!(await safeEqual(String(audit.proposal_hash || ""), proposalHash))) throw new Error("proposal_hash does not match the prepared correction");
 
     const storageField = String(audit.storage_field || "");
@@ -2008,6 +2023,7 @@ async function callTool(name: string, args: Record<string, unknown>, env: McpEnv
     if (audit.used_at) throw new Error("Audit has already been used");
     if (audit.status !== "audited") throw new Error("Image addition requires a fresh, unprepared audit");
     if (Number(audit.expires_at) < Date.now()) throw new Error("Audit has expired; run audit_question_for_correction again");
+    assertAuditTargetConsistent(audit);
 
     const targetField = parseCorrectionTargetField(audit.target_field);
     const storageField = String(audit.storage_field || "");
