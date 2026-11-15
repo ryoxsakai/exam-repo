@@ -1778,7 +1778,7 @@
     { code: "First line<br>Second line", desc: "属性なしの <br> / <br/> / <br /> だけ改行（表のセル内でも使用可）。他のHTMLは文字として表示" },
     { code: "##M^isdiagnosis::誤診##", desc: "語注の ^ は注のみ直前文字を小文字化（本文Misdiagnosis／注misdiagnosis）" },
     { code: "[1] In the first paragraph...\n\n[2] The second paragraph follows.", desc: "段落番号（本文・和訳の段落先頭に [1] [2]。空所 [[ ]] とは別）", body: true },
-    { code: "He felt ||||déjà vu||||.", desc: "斜字（イタリック）" },
+    { code: "He felt *déjà vu*.", desc: "斜字（イタリック）。||||語|||| も使用できます" },
     { code: "!!!!出典: The Economist (2023)!!!!", desc: "出典（右寄せ・グレー・小）" },
     { code: "This is ::important::.", desc: "ハイライト（黄）" },
     { code: "A ::keyword:::blue here.", desc: "色付きハイライト（yellow/blue/red/purple/pink/green/aqua）" },
