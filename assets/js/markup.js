@@ -235,6 +235,17 @@
     return html + esc(smartQuotes(raw.slice(last)));
   }
 
+  // A single asterisk can mark emphasis only at a safe boundary.  In exam
+  // texts, word* and *1/*term are also ordinary source-note markers; do not
+  // pair those markers across words or paragraphs.
+  var SINGLE_STAR_START = /^\*(?=\S)((?:\*\*[^*\r\n]+\*\*|\\[^\r\n]|[^*\\\r\n])+)\*(?![A-Za-z0-9_*])/;
+  var SINGLE_STAR_GLOBAL = /\*(?=\S)((?:\*\*[^*\r\n]+\*\*|\\[^\r\n]|[^*\\\r\n])+)\*(?![A-Za-z0-9_*])/g;
+  function singleStarAt(text, previous) {
+    if (previous && /[A-Za-z0-9_*\\]/.test(previous)) return null;
+    var m = text.match(SINGLE_STAR_START);
+    return m && !/\s$/.test(m[1]) ? m : null;
+  }
+
   // インライン記法をHTMLへ。footnotes は配列で受け取り副作用で追加。
   function inline(text, footnotes, leadLine) {
     var out = "";
@@ -446,6 +457,12 @@
       // **太字**
       if ((m = rem.match(/^\*\*([^*]+)\*\*/))) {
         out += "<strong>" + inline(m[1], footnotes, leadLine) + "</strong>";
+        rem = rem.slice(m[0].length); continue;
+      }
+      // Markdown single-star italics, without consuming standalone note markers.
+      m = singleStarAt(rem, text.charAt(text.length - rem.length - 1));
+      if (m) {
+        out += "<em>" + inline(m[1], footnotes, leadLine) + "</em>";
         rem = rem.slice(m[0].length); continue;
       }
       // Parent/child/grandchild references also keep their level inline.
@@ -987,6 +1004,10 @@
     t = t.replace(/::([\s\S]+?)::(?::\w+)?/g, "$1"); // ハイライト（語注は処理済み）
     t = t.replace(/==([^=]+)==/g, "$1");            // ハイライト
     t = t.replace(/__([^_]+)__/g, "$1");            // 下線
+    t = t.replace(SINGLE_STAR_GLOBAL, function (match, inner, offset, full) {
+      var parsed = singleStarAt(match, full.charAt(offset - 1));
+      return parsed ? inner : match;
+    }); // アスタリスクによる斜字
     t = t.replace(/\*\*([^*]+)\*\*/g, "$1");       // 太字
     t = t.replace(/~~~([^~]+)~~~/g, "$1");       // 旧波線
     t = t.replace(/~~([^~]+)~~/g, "$1");            // 波線
