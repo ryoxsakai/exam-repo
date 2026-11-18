@@ -846,7 +846,7 @@ mark.hl { padding: .08em .22em; border-radius: .25em; }
 /* 問題に貼る画像（写真・グラフ） */
 .exam-doc .exam-img {
   display: block; max-width: 100%; height: auto; margin: 12px auto;
-  border: 1px solid var(--line); border-radius: 8px;
+  border: 1px solid var(--line); border-radius: 0;
 }
 
 /* Answer choices — clean wrapping for long options */
