@@ -1,0 +1,24 @@
+name: Test square exam images
+on:
+  pull_request:
+    paths:
+      - 'assets/css/**'
+      - 'index.html'
+      - 'setting/index.html'
+      - 'scripts/test-image-corners.cjs'
+      - '.github/workflows/image-corners-test.yml'
+jobs:
+  image-corners:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --prefix panel
+      - run: ./panel/node_modules/.bin/playwright install --with-deps chromium
+      - run: node scripts/test-image-corners.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: square-images-screen-print
+          path: /tmp/exam-square-*
