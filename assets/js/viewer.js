@@ -2381,7 +2381,7 @@
     }
     var definitions = [], blankDefinitions = [];
     sections.forEach(function (sec) {
-      if (isAnswerSide(sec.type) || sec.type === "リード文") return;
+      if (isAnswerSide(sec.type) || sec.type === "リード文" || sec.type === "編集注") return;
       protectedText(sec.text, function (text) {
         // 範囲説明は番号の定義ではない。旧形式の統合済みリード文でも、
         // [[49]]〜[[71]] の終点が2番を消費しないよう、採番時だけ退避する。
@@ -2437,6 +2437,8 @@
     }
     return sections.map(function (sec) {
       var copy = Object.assign({}, sec);
+      // 編集注の小問参照は監査時の原本番号なので、印刷で振り直さない。
+      if (sec.type === "編集注") return copy;
       copy.text = protectedText(sec.text, function (text) {
         // バッジを先に置換して退避し、生成した「問1」を後段でもう一度変換しない。
         var labels = [];
@@ -4309,7 +4311,7 @@
       var types = examSections(q.problem_text).map(function (s) { return s.type; });
       if (q.answer_text && q.answer_text.trim() && types.indexOf("解答") < 0) types.push("解答");
       if (q.commentary_text && q.commentary_text.trim() && types.indexOf("解説") < 0) types.push("解説");
-      types.forEach(function (t) { if (set.indexOf(t) < 0) set.push(t); });
+      types.forEach(function (t) { if (t !== "編集注" && set.indexOf(t) < 0) set.push(t); });
     });
     var order = ["問題", "本文", "設問", "解答", "解説", "全訳"];
     set.sort(function (a, b) {
@@ -4328,7 +4330,7 @@
     if (q.answer_text && q.answer_text.trim() && !hasAns) sections.push({ type: "解答", text: q.answer_text });
     if (q.commentary_text && q.commentary_text.trim() && !hasCom) sections.push({ type: "解説", text: q.commentary_text });
     var parts = [];
-    sections.forEach(function (s) { if (!secSet || secSet.indexOf(s.type) >= 0) parts.push(s.text); });
+    sections.forEach(function (s) { if (s.type !== "編集注" && (!secSet || secSet.indexOf(s.type) >= 0)) parts.push(s.text); });
     return Markup.strip(parts.join("\n"));
   }
 

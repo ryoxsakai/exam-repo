@@ -398,10 +398,15 @@
     return '<div class="reg-meta-item"><span class="field-label">' + esc(label) + '</span>' +
       '<input type="' + (type || "text") + '" id="' + id + '" value="' + esc(String(val)) + '"></div>';
   }
+  // 編集注は保存済みのカスタム候補を変更せず、どの構成でも選択できる。
+  function registrationSectionTypes() {
+    var base = (state.config.section_types && state.config.section_types.length)
+      ? state.config.section_types : Store.getSectionTypes();
+    return base.indexOf("編集注") < 0 ? base.concat(["編集注"]) : base.slice();
+  }
   // 取り込み編集で使うセクション種別（本文・設問・全訳を必ず含める）
   function ingSectionTypes() {
-    var base = (state.config.section_types && state.config.section_types.length)
-      ? state.config.section_types.slice() : ["問題", "本文", "設問", "解答", "解説", "全訳"];
+    var base = registrationSectionTypes();
     ["本文", "設問", "全訳"].forEach(function (t) { if (base.indexOf(t) < 0) base.push(t); });
     return base;
   }
@@ -1599,7 +1604,7 @@
     if (!state.reg.sections.length) addSection("問題");
   }
   function addSection(type) {
-    var types = (state.config.section_types && state.config.section_types.length) ? state.config.section_types : Store.getSectionTypes();
+    var types = registrationSectionTypes();
     state.reg.sections.push({ type: type || types[0], text: "" });
   }
   function fillRegSelects() {
@@ -1642,7 +1647,7 @@
   function renderReg() {
     fillRegSelects();
     el("reg-mode-label").textContent = state.reg.editingExamId ? "問題を編集" : "新規 問題登録";
-    var types = (state.config.section_types && state.config.section_types.length) ? state.config.section_types : Store.getSectionTypes();
+    var types = registrationSectionTypes();
     var c = el("reg-sections");
     c.innerHTML = "";
     state.reg.sections.forEach(function (sec, i) {
