@@ -26,7 +26,7 @@ for (const file of ['store', 'markup', 'corpus', 'difficulty']) {
   vm.runInContext(read(`assets/js/${file}.js`), browser);
 }
 vm.runInContext(settingsSource.replace(initMarker,
-  '  window.sectionSavingTest = { collectReg, ingSectionsToQuestion, previewReg, examSections, renderReg, saveReg, loadExamIntoForm, registerIngest, state };\n' + initMarker), browser);
+  '  window.sectionSavingTest = { collectReg, ingSectionsToQuestion, previewReg, examSections, renderReg, saveReg, loadExamIntoForm, registerIngest, ingSectionTypes, state };\n' + initMarker), browser);
 const api = browser.sectionSavingTest;
 const sections = text => plain(browser.Markup.parseSections(text));
 for (const [id, value] of Object.entries({ 'reg-year': '2023', 'reg-university': 'テスト大学',
@@ -34,6 +34,12 @@ for (const [id, value] of Object.entries({ 'reg-year': '2023', 'reg-university':
 const sec = (type, text) => ({ type, text });
 const lead = 'Read the article and answer the questions.';
 const body = '[1] The article is short. It ends here.';
+const source = '!!!!出典: Example magazine!!!!';
+const editorNote = '※選択肢より問題を復元\n{{99}} Reference only.';
+const editorialSections = [
+  sec('リード文', lead), sec('本文', body + '\n\n' + source), sec('編集注', editorNote),
+  sec('設問', '{{56}} Choose.'), sec('解答', '{{56}} CorrectAnswer'), sec('解説', 'Answer explanation.')
+];
 const fixtures = [
   [sec('リード文', lead), sec('本文', body), sec('設問', '{{問1}} Choose [[1]].')],
   [sec('リード文', '次の問いに答えよ。'), sec('問題', '{{問1}} Which is correct?')],
@@ -49,6 +55,7 @@ const fixtures = [
   [sec('本文', '@@**Old merged instruction.**\n\n' + body), sec('設問', '{{問1}} Choose.')],
   [sec('本文', body), sec('注意事項', 'Custom Japanese section.'), sec('問題', 'Next question.')]
 ];
+fixtures.push(editorialSections);
 fixtures.push([sec('設問', '{{問7}} Parent\n{{{(1)}}} Child\n{{{{a}}}} Grandchild\n((1)) First'), sec('解答','{{問7}}\n{{{(1)}}}\n{{{{a}}}} ((1))'), sec('解説','{{問7}}\n{{{(1)}}} Reason')]);
 fixtures.push([sec('本文', 'First.\n\n[[=A=]]\n\nNext.'), sec('設問', '{{問1}} 空所 [[=A=]] を選ぶ。'), sec('解答', '[[=A=]] ((1))')]);
 // Literal text beside a section-looking label must not disappear during editing.
@@ -111,10 +118,15 @@ el('reg-sections').appendChild = box => boxes.push(box.innerHTML);
 api.state.config.section_types = ['問題', '本文'];
 api.renderReg();
 assert.match(boxes[0], /<option value="リード文" selected>リード文<\/option>/);
+assert.match(boxes[0], /<option value="編集注">編集注<\/option>/);
+assert.equal(api.ingSectionTypes().filter(type => type === '編集注').length, 1);
+api.state.config.section_types.push('編集注');
+assert.equal(api.ingSectionTypes().filter(type => type === '編集注').length, 1);
+api.state.config.section_types.pop();
 assert.deepEqual(plain(api.state.config.section_types), ['問題', '本文'], 'Loaded types must not mutate saved configuration');
 
 vm.runInContext(read('assets/js/viewer.js').replace('document.addEventListener("DOMContentLoaded", init);',
-  'window.viewerTest = { examSections, buildPrintHtml };'), browser);
+  'window.viewerTest = { examSections, buildPrintHtml, renderField, renumberPrintSections, corpusSectionTypes, questionSectionText };'), browser);
 const stored = api.ingSectionsToQuestion({ sections: plain(fixtures[0]) }).problemText;
 const display = plain(browser.viewerTest.examSections(stored));
 assert.equal(display[0].type, '本文');
@@ -125,6 +137,25 @@ assert.deepEqual(display.map(s => [s.type, s.text]), legacyDisplay.map(s => [s.t
 const print = browser.viewerTest.buildPrintHtml({ questions: [{ question_number: 3, problem_text: stored }] }, {}, false);
 assert.match(print, /<strong>Read the article and answer the questions\.<\/strong>/);
 assert.doesNotMatch(print, /exam-section-title">リード文/);
+const editorialText = api.ingSectionsToQuestion({ sections: editorialSections }).problemText;
+const editorialQ = { question_number: 3, problem_text: editorialText };
+const editorialDisplay = plain(browser.viewerTest.examSections(editorialText));
+assert.deepEqual(editorialDisplay.map(s => s.type), ['本文', '編集注', '設問', '解答', '解説']);
+assert.match(browser.viewerTest.renderField('編集注', '', editorNote), /data-sectype="編集注"[\s\S]*?exam-section-title">編集注[\s\S]*?※選択肢より問題を復元/);
+assert.equal(editorialDisplay[0].metricText, body + '\n\n' + source);
+api.state.reg.sections = plain(editorialSections);
+api.previewReg();
+assert.match(el('preview-body').innerHTML, /exam-section-title">編集注[\s\S]*?※選択肢より問題を復元/);
+const notePrint = browser.viewerTest.buildPrintHtml({ questions: [editorialQ] }, { hideLabels: true }, false);
+assert.match(notePrint, /Example magazine[\s\S]*?<div class="print-field-label">編集注<\/div>[\s\S]*?※選択肢より問題を復元[\s\S]*?Choose\./);
+assert.equal((notePrint.match(/※選択肢より問題を復元/g) || []).length, 1, 'The note belongs only to the problem side');
+const renumberedEditorial = plain(browser.viewerTest.renumberPrintSections(editorialSections));
+assert.equal(renumberedEditorial[2].text, editorNote);
+assert.equal(renumberedEditorial[3].text, '{{1}} Choose.');
+assert.equal(renumberedEditorial[4].text, '{{1}} CorrectAnswer');
+assert.ok(!browser.viewerTest.corpusSectionTypes([editorialQ]).includes('編集注'));
+assert.doesNotMatch(browser.viewerTest.questionSectionText(editorialQ), /Reference only/);
+assert.equal(browser.viewerTest.questionSectionText(editorialQ, ['編集注']), '');
 console.log(`PASS: ${fixtures.length} fixtures × 4 save/load cycles (${rounds}); both serializers, legacy formats, previews, print, metrics, and type dropdown`);
 
 // Exercise actual save/load entrypoints with an in-memory API and minimal DOM.
